@@ -28,7 +28,8 @@ class ParentFunctionsPage extends StatelessWidget {
         crossAxisCount: 2,
         mainAxisSpacing: CocoSpace.s4,
         crossAxisSpacing: CocoSpace.s4,
-        childAspectRatio: 0.95,
+        // 两行标题（如「我记住的事」）需要更高格子，避免底部溢出
+        childAspectRatio: 0.85,
         children: [
           _FunctionTile(
             label: '找可可',
@@ -92,28 +93,35 @@ class _FunctionTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(CocoRadius.xl),
         child: Padding(
           padding: const EdgeInsets.all(CocoSpace.s5),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: CocoColors.white,
-                  borderRadius: BorderRadius.circular(CocoRadius.md),
+          // 极窄屏时等比缩小，避免 Column 硬溢出
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: CocoColors.white,
+                    borderRadius: BorderRadius.circular(CocoRadius.md),
+                  ),
+                  child: Icon(icon, size: 36, color: CocoColors.neutral950),
                 ),
-                child: Icon(icon, size: 36, color: CocoColors.neutral950),
-              ),
-              const SizedBox(height: CocoSpace.s4),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  color: CocoColors.neutral950,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(height: CocoSpace.s3),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: CocoColors.neutral950,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
