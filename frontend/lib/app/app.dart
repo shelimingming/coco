@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/theme.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/domain/models.dart';
+import '../features/notifications/application/notification_poller.dart';
 import 'router.dart';
 
 class CocoApp extends ConsumerWidget {
@@ -19,6 +20,8 @@ class CocoApp extends ConsumerWidget {
         (state) => state.user?.role ?? state.selectedRole,
       ),
     );
+    // 全局挂载通知轮询：登录后前台每 20s 拉未读
+    ref.watch(notificationPollerProvider);
 
     return MaterialApp.router(
       title: '可可',

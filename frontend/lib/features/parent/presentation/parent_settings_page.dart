@@ -24,10 +24,15 @@ class ParentSettingsPage extends ConsumerWidget {
           Text(user?.displayName ?? '家人', style: theme.textTheme.titleLarge),
           const SizedBox(height: CocoSpace.s2),
           Text(
-            '这里可以管理登录状态。退出后需要重新验证手机号。',
+            '这里可以邀请子女、管理登录状态。退出后需要重新验证手机号。',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: CocoColors.neutral700,
             ),
+          ),
+          const SizedBox(height: CocoSpace.s6),
+          CocoPrimaryButton(
+            label: '邀请子女加入',
+            onPressed: () => context.push('/parent/family'),
           ),
           const Spacer(),
           // 危险操作：大点击区 + 确认，避免误触

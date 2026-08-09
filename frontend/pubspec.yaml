@@ -45,6 +45,7 @@ dependencies:
   flutter_pcm_sound: ^3.1.1
   flutter_localizations:
     sdk: flutter
+  flutter_local_notifications: ^22.3.0
 
 dev_dependencies:
   flutter_test:

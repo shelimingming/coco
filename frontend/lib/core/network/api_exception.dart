@@ -28,6 +28,28 @@ class ApiException implements Exception {
         return '账号不可用，请联系支持。';
       case 'auth.sms_unavailable':
         return '短信服务暂时不可用，请稍后再试。';
+      case 'family.not_found':
+        return '还没有绑定家庭。请先完成父母与子女的绑定。';
+      case 'family.invalid_invite':
+        return '邀请码无效或已过期。请向父母重新索取。';
+      case 'family.already_bound':
+      case 'family.already_joined':
+        return '家庭已经绑定过了，不能重复操作。';
+      case 'family.parent_required':
+      case 'reminder.parent_required':
+      case 'memory.parent_required':
+      case 'care.parent_required':
+        return '这项操作需要在老人模式下完成。';
+      case 'family.child_required':
+      case 'care.child_required':
+      case 'message.child_required':
+        return '这项操作需要在子女模式下完成。';
+      case 'care.no_child':
+        return '还没有绑定子女，无法分享。';
+      case 'reminder.not_found':
+        return '找不到这个提醒，可能已被删除。';
+      case 'memory.not_found':
+        return '找不到这条记忆，可能已被删除。';
       case 'request.invalid':
         return '请求参数不正确，请检查后重试。';
       default:

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from coco.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class PhoneCodePurpose(str, enum.Enum):
+class PhoneCodePurpose(enum.StrEnum):
     LOGIN = "login"
 
 

@@ -30,10 +30,7 @@ def test_realtime_websocket_url_by_region() -> None:
     cn = Settings(_env_file=None, environment="test", aliyun_region="cn-beijing")
     intl = Settings(_env_file=None, environment="test", aliyun_region="ap-southeast-1")
     assert cn.realtime_websocket_url == "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
-    assert (
-        intl.realtime_websocket_url
-        == "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime"
-    )
+    assert intl.realtime_websocket_url == "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime"
 
 
 def test_map_vendor_speech_and_transcript_events() -> None:
@@ -96,8 +93,6 @@ def test_map_vendor_ignores_unknown_events() -> None:
 
 def test_redact_realtime_event_hides_audio() -> None:
     audio_b64 = base64.b64encode(b"secret-audio").decode("ascii")
-    redacted = redact_realtime_event(
-        {"type": "response.audio.delta", "delta": audio_b64}
-    )
+    redacted = redact_realtime_event({"type": "response.audio.delta", "delta": audio_b64})
     assert "secret-audio" not in str(redacted)
     assert "omitted" in redacted["delta"]

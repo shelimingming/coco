@@ -34,7 +34,8 @@ class ParentFunctionsPage extends StatelessWidget {
             label: '找可可',
             background: CocoColors.parentPrimarySoft,
             icon: Icons.pets_outlined,
-            onTap: () => _showComingSoon(context, '找可可'),
+            // 回首页，由用户点「和我说话」开始通话
+            onTap: () => context.go('/parent'),
           ),
           _FunctionTile(
             label: '今天',
@@ -44,13 +45,13 @@ class ParentFunctionsPage extends StatelessWidget {
               CocoColors.neutral100,
             ),
             icon: Icons.check_rounded,
-            onTap: () => _showComingSoon(context, '今天'),
+            onTap: () => context.push('/parent/reminders'),
           ),
           _FunctionTile(
-            label: '帮我看看',
+            label: '我记住的事',
             background: CocoColors.neutral100,
-            icon: Icons.radio_button_checked_outlined,
-            onTap: () => _showComingSoon(context, '帮我看看'),
+            icon: Icons.menu_book_outlined,
+            onTap: () => context.push('/parent/memories'),
           ),
           _FunctionTile(
             label: '我的',
@@ -59,18 +60,11 @@ class ParentFunctionsPage extends StatelessWidget {
               CocoColors.neutral100,
             ),
             icon: Icons.settings_outlined,
-            // 「我的」即设置入口，承接退出登录等账号操作
             onTap: () => context.push('/parent/settings'),
           ),
         ],
       ),
     );
-  }
-
-  void _showComingSoon(BuildContext context, String name) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$name即将到来。')));
   }
 }
 

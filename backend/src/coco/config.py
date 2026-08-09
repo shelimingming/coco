@@ -24,9 +24,7 @@ class Settings(BaseSettings):
     auth_signing_key: SecretStr = SecretStr(
         "local-development-only-change-before-sharing-0123456789"
     )
-    auth_hash_pepper: SecretStr = SecretStr(
-        "local-development-pepper-change-me-0123456789abcdef"
-    )
+    auth_hash_pepper: SecretStr = SecretStr("local-development-pepper-change-me-0123456789abcdef")
     auth_issuer: str = "coco-backend"
     auth_audience: str = "coco-ios"
     access_token_ttl_seconds: int = 3600
@@ -49,6 +47,18 @@ class Settings(BaseSettings):
     aliyun_region: Literal["cn-beijing", "ap-southeast-1"] = "cn-beijing"
     realtime_model: str = "qwen-audio-3.0-realtime-plus"
     realtime_voice: str = "longanqian"
+    # 文本模型：子女报平安转译等无状态请求
+    text_model: str = "qwen-plus"
+
+    # 提醒调度：第二次提醒 / 升级通知子女的间隔（分钟）
+    reminder_second_delay_minutes: int = 30
+    reminder_escalate_delay_minutes: int = 30
+    reminder_scan_interval_seconds: int = 30
+    # MVP 固定本地时区，老人说「晚上八点」按此时区解释
+    local_timezone: str = "Asia/Shanghai"
+
+    # 家庭邀请码有效期
+    family_invite_ttl_minutes: int = 10
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

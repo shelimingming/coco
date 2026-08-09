@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, WebSocket
 from starlette.websockets import WebSocketState
 
@@ -29,21 +31,21 @@ async def voice_realtime(
 ) -> None:
     """父母端实时语音陪伴：JWT 经 query access_token 传入。
 
-    鉴权使用短生命周期 DB 会话；通过后释放连接，再进入长桥接。
+    鉴权使用短生命周期 DB 会话；通过后只保留 user_id 进入长桥接。
     """
     await websocket.accept()
     factory = get_session_factory()
+    user_id: UUID
     async with factory() as session:
         try:
-            await resolve_ws_user(websocket, settings=settings, session=session)
+            user = await resolve_ws_user(websocket, settings=settings, session=session)
+            user_id = user.id
         except AppError as exc:
             if websocket.client_state == WebSocketState.CONNECTED:
                 await websocket.send_json(
                     {"type": "error", "code": exc.code, "message": exc.message}
                 )
-                await websocket.close(
-                    code=1008 if exc.status_code in {401, 403} else 1011
-                )
+                await websocket.close(code=1008 if exc.status_code in {401, 403} else 1011)
             return
 
-    await run_realtime_bridge(websocket, settings=settings)
+    await run_realtime_bridge(websocket, settings=settings, user_id=user_id)

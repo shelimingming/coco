@@ -1,7 +1,7 @@
 """鉴权 WebSocket：把 Flutter 精简协议桥接到 Qwen-Audio Realtime。
 
 密钥只留在服务端；下行事件脱敏后不含供应商原始音频原文日志。
-实时通话本阶段只做陪伴，不执行提醒/记忆工具。
+写操作经 Function Calling 进入业务 service，user_confirmed 由代码兜底。
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, cast
+from uuid import UUID
 
 from fastapi import WebSocket
 from sqlalchemy import select
@@ -21,10 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from coco.config import Settings
+from coco.database import get_session_factory
 from coco.errors import AppError
 from coco.models.auth import AuthSession
 from coco.models.user import User, UserRole, UserStatus
 from coco.modules.voice.prompts import COCO_REALTIME_COMPANION_PROMPT
+from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
 from coco.providers.qwen_realtime import (
     QwenAudioRealtimeClient,
     RealtimeProviderError,
@@ -108,6 +111,7 @@ async def create_default_realtime_client(settings: Settings) -> QwenAudioRealtim
             voice=settings.realtime_voice,
             instructions=COCO_REALTIME_COMPANION_PROMPT,
             turn_detection_mode=TurnDetectionMode.SERVER_VAD,
+            tools=VOICE_TOOL_DEFINITIONS,
         ),
     )
     await client.connect()
@@ -188,11 +192,12 @@ async def run_realtime_bridge(
     websocket: WebSocket,
     *,
     settings: Settings,
+    user_id: UUID,
     client_factory: RealtimeClientFactory | None = None,
 ) -> None:
     """桥接供应商 Realtime，直到任一侧关闭。
 
-    调用前须已 accept，并完成父母端鉴权；本函数不再占用数据库会话。
+    调用前须已 accept，并完成父母端鉴权；长连接期间用短生命周期 session 执行工具。
     """
     vendor: QwenAudioRealtimeClient | None = None
     try:
@@ -218,7 +223,7 @@ async def run_realtime_bridge(
         await _send_json(websocket, _client_event("session.ready"))
 
         recv_task = asyncio.create_task(
-            _forward_vendor_events(websocket, active_vendor),
+            _forward_vendor_events(websocket, active_vendor, settings=settings, user_id=user_id),
             name="realtime-vendor-forward",
         )
         try:
@@ -313,7 +318,56 @@ async def _consume_client_events(websocket: WebSocket, vendor: QwenAudioRealtime
         # 忽略未知上行事件，避免供应商协议泄漏到客户端约定。
 
 
-async def _forward_vendor_events(websocket: WebSocket, vendor: QwenAudioRealtimeClient) -> None:
+async def _handle_function_call(
+    vendor: QwenAudioRealtimeClient,
+    event: dict[str, Any],
+    *,
+    settings: Settings,
+    user_id: UUID,
+) -> None:
+    call_id = event.get("call_id")
+    name = event.get("name")
+    raw_args = event.get("arguments")
+    if not isinstance(call_id, str) or not isinstance(name, str):
+        return
+    arguments: dict[str, Any] = {}
+    if isinstance(raw_args, str) and raw_args.strip():
+        try:
+            parsed = json.loads(raw_args)
+            if isinstance(parsed, dict):
+                arguments = parsed
+        except json.JSONDecodeError:
+            arguments = {}
+    elif isinstance(raw_args, dict):
+        arguments = raw_args
+
+    # 长连接不长期占库连接：每次工具调用新开短生命周期 session
+    factory = get_session_factory()
+    async with factory() as session:
+        fresh_user = await session.get(User, user_id)
+        if fresh_user is None:
+            output = json.dumps(
+                {"status": "error", "message": "登录状态无效，请重新登录。"},
+                ensure_ascii=False,
+            )
+        else:
+            output = await dispatch_voice_tool(
+                session=session,
+                settings=settings,
+                user=fresh_user,
+                name=name,
+                arguments=arguments,
+            )
+    await vendor.submit_tool_result(call_id=call_id, output=output)
+
+
+async def _forward_vendor_events(
+    websocket: WebSocket,
+    vendor: QwenAudioRealtimeClient,
+    *,
+    settings: Settings,
+    user_id: UUID,
+) -> None:
     assistant_text = ""
     final_sent = False
     try:
@@ -326,6 +380,28 @@ async def _forward_vendor_events(websocket: WebSocket, vendor: QwenAudioRealtime
             if event_type == "response.created":
                 assistant_text = ""
                 final_sent = False
+
+            # Function Calling：执行业务后写回，不直接透传给客户端
+            if event_type == "response.function_call_arguments.done":
+                try:
+                    await _handle_function_call(vendor, event, settings=settings, user_id=user_id)
+                except Exception:
+                    logger.exception("realtime_function_call_failed")
+                    call_id = event.get("call_id")
+                    if isinstance(call_id, str):
+                        with contextlib.suppress(Exception):
+                            await vendor.submit_tool_result(
+                                call_id=call_id,
+                                output=json.dumps(
+                                    {
+                                        "status": "error",
+                                        "message": "刚才没办成，请再说一次。",
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                            )
+                continue
+
             mapped, assistant_text = map_vendor_event(event, assistant_text)
             if mapped is None:
                 continue

@@ -38,7 +38,7 @@ def mask_phone(normalized: str) -> str:
 def privacy_digest(settings: Settings, purpose: str, value: str) -> str:
     """HMAC-SHA256 摘要，用于手机号 / OTP / refresh token。"""
     pepper = settings.auth_hash_pepper.get_secret_value().encode("utf-8")
-    message = f"{purpose}:{value}".encode("utf-8")
+    message = f"{purpose}:{value}".encode()
     return hmac.new(pepper, message, hashlib.sha256).hexdigest()
 
 

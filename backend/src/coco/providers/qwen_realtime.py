@@ -50,6 +50,8 @@ class RealtimeSessionConfig:
     # server_vad 参数；仅在 SERVER_VAD 模式下发送
     vad_threshold: float = 0.5
     silence_duration_ms: int = 800
+    # Function Calling 工具定义；空列表表示不启用工具
+    tools: Sequence[Mapping[str, Any]] = ()
 
 
 class QwenAudioRealtimeClient:
@@ -177,6 +179,8 @@ class QwenAudioRealtimeClient:
             "output_audio_format": self.session.output_audio_format,
             "turn_detection": self._turn_detection_payload(self.session),
         }
+        if self.session.tools:
+            payload["tools"] = list(self.session.tools)
         await self.send_event({"type": "session.update", "session": payload})
 
     async def send_event(self, event: Mapping[str, Any]) -> None:
@@ -201,6 +205,31 @@ class QwenAudioRealtimeClient:
 
     async def cancel_response(self) -> None:
         await self.send_event({"type": "response.cancel"})
+
+    async def submit_tool_result(
+        self,
+        *,
+        call_id: str,
+        output: str,
+        modalities: Sequence[Literal["text", "audio"]] | None = None,
+    ) -> None:
+        """把本地工具执行结果写回会话，并触发模型基于结果继续回复。"""
+        await self.send_event(
+            {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output,
+                },
+            }
+        )
+        response_payload: dict[str, Any] = {}
+        if modalities is not None:
+            response_payload["modalities"] = list(modalities)
+        else:
+            response_payload["modalities"] = ["audio", "text"]
+        await self.send_event({"type": "response.create", "response": response_payload})
 
     async def events(self) -> AsyncIterator[dict[str, Any]]:
         ws = self._require_ws()

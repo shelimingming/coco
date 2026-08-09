@@ -8,9 +8,15 @@ import '../features/auth/presentation/login_page.dart';
 import '../features/auth/presentation/splash_page.dart';
 import '../features/child/presentation/child_home_page.dart';
 import '../features/child/presentation/child_settings_page.dart';
+import '../features/family/presentation/child_join_page.dart';
+import '../features/family/presentation/parent_family_page.dart';
+import '../features/memories/presentation/memories_page.dart';
+import '../features/messages/presentation/child_messages_page.dart';
 import '../features/parent/presentation/parent_functions_page.dart';
 import '../features/parent/presentation/parent_home_page.dart';
 import '../features/parent/presentation/parent_settings_page.dart';
+import '../features/reminders/presentation/new_reminder_page.dart';
+import '../features/reminders/presentation/reminders_page.dart';
 
 /// 路由只判断：是否 bootstrap、是否登录、角色是否匹配。
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -61,6 +67,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: 'settings',
             builder: (context, state) => const ParentSettingsPage(),
           ),
+          GoRoute(
+            path: 'family',
+            builder: (context, state) => const ParentFamilyPage(),
+          ),
+          GoRoute(
+            path: 'reminders',
+            builder: (context, state) => const RemindersPage(),
+            routes: [
+              GoRoute(
+                path: 'new',
+                builder: (context, state) => const NewReminderPage(),
+              ),
+            ],
+          ),
+          GoRoute(
+            path: 'memories',
+            builder: (context, state) => const MemoriesPage(),
+          ),
         ],
       ),
       GoRoute(
@@ -70,6 +94,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'settings',
             builder: (context, state) => const ChildSettingsPage(),
+          ),
+          GoRoute(
+            path: 'join',
+            builder: (context, state) => const ChildJoinPage(),
+          ),
+          GoRoute(
+            path: 'messages',
+            builder: (context, state) => const ChildMessagesPage(),
           ),
         ],
       ),

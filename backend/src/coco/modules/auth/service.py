@@ -32,9 +32,7 @@ class AuthService:
         self._settings = settings
         self._sms = sms_sender or build_sms_sender(settings)
 
-    async def request_phone_code(
-        self, session: AsyncSession, *, phone: str
-    ) -> PhoneCodeResponse:
+    async def request_phone_code(self, session: AsyncSession, *, phone: str) -> PhoneCodeResponse:
         normalized = normalize_mainland_phone(phone)
         phone_hash = privacy_digest(self._settings, "phone", normalized)
 

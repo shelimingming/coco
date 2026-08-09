@@ -10,12 +10,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from coco.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class UserRole(str, enum.Enum):
+class UserRole(enum.StrEnum):
     PARENT = "parent"
     CHILD = "child"
 
 
-class UserStatus(str, enum.Enum):
+class UserStatus(enum.StrEnum):
     ACTIVE = "active"
     DISABLED = "disabled"
 
