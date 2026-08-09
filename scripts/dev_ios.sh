@@ -3,7 +3,9 @@
 #
 # 用法：
 #   ./scripts/dev_ios.sh                       # 默认：iOS 26 模拟器 + 本地后端
-#   ./scripts/dev_ios.sh --device "iPhone 17"  # 指定模拟器机型（名称或 UDID）
+#   ./scripts/dev_ios.sh --dual                # 同时起两台模拟器，方便父母/子女双角色联调
+#   ./scripts/dev_ios.sh --dual --device "iPhone 17 Pro" --device "iPhone 17"
+#   ./scripts/dev_ios.sh --device "iPhone 17"  # 指定模拟器机型（名称或 UDID；可写两次配双端）
 #   ./scripts/dev_ios.sh --ios 26              # 指定 iOS 大版本（默认 26）
 #   ./scripts/dev_ios.sh --lan                 # 真机调试：后端监听 0.0.0.0，App 用局域网 IP
 #   ./scripts/dev_ios.sh --backend-only        # 只起后端
@@ -23,6 +25,7 @@ BACKEND_PID_FILE="${RUNTIME_DIR}/backend.pid"
 
 IOS_MAJOR="26"
 DEVICE_QUERY=""
+DEVICE_QUERY_2=""
 API_BASE=""
 BACKEND_HOST="127.0.0.1"
 BACKEND_PORT="8000"
@@ -34,6 +37,8 @@ REUSE_BACKEND=0
 KEEP_BACKEND=0
 USE_LAN=0
 LIST_ONLY=0
+# 双模拟器：各跑一份 App，本地数据隔离，可同时登录父母端与子女端。
+DUAL=0
 
 # 本次脚本是否亲自拉起了后端，决定退出时是否回收进程。
 BACKEND_STARTED_BY_US=0
@@ -70,7 +75,25 @@ usage() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --device|-d) DEVICE_QUERY="${2:?--device 需要一个机型名称或 UDID}"; shift 2 ;;
+      # 可写两次 --device：第一次父母端机型，第二次子女端机型。
+      --device|-d)
+        local value="${2:?--device 需要一个机型名称或 UDID}"
+        if [[ -z "${DEVICE_QUERY}" ]]; then
+          DEVICE_QUERY="${value}"
+        elif [[ -z "${DEVICE_QUERY_2}" ]]; then
+          DEVICE_QUERY_2="${value}"
+          DUAL=1
+        else
+          die "--device 最多指定两台模拟器。" "双端用法：--dual 或 --device A --device B"
+        fi
+        shift 2
+        ;;
+      --device2)
+        DEVICE_QUERY_2="${2:?--device2 需要一个机型名称或 UDID}"
+        DUAL=1
+        shift 2
+        ;;
+      --dual|--both-roles) DUAL=1; shift ;;
       --ios) IOS_MAJOR="${2:?--ios 需要一个大版本号，如 26}"; shift 2 ;;
       --api-base) API_BASE="${2:?--api-base 需要一个 URL}"; shift 2 ;;
       --port) BACKEND_PORT="${2:?--port 需要一个端口}"; shift 2 ;;
@@ -277,32 +300,39 @@ list_simulators() {
   '
 }
 
-# 选设备的顺序：用户指定 > 已启动的 > 优先机型 > 第一台 iPhone。
-resolve_simulator() {
-  local devices name udid state
+# 按名称或 UDID 在设备列表中查找一台；exclude_udid 用于双端避开已选中的那台。
+find_simulator_by_query() {
+  local query="$1" exclude_udid="${2-}" devices name udid state
   devices="$(list_simulators)"
-  [[ -n "${devices}" ]] || die "没有找到 iOS ${IOS_MAJOR} 的模拟器。" "在 Xcode → Settings → Components 里安装 iOS ${IOS_MAJOR} 运行时，或用 --ios 指定已装版本。"
+  while IFS=$'\t' read -r name udid state; do
+    [[ -n "${udid}" ]] || continue
+    [[ -n "${exclude_udid}" && "${udid}" == "${exclude_udid}" ]] && continue
+    if [[ "${name}" == "${query}" || "${udid}" == "${query}" ]]; then
+      printf '%s\t%s\t%s\n' "${name}" "${udid}" "${state}"
+      return 0
+    fi
+  done <<<"${devices}"
+  return 1
+}
 
-  if [[ -n "${DEVICE_QUERY}" ]]; then
-    while IFS=$'\t' read -r name udid state; do
-      if [[ "${name}" == "${DEVICE_QUERY}" || "${udid}" == "${DEVICE_QUERY}" ]]; then
-        printf '%s\t%s\t%s\n' "${name}" "${udid}" "${state}"
-        return 0
-      fi
-    done <<<"${devices}"
-    die "iOS ${IOS_MAJOR} 下没有名为「${DEVICE_QUERY}」的模拟器。" "用 --list 查看可选机型。"
-  fi
+# 自动挑选一台 iPhone；顺序：已启动的 > 优先机型 > 第一台 iPhone。
+pick_auto_simulator() {
+  local exclude_udid="${1-}" devices name udid state preferred
+  devices="$(list_simulators)"
 
   while IFS=$'\t' read -r name udid state; do
+    [[ -n "${udid}" ]] || continue
+    [[ -n "${exclude_udid}" && "${udid}" == "${exclude_udid}" ]] && continue
     if [[ "${state}" == "Booted" && "${name}" == iPhone* ]]; then
       printf '%s\t%s\t%s\n' "${name}" "${udid}" "${state}"
       return 0
     fi
   done <<<"${devices}"
 
-  local preferred
   for preferred in "${PREFERRED_DEVICES[@]}"; do
     while IFS=$'\t' read -r name udid state; do
+      [[ -n "${udid}" ]] || continue
+      [[ -n "${exclude_udid}" && "${udid}" == "${exclude_udid}" ]] && continue
       if [[ "${name}" == "${preferred}" ]]; then
         printf '%s\t%s\t%s\n' "${name}" "${udid}" "${state}"
         return 0
@@ -311,13 +341,50 @@ resolve_simulator() {
   done
 
   while IFS=$'\t' read -r name udid state; do
+    [[ -n "${udid}" ]] || continue
+    [[ -n "${exclude_udid}" && "${udid}" == "${exclude_udid}" ]] && continue
     if [[ "${name}" == iPhone* ]]; then
       printf '%s\t%s\t%s\n' "${name}" "${udid}" "${state}"
       return 0
     fi
   done <<<"${devices}"
 
-  die "iOS ${IOS_MAJOR} 下没有可用的 iPhone 模拟器。" "用 --list 查看，或在 Xcode 里新建一台设备。"
+  return 1
+}
+
+# 选设备的顺序：用户指定 > 已启动的 > 优先机型 > 第一台 iPhone。
+resolve_simulator() {
+  local devices query="${1-}" exclude_udid="${2-}" selected
+  devices="$(list_simulators)"
+  [[ -n "${devices}" ]] || die "没有找到 iOS ${IOS_MAJOR} 的模拟器。" "在 Xcode → Settings → Components 里安装 iOS ${IOS_MAJOR} 运行时，或用 --ios 指定已装版本。"
+
+  if [[ -n "${query}" ]]; then
+    selected="$(find_simulator_by_query "${query}" "${exclude_udid}")" || \
+      die "iOS ${IOS_MAJOR} 下没有名为「${query}」的模拟器。" "用 --list 查看可选机型。"
+    printf '%s\n' "${selected}"
+    return 0
+  fi
+
+  selected="$(pick_auto_simulator "${exclude_udid}")" || \
+    die "iOS ${IOS_MAJOR} 下没有可用的 iPhone 模拟器。" "用 --list 查看，或在 Xcode 里新建一台设备。"
+  printf '%s\n' "${selected}"
+}
+
+# 双端各选一台，保证 UDID 不同；默认优先机型前两名（如 17 Pro + 17）。
+resolve_dual_simulators() {
+  local first second name1 udid1 state1 name2 udid2 state2
+  first="$(resolve_simulator "${DEVICE_QUERY}")" || exit 1
+  IFS=$'\t' read -r name1 udid1 state1 <<<"${first}"
+
+  second="$(resolve_simulator "${DEVICE_QUERY_2}" "${udid1}")" || exit 1
+  IFS=$'\t' read -r name2 udid2 state2 <<<"${second}"
+
+  if [[ "${udid1}" == "${udid2}" ]]; then
+    die "双端需要两台不同的模拟器，当前只解析到同一台。" "用 --list 查看，并指定：--device A --device B"
+  fi
+
+  printf '%s\n' "${first}"
+  printf '%s\n' "${second}"
 }
 
 boot_simulator() {
@@ -326,10 +393,13 @@ boot_simulator() {
     info "启动模拟器 ${name}"
     xcrun simctl boot "${udid}" >/dev/null 2>&1 || true
   fi
-  open -a Simulator --args -CurrentDeviceUDID "${udid}" >/dev/null 2>&1 || open -a Simulator || true
+  # 多开时不要用 -CurrentDeviceUDID 盖掉另一台窗口，只确保 Simulator.app 已打开。
+  open -a Simulator >/dev/null 2>&1 || true
 
   for _ in {1..60}; do
     if xcrun simctl list devices | grep -q "${udid}.*Booted"; then
+      # bootstatus 等到 SpringBoard 就绪，避免刚 Booted 就 install 出现 exit -2。
+      xcrun simctl bootstatus "${udid}" -b >/dev/null 2>&1 || true
       ok "模拟器就绪：${name}（iOS ${IOS_MAJOR}）"
       return 0
     fi
@@ -363,10 +433,17 @@ resolve_api_base() {
   fi
 }
 
-run_app() {
-  local udid="$1" name="$2"
+BUNDLE_ID="com.coco.app"
+SIMULATOR_APP_PATH="${FRONTEND_DIR}/build/ios/iphonesimulator/Runner.app"
+
+ensure_flutter_deps() {
   info "拉取 Flutter 依赖（flutter pub get）"
   (cd "${FRONTEND_DIR}" && flutter pub get) || die "flutter pub get 失败。" "检查网络或 pubspec.yaml。"
+}
+
+run_app() {
+  local udid="$1" name="$2"
+  ensure_flutter_deps
 
   ok "在 ${name} 上运行 App（${FLUTTER_MODE}，API=${API_BASE}）"
   dim "首次构建会执行 pod install，耗时较久；按 q 退出，r 热重载。"
@@ -375,6 +452,77 @@ run_app() {
     -d "${udid}" \
     "--${FLUTTER_MODE}" \
     --dart-define=COCO_API_BASE_URL="${API_BASE}"
+}
+
+# 双端装包：先统一 build，再 simctl install（带重试），比连续两次 flutter run 更稳。
+install_app_on_simulator() {
+  local udid="$1" name="$2" attempt
+  [[ -d "${SIMULATOR_APP_PATH}" ]] || die "找不到构建产物 ${SIMULATOR_APP_PATH}。" "先确认 flutter build 成功。"
+
+  for attempt in 1 2 3 4 5; do
+    if xcrun simctl install "${udid}" "${SIMULATOR_APP_PATH}" >/dev/null 2>&1; then
+      ok "已安装到 ${name}"
+      return 0
+    fi
+    warn "安装到 ${name} 失败（第 ${attempt}/5 次），等待模拟器稳定后重试…"
+    xcrun simctl bootstatus "${udid}" -b >/dev/null 2>&1 || true
+    sleep $((attempt * 2))
+  done
+  die "无法安装到 ${name}，数据未受影响。" "可先重启模拟器：xcrun simctl shutdown ${udid} && xcrun simctl boot ${udid}"
+}
+
+launch_app_on_simulator() {
+  local udid="$1" name="$2"
+  # 已在前台则 terminate 再 launch，保证看到的是本次构建。
+  xcrun simctl terminate "${udid}" "${BUNDLE_ID}" >/dev/null 2>&1 || true
+  xcrun simctl launch "${udid}" "${BUNDLE_ID}" >/dev/null \
+    || die "无法在 ${name} 上启动 ${BUNDLE_ID}。" "手动点开模拟器里的 Coco 图标亦可。"
+  ok "已在 ${name} 启动 App"
+}
+
+run_dual_apps() {
+  local name1="$1" udid1="$2" name2="$3" udid2="$4"
+  local build_log="${RUNTIME_DIR}/flutter-build.log"
+
+  ensure_flutter_deps
+
+  ok "双端模式：两台模拟器各跑一份 App（${FLUTTER_MODE}，API=${API_BASE}）"
+  dim "建议：模拟器 A 登录父母，模拟器 B 登录子女（本地会话互不影响）。"
+  dim "开发验证码见 backend/.env 的 COCO_DEV_SMS_CODE（默认 246810）。"
+
+  # 双端刚 boot 完立刻装包容易 exit -2；再留几秒给 CoreSimulator。
+  info "等待双模拟器服务稳定…"
+  sleep 3
+
+  info "统一构建 iOS 模拟器包（只编一次，两端共用）"
+  dim "日志：${build_log}"
+  (
+    cd "${FRONTEND_DIR}"
+    # debug 默认即可；--debug/--profile/--release 与单端 flutter run 对齐。
+    flutter build ios --simulator "--${FLUTTER_MODE}" \
+      --dart-define=COCO_API_BASE_URL="${API_BASE}"
+  ) >"${build_log}" 2>&1 || {
+    tail -n 40 "${build_log}" >&2 || true
+    die "flutter build ios 失败，App 未安装、数据未受影响。" "完整日志见 ${build_log}"
+  }
+  ok "模拟器包构建完成"
+
+  install_app_on_simulator "${udid1}" "${name1}"
+  install_app_on_simulator "${udid2}" "${name2}"
+  launch_app_on_simulator "${udid1}" "${name1}"
+  launch_app_on_simulator "${udid2}" "${name2}"
+
+  ok "双端已启动"
+  info "模拟器 A（建议登父母）：${name1}"
+  info "模拟器 B（建议登子女）：${name2}"
+  dim "若只看到一台窗口：Simulator 菜单 Window → 再选另一台设备。"
+  dim "热重载可另开终端：cd frontend && flutter attach -d ${udid1}"
+  dim "按 Ctrl+C 结束脚本（模拟器里的 App 可继续用；后端按规则回收）。"
+
+  # 挂起等待，Ctrl+C 走 cleanup。
+  while true; do
+    sleep 3600
+  done
 }
 
 # ---------- 主流程 ----------
@@ -404,15 +552,31 @@ main() {
     exit 0
   fi
 
-  # 先取回结果再解析：resolve_simulator 里的 die 只能结束子 shell，这里要显式判空。
-  local selected name udid state
-  selected="$(resolve_simulator)" || exit 1
-  [[ -n "${selected}" ]] || exit 1
-  IFS=$'\t' read -r name udid state <<<"${selected}"
-
-  boot_simulator "${udid}" "${name}" "${state}"
   resolve_api_base
-  run_app "${udid}" "${name}"
+
+  if (( DUAL )); then
+    local dual_lines selected_a selected_b
+    local name1 udid1 state1 name2 udid2 state2
+    # 先取回结果再解析：resolve_* 里的 die 只能结束子 shell，这里要显式判空。
+    dual_lines="$(resolve_dual_simulators)" || exit 1
+    selected_a="$(printf '%s\n' "${dual_lines}" | sed -n '1p')"
+    selected_b="$(printf '%s\n' "${dual_lines}" | sed -n '2p')"
+    [[ -n "${selected_a}" && -n "${selected_b}" ]] || exit 1
+    IFS=$'\t' read -r name1 udid1 state1 <<<"${selected_a}"
+    IFS=$'\t' read -r name2 udid2 state2 <<<"${selected_b}"
+
+    boot_simulator "${udid1}" "${name1}" "${state1}"
+    boot_simulator "${udid2}" "${name2}" "${state2}"
+    run_dual_apps "${name1}" "${udid1}" "${name2}" "${udid2}"
+  else
+    local selected name udid state
+    selected="$(resolve_simulator "${DEVICE_QUERY}")" || exit 1
+    [[ -n "${selected}" ]] || exit 1
+    IFS=$'\t' read -r name udid state <<<"${selected}"
+
+    boot_simulator "${udid}" "${name}" "${state}"
+    run_app "${udid}" "${name}"
+  fi
 }
 
 main "$@"
