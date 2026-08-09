@@ -56,7 +56,8 @@ class CocoSecondaryButton extends StatelessWidget {
     // 次按钮尺寸/圆角跟随主按钮主题，避免子女端仍是父母大点击区
     final minSize =
         primaryStyle?.minimumSize?.resolve({}) ?? const Size.fromHeight(56);
-    final shape = primaryStyle?.shape?.resolve({}) ??
+    final shape =
+        primaryStyle?.shape?.resolve({}) ??
         RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CocoRadius.md),
         );
@@ -73,6 +74,47 @@ class CocoSecondaryButton extends StatelessWidget {
         shape: shape,
       ),
       child: Text(label),
+    );
+  }
+}
+
+/// 老人端顶栏次入口（功能 / 返回）：白底胶囊 + success 字色，轻暖灰阴影。
+class ParentChipButton extends StatelessWidget {
+  const ParentChipButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final radius = BorderRadius.circular(CocoRadius.pill);
+    return Material(
+      color: CocoColors.white,
+      elevation: 1,
+      shadowColor: CocoColors.neutral950.withValues(alpha: 0.08),
+      borderRadius: radius,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: radius,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: CocoSpace.s5,
+            vertical: CocoSpace.s3,
+          ),
+          child: Text(
+            label,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: CocoColors.success,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

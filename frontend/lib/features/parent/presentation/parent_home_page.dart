@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
@@ -9,7 +10,7 @@ import '../../auth/application/auth_controller.dart';
 /// 默认陪伴形象：与 App 图标同源的小狗图。
 const String kCompanionDogAsset = 'assets/images/coco_companion_dog.png';
 
-/// 父母端占位首页：问候 + 小狗形象 + 大号「和我说话」按钮。
+/// 父母端占位首页：问候 + 功能入口 + 小狗形象 + 大号「和我说话」按钮。
 class ParentHomePage extends ConsumerWidget {
   const ParentHomePage({super.key});
 
@@ -20,16 +21,22 @@ class ParentHomePage extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return CocoScaffold(
-      actions: [
-        TextButton(
-          onPressed: () => ref.read(authControllerProvider.notifier).logout(),
-          child: const Text('退出'),
-        ),
-      ],
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('你好，$name', style: theme.textTheme.titleLarge),
+          // 顶栏自绘：避免无 title 时 AppBar 不渲染，功能入口始终可见
+          Row(
+            children: [
+              Expanded(
+                child: Text('你好，$name', style: theme.textTheme.titleLarge),
+              ),
+              const SizedBox(width: CocoSpace.s3),
+              ParentChipButton(
+                label: '功能',
+                onPressed: () => context.push('/parent/functions'),
+              ),
+            ],
+          ),
           const SizedBox(height: CocoSpace.s3),
           Text(
             '上午好，我在呢，想聊什么？',

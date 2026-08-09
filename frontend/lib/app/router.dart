@@ -7,7 +7,10 @@ import '../features/auth/domain/models.dart';
 import '../features/auth/presentation/login_page.dart';
 import '../features/auth/presentation/splash_page.dart';
 import '../features/child/presentation/child_home_page.dart';
+import '../features/child/presentation/child_settings_page.dart';
+import '../features/parent/presentation/parent_functions_page.dart';
 import '../features/parent/presentation/parent_home_page.dart';
+import '../features/parent/presentation/parent_settings_page.dart';
 
 /// 路由只判断：是否 bootstrap、是否登录、角色是否匹配。
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -31,8 +34,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return location == '/login' ? null : '/login';
       }
 
-      final home =
-          auth.user!.role == UserRole.parent ? '/parent' : '/child';
+      final home = auth.user!.role == UserRole.parent ? '/parent' : '/child';
       if (location == '/splash' || location == '/login') {
         return home;
       }
@@ -45,21 +47,31 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/splash',
-        builder: (context, state) => const SplashPage(),
-      ),
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginPage(),
-      ),
+      GoRoute(path: '/splash', builder: (context, state) => const SplashPage()),
+      GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
       GoRoute(
         path: '/parent',
         builder: (context, state) => const ParentHomePage(),
+        routes: [
+          GoRoute(
+            path: 'functions',
+            builder: (context, state) => const ParentFunctionsPage(),
+          ),
+          GoRoute(
+            path: 'settings',
+            builder: (context, state) => const ParentSettingsPage(),
+          ),
+        ],
       ),
       GoRoute(
         path: '/child',
         builder: (context, state) => const ChildHomePage(),
+        routes: [
+          GoRoute(
+            path: 'settings',
+            builder: (context, state) => const ChildSettingsPage(),
+          ),
+        ],
       ),
     ],
   );

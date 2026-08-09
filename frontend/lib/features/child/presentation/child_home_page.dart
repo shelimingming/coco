@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_scaffold.dart';
@@ -17,9 +18,10 @@ class ChildHomePage extends ConsumerWidget {
     return CocoScaffold(
       title: '今日状态',
       actions: [
-        TextButton(
-          onPressed: () => ref.read(authControllerProvider.notifier).logout(),
-          child: const Text('退出'),
+        IconButton(
+          tooltip: '设置',
+          onPressed: () => context.push('/child/settings'),
+          icon: const Icon(Icons.settings_outlined),
         ),
       ],
       body: ListView(
@@ -29,10 +31,7 @@ class ChildHomePage extends ConsumerWidget {
             style: theme.textTheme.titleLarge,
           ),
           const SizedBox(height: CocoSpace.s2),
-          Text(
-            '打开 App，先看父母今天是否安稳。',
-            style: theme.textTheme.bodyMedium,
-          ),
+          Text('打开 App，先看父母今天是否安稳。', style: theme.textTheme.bodyMedium),
           const SizedBox(height: CocoSpace.s6),
           Card(
             child: Padding(

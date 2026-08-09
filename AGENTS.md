@@ -51,6 +51,16 @@ MVP 核心：语音陪伴、日常提醒、关怀摘要同步、子女今日状�
 - 子女端：结论优先、现代克制、青绿主色、四栏导航（后续）。
 - 切换 UI 角色不等于扩大数据权限；服务端鉴权是最终判断。
 
+## 视觉与 UI（必须统一）
+
+前端界面风格一律以 `doc/DESIGN.md` 为准，后续新增或改版页面都必须对齐，不得各自发挥。
+
+- 做 UI 前先读 DESIGN：色板、字号、圆角、间距、双角色气质、可访问性与危险操作样式。
+- 颜色 / 间距 / 圆角只用 `frontend/lib/core/theme/tokens.dart`（`CocoColors` / `CocoSpace` / `CocoRadius`）及主题，**禁止页面内写裸色值**。
+- 父母端只用老人端 token 与暖色气质；子女端只用子女端 token 与青绿主色；**禁止跨角色混用色板**。
+- 优先复用 `CocoTheme`、`CocoScaffold`、`CocoPrimaryButton` / `CocoSecondaryButton` / `ParentChipButton` 等现有组件，新样式先落到 DESIGN 与 token，再进代码。
+- 与 DESIGN 冲突时：用户当前明确要求 > DESIGN.md；若用户要求偏离 DESIGN，在实现说明里点明偏差。
+
 ## 不可破坏的规则
 
 - 创建提醒、保存记忆、分享给家人等动作，必须经用户明确确认后由业务 API 执行。
