@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/tokens.dart';
+import '../../../core/widgets/coco_loading.dart';
 
 /// 启动页品牌图标（与桌面 AppIcon 同源）。
 const String kAppIconAsset = 'assets/images/coco_app_icon.png';
@@ -38,7 +39,12 @@ class SplashPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: CocoSpace.s6),
-            const CircularProgressIndicator(),
+            // 启动页无 Theme 角色切换时仍用父母主色，与暖色启动背景一致
+            const CocoLoadingIndicator(
+              size: 28,
+              strokeWidth: 3,
+              color: CocoColors.parentPrimary,
+            ),
             const SizedBox(height: CocoSpace.s4),
             Text('正在准备…', style: Theme.of(context).textTheme.bodyLarge),
           ],

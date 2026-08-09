@@ -218,22 +218,45 @@ class _StatusSection extends StatelessWidget {
   }
 }
 
-class _AttentionSection extends StatelessWidget {
+class _AttentionSection extends ConsumerWidget {
   const _AttentionSection({required this.items});
 
   final List<CareShare> items;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     return Card(
+      color: CocoColors.childSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(CocoRadius.md),
+        side: const BorderSide(color: CocoColors.childBorder),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(CocoSpace.s5),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('需要关注', style: theme.textTheme.titleMedium),
-            const SizedBox(height: CocoSpace.s2),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('需要关注', style: theme.textTheme.titleMedium),
+                ),
+                TextButton(
+                  onPressed: () => context.push('/child/attention'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: CocoColors.childPrimary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: CocoSpace.s2,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('查看全部'),
+                ),
+              ],
+            ),
+            const SizedBox(height: CocoSpace.s3),
             if (items.isEmpty)
               Text(
                 '今天没有需要你处理的事。',
@@ -245,9 +268,81 @@ class _AttentionSection extends StatelessWidget {
               ...items.map(
                 (item) => Padding(
                   padding: const EdgeInsets.only(bottom: CocoSpace.s3),
-                  child: Text(item.summary, style: theme.textTheme.bodyLarge),
+                  child: _AttentionItem(item: item),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AttentionItem extends ConsumerStatefulWidget {
+  const _AttentionItem({required this.item});
+
+  final CareShare item;
+
+  @override
+  ConsumerState<_AttentionItem> createState() => _AttentionItemState();
+}
+
+class _AttentionItemState extends ConsumerState<_AttentionItem> {
+  bool _marking = false;
+
+  Future<void> _markRead() async {
+    if (_marking) {
+      return;
+    }
+    setState(() => _marking = true);
+    try {
+      await markCareShareRead(ref, widget.item.id);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final message = error is ApiException
+          ? error.message
+          : '标记失败。您可以再试一次，数据没有丢失。';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) {
+        setState(() => _marking = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: CocoColors.childPrimarySoft,
+        borderRadius: BorderRadius.circular(CocoRadius.md),
+        border: Border.all(color: CocoColors.childBorder),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(CocoSpace.s4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.item.summary, style: theme.textTheme.bodyLarge),
+            const SizedBox(height: CocoSpace.s2),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _marking ? null : _markRead,
+                style: TextButton.styleFrom(
+                  foregroundColor: CocoColors.childPrimary,
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(_marking ? '请稍候…' : '知道了'),
+              ),
+            ),
           ],
         ),
       ),

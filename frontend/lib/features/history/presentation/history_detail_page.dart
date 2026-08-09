@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
+import '../../../core/widgets/coco_loading.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../application/history_providers.dart';
 import '../domain/models.dart';
@@ -42,7 +43,7 @@ class HistoryDetailPage extends ConsumerWidget {
         ),
       ],
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const CocoPageLoading(),
         error: (error, _) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

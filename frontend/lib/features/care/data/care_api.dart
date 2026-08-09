@@ -47,6 +47,18 @@ class CareApi {
     }
   }
 
+  /// 子女按条「知道了」；服务端幂等。
+  Future<CareShare> markShareRead(String shareId) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/v1/care-shares/$shareId/read',
+      );
+      return CareShare.fromJson(asJsonMap(response.data));
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
   Future<ChildToday> childToday() async {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/v1/child/today');

@@ -9,6 +9,7 @@ import '../../../core/audio/pcm_stream_player.dart';
 import '../../../core/network/api_client.dart';
 import '../data/realtime_voice_socket.dart';
 import '../domain/coco_companion_pose.dart';
+import '../domain/pending_voice_action.dart';
 import '../domain/voice_call_state.dart';
 import 'coco_companion_controller.dart';
 
@@ -113,6 +114,30 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
     _syncPose(VoiceCallPhase.listening);
   }
 
+  /// 大卡主按钮：点一下确认（与语音说「好」二选一）。
+  Future<void> confirmPendingAction() async {
+    final pending = state.pendingAction;
+    if (pending == null || state.pendingActionBusy) return;
+    state = state.copyWith(pendingActionBusy: true);
+    try {
+      await _socket.confirmPendingAction(pending.draftId);
+    } catch (_) {
+      state = state.copyWith(pendingActionBusy: false);
+    }
+  }
+
+  /// 大卡次按钮：先不要。
+  Future<void> cancelPendingAction() async {
+    final pending = state.pendingAction;
+    if (pending == null || state.pendingActionBusy) return;
+    state = state.copyWith(pendingActionBusy: true);
+    try {
+      await _socket.cancelPendingAction(pending.draftId);
+    } catch (_) {
+      state = state.copyWith(pendingActionBusy: false);
+    }
+  }
+
   /// 错误态点「再试一次」：先清错误再 start。
   Future<void> retry() async {
     await _teardown(resetToIdle: true);
@@ -189,6 +214,10 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
           );
         }
         _player.markResponseComplete();
+      case 'action.pending':
+        _onActionPending(event.payload);
+      case 'action.resolved':
+        _onActionResolved(event.payload);
       case 'error':
         unawaited(
           _fail(
@@ -203,6 +232,37 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
       default:
         // 未知下行事件静默忽略，保证后续扩展兼容。
         break;
+    }
+  }
+
+  void _onActionPending(Map<String, Object?> payload) {
+    try {
+      final action = PendingVoiceAction.fromPayload(payload);
+      state = state.copyWith(pendingAction: action, pendingActionBusy: false);
+    } catch (_) {
+      // 畸形帧忽略，不影响通话
+    }
+  }
+
+  void _onActionResolved(Map<String, Object?> payload) {
+    final draftId = payload['draft_id'];
+    final kind = payload['kind'];
+    final current = state.pendingAction;
+    if (current == null) {
+      state = state.copyWith(pendingActionBusy: false);
+      return;
+    }
+    final matchDraft = draftId is String && draftId == current.draftId;
+    final matchKind =
+        kind is String && pendingVoiceActionKindFromWire(kind) == current.kind;
+    // 按 draft_id 或 kind 收卡（语音确认成功会带 kind）
+    if (matchDraft || matchKind) {
+      state = state.copyWith(
+        clearPendingAction: true,
+        pendingActionBusy: false,
+      );
+    } else {
+      state = state.copyWith(pendingActionBusy: false);
     }
   }
 

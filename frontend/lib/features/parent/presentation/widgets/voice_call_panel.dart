@@ -12,12 +12,16 @@ class VoiceCallPanel extends StatelessWidget {
     required this.onEnd,
     required this.onInterrupt,
     required this.onRetry,
+
+    /// 确认大卡占屏时收紧：一行状态+字幕，只保留结束，避免溢出
+    this.compact = false,
   });
 
   final VoiceCallState state;
   final VoidCallback onEnd;
   final VoidCallback onInterrupt;
   final VoidCallback onRetry;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +37,35 @@ class VoiceCallPanel extends StatelessWidget {
     final caption = state.assistantCaption.isNotEmpty
         ? state.assistantCaption
         : state.userCaption;
+
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            state.statusLabel,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: CocoColors.parentPrimary,
+            ),
+          ),
+          if (caption.isNotEmpty) ...[
+            const SizedBox(height: CocoSpace.s2),
+            Text(
+              caption,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: CocoColors.neutral950,
+              ),
+            ),
+          ],
+          const SizedBox(height: CocoSpace.s3),
+          CocoSecondaryButton(label: '结束说话', onPressed: onEnd),
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

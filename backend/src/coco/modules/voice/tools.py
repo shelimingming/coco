@@ -36,8 +36,8 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "create_reminder",
             "description": (
-                "为老人创建日常提醒。必须先口头复述时间与内容并得到明确同意后，"
-                "再以 user_confirmed=true 调用；未确认时传 false。"
+                "为老人创建日常提醒。参数齐全后先以 user_confirmed=false 弹出确认卡；"
+                "用户点卡或口头说好/对后，再以 user_confirmed=true 调用。勿在 false 前连环追问。"
             ),
             "parameters": {
                 "type": "object",
@@ -54,7 +54,7 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "user_confirmed": {
                         "type": "boolean",
-                        "description": "用户是否已口头确认",
+                        "description": "用户是否已点卡或口头确认；未确认必须为 false",
                     },
                 },
                 "required": ["title", "schedule_type", "schedule_time", "user_confirmed"],
@@ -111,15 +111,18 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "share_to_child",
             "description": (
-                "把关怀摘要分享给已绑定的子女。必须先让父母听到最终摘要并明确同意，"
-                "再以 user_confirmed=true 调用。"
+                "把关怀摘要分享给已绑定的子女。摘要齐全后先以 user_confirmed=false 弹出确认卡；"
+                "用户点「告诉家人」或口头说好/对之后，再以 user_confirmed=true 调用。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "summary": {"type": "string"},
                     "urgency": {"type": "string", "enum": ["LOW", "ATTENTION"]},
-                    "user_confirmed": {"type": "boolean"},
+                    "user_confirmed": {
+                        "type": "boolean",
+                        "description": "用户是否已点卡或口头确认；未确认必须为 false",
+                    },
                 },
                 "required": ["summary", "user_confirmed"],
             },

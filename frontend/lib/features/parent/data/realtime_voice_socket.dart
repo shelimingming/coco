@@ -125,6 +125,24 @@ class RealtimeVoiceSocket {
     channel.sink.add(jsonEncode({'type': 'response.cancel'}));
   }
 
+  /// 大卡点确认：服务端落库并告知模型已办妥。
+  Future<void> confirmPendingAction(String draftId) async {
+    final channel = _channel;
+    if (channel == null || draftId.isEmpty) return;
+    channel.sink.add(
+      jsonEncode({'type': 'action.confirm', 'draft_id': draftId}),
+    );
+  }
+
+  /// 大卡「先不要」：取消草稿，不落库。
+  Future<void> cancelPendingAction(String draftId) async {
+    final channel = _channel;
+    if (channel == null || draftId.isEmpty) return;
+    channel.sink.add(
+      jsonEncode({'type': 'action.cancel', 'draft_id': draftId}),
+    );
+  }
+
   Future<void> endSession() async {
     final channel = _channel;
     if (channel == null) return;

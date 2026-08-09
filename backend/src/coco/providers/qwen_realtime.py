@@ -206,14 +206,8 @@ class QwenAudioRealtimeClient:
     async def cancel_response(self) -> None:
         await self.send_event({"type": "response.cancel"})
 
-    async def submit_tool_result(
-        self,
-        *,
-        call_id: str,
-        output: str,
-        modalities: Sequence[Literal["text", "audio"]] | None = None,
-    ) -> None:
-        """把本地工具执行结果写回会话，并触发模型基于结果继续回复。"""
+    async def send_tool_output(self, *, call_id: str, output: str) -> None:
+        """只写回 function_call_output；勿在上一轮 response.done 前紧接 response.create。"""
         await self.send_event(
             {
                 "type": "conversation.item.create",
@@ -224,12 +218,44 @@ class QwenAudioRealtimeClient:
                 },
             }
         )
-        response_payload: dict[str, Any] = {}
-        if modalities is not None:
-            response_payload["modalities"] = list(modalities)
-        else:
-            response_payload["modalities"] = ["audio", "text"]
+
+    async def create_response(
+        self,
+        *,
+        modalities: Sequence[Literal["text", "audio"]] | None = None,
+    ) -> None:
+        """显式触发一轮推理；调用方须保证当前无进行中的 response。"""
+        response_payload: dict[str, Any] = {
+            "modalities": list(modalities) if modalities is not None else ["audio", "text"],
+        }
         await self.send_event({"type": "response.create", "response": response_payload})
+
+    async def submit_tool_result(
+        self,
+        *,
+        call_id: str,
+        output: str,
+        modalities: Sequence[Literal["text", "audio"]] | None = None,
+        create_followup: bool = True,
+    ) -> None:
+        """写回工具结果；默认立刻追问（仅当确认会话已 IDLE 时可用）。"""
+        await self.send_tool_output(call_id=call_id, output=output)
+        if create_followup:
+            await self.create_response(modalities=modalities)
+
+    async def inject_user_text_and_respond(self, text: str) -> None:
+        """注入一条用户侧文本（如屏幕已确认），并触发生成，勿再口头追问。"""
+        await self.send_event(
+            {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": text}],
+                },
+            }
+        )
+        await self.create_response()
 
     async def events(self) -> AsyncIterator[dict[str, Any]]:
         ws = self._require_ws()

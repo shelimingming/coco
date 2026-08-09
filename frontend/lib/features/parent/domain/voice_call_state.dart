@@ -1,3 +1,5 @@
+import 'pending_voice_action.dart';
+
 /// 父母端实时通话阶段；驱动形象姿态与文案。
 enum VoiceCallPhase {
   /// 未通话
@@ -19,7 +21,7 @@ enum VoiceCallPhase {
   error,
 }
 
-/// 通话 UI 状态：阶段 + 字幕 + 可展示错误。
+/// 通话 UI 状态：阶段 + 字幕 + 可展示错误 + 待确认大卡。
 class VoiceCallState {
   const VoiceCallState({
     this.phase = VoiceCallPhase.idle,
@@ -27,6 +29,8 @@ class VoiceCallState {
     this.assistantCaption = '',
     this.errorTitle,
     this.errorMessage,
+    this.pendingAction,
+    this.pendingActionBusy = false,
   });
 
   final VoiceCallPhase phase;
@@ -34,6 +38,8 @@ class VoiceCallState {
   final String assistantCaption;
   final String? errorTitle;
   final String? errorMessage;
+  final PendingVoiceAction? pendingAction;
+  final bool pendingActionBusy;
 
   bool get isActive =>
       phase == VoiceCallPhase.connecting ||
@@ -59,6 +65,9 @@ class VoiceCallState {
     String? errorTitle,
     String? errorMessage,
     bool clearError = false,
+    PendingVoiceAction? pendingAction,
+    bool clearPendingAction = false,
+    bool? pendingActionBusy,
   }) {
     return VoiceCallState(
       phase: phase ?? this.phase,
@@ -66,6 +75,10 @@ class VoiceCallState {
       assistantCaption: assistantCaption ?? this.assistantCaption,
       errorTitle: clearError ? null : (errorTitle ?? this.errorTitle),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      pendingAction: clearPendingAction
+          ? null
+          : (pendingAction ?? this.pendingAction),
+      pendingActionBusy: pendingActionBusy ?? this.pendingActionBusy,
     );
   }
 }

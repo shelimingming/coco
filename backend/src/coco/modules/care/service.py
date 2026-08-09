@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -123,6 +124,21 @@ class CareService:
         result = await session.execute(query)
         return [_to_response(s) for s in result.scalars().all()]
 
+    async def mark_read(
+        self, session: AsyncSession, *, user: User, share_id: UUID
+    ) -> CareShareResponse:
+        """子女按条确认「知道了」；幂等，已读不再改时间。"""
+        if user.role != UserRole.CHILD.value:
+            raise AppError(403, "care.child_required", "只有子女模式可以标记关怀摘要已读。")
+        share = await session.get(CareShare, share_id)
+        if share is None or share.child_id != user.id or not share.parent_confirmed:
+            raise AppError(404, "care.not_found", "找不到这条需要关注的内容。")
+        if share.read_at is None:
+            share.read_at = datetime.now(UTC)
+            await session.commit()
+            await session.refresh(share)
+        return _to_response(share)
+
     async def child_today(self, session: AsyncSession, *, user: User) -> ChildTodayResponse:
         if user.role != UserRole.CHILD.value:
             raise AppError(403, "care.child_required", "只有子女模式可以查看今日状态。")
@@ -137,12 +153,13 @@ class CareService:
         day_start = local_start.astimezone(UTC)
         day_end = day_start + timedelta(days=1)
 
-        # 今日父母主动分享
+        # 首页只展示今日未读分享；点「知道了」后不再出现
         shares_result = await session.execute(
             select(CareShare)
             .where(
                 CareShare.child_id == user.id,
                 CareShare.parent_confirmed.is_(True),
+                CareShare.read_at.is_(None),
                 CareShare.created_at >= day_start,
                 CareShare.created_at < day_end,
             )

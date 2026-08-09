@@ -7,7 +7,7 @@ import base64
 from pydantic import SecretStr
 
 from coco.config import Settings
-from coco.modules.voice.service import map_vendor_event
+from coco.modules.voice.service import is_recoverable_vendor_error, map_vendor_event
 from coco.providers.qwen_realtime import redact_realtime_event
 
 
@@ -89,6 +89,57 @@ def test_map_vendor_ignores_unknown_events() -> None:
     mapped, text = map_vendor_event({"type": "session.created"}, "keep")
     assert mapped is None
     assert text == "keep"
+
+
+def test_map_vendor_error_uses_generic_parent_copy() -> None:
+    mapped, text = map_vendor_event(
+        {
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "code": "invalid_value",
+                "message": "Cannot create response while another response is in progress.",
+            },
+        },
+        "keep",
+    )
+    assert mapped is not None
+    assert mapped["type"] == "error"
+    assert mapped["code"] == "invalid_value"
+    assert mapped["message"] == "语音服务暂时不可用，请稍后再试。"
+    assert text == "keep"
+
+
+def test_recoverable_vendor_error_for_active_response_conflict() -> None:
+    assert is_recoverable_vendor_error(
+        {
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "code": "invalid_value",
+                "message": "Cannot create response while another response is in progress.",
+            },
+        }
+    )
+    assert is_recoverable_vendor_error(
+        {
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "message": "No active response to cancel.",
+            },
+        }
+    )
+    assert not is_recoverable_vendor_error(
+        {
+            "type": "error",
+            "error": {
+                "type": "server_error",
+                "code": "server_error",
+                "message": "internal failure",
+            },
+        }
+    )
 
 
 def test_redact_realtime_event_hides_audio() -> None:

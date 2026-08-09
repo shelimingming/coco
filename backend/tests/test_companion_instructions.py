@@ -16,6 +16,10 @@ def test_empty_memories() -> None:
     assert "必须先调用 save_memory" in text
     assert "不可只聊天不存" in text
     assert "不要询问「要记住吗？」" in text
+    # 提醒/分享：先出卡，点一下或说好，禁止连环追问
+    assert "user_confirmed=false" in text
+    assert "确认大卡" in text
+    assert "禁止连环追问" in text
 
 
 def test_injects_user_name() -> None:

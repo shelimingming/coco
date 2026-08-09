@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Query
 
 from coco.config import Settings, get_settings
@@ -38,6 +40,16 @@ async def list_care_shares(
     service: CareService = Depends(get_care_service),
 ) -> list[CareShareResponse]:
     return await service.list_for_child(session, user=user, unread_only=unread_only)
+
+
+@router.post("/care-shares/{share_id}/read", response_model=CareShareResponse)
+async def mark_care_share_read(
+    share_id: UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: CareService = Depends(get_care_service),
+) -> CareShareResponse:
+    return await service.mark_read(session, user=user, share_id=share_id)
 
 
 @router.get("/child/today", response_model=ChildTodayResponse)

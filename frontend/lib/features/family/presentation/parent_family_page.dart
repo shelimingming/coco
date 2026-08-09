@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
+import '../../../core/widgets/coco_loading.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../application/family_providers.dart';
 import '../data/family_api.dart';
@@ -67,7 +68,7 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
         ),
       ],
       body: familyAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const CocoPageLoading(),
         error: (error, _) => _ErrorBody(
           message: error is ApiException
               ? error.message
@@ -93,7 +94,10 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
                   ),
                 ),
                 const Spacer(),
-                CocoSecondaryButton(label: '返回', onPressed: () => context.pop()),
+                CocoSecondaryButton(
+                  label: '返回',
+                  onPressed: () => context.pop(),
+                ),
               ],
             );
           }
@@ -140,9 +144,9 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
                   onPressed: () async {
                     await Clipboard.setData(ClipboardData(text: invite.code));
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('邀请码已复制。')),
-                    );
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('邀请码已复制。')));
                   },
                 ),
               ] else

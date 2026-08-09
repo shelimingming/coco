@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
+import '../../../core/widgets/coco_loading.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../application/memories_providers.dart';
 import '../data/memories_api.dart';
@@ -33,7 +34,7 @@ class MemoriesPage extends ConsumerWidget {
         ),
       ],
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const CocoPageLoading(),
         error: (error, _) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -128,9 +129,7 @@ class MemoriesPage extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            error is ApiException
-                ? error.message
-                : '删除失败。您可以再试一次，其他记忆没有受影响。',
+            error is ApiException ? error.message : '删除失败。您可以再试一次，其他记忆没有受影响。',
           ),
         ),
       );

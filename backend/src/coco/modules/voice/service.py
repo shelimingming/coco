@@ -1,8 +1,9 @@
 """鉴权 WebSocket：把 Flutter 精简协议桥接到 Qwen-Audio Realtime。
 
 密钥只留在服务端；下行事件脱敏后不含供应商原始音频原文日志。
-提醒/分享经 Function Calling 且 user_confirmed 由代码兜底；记忆开场注入并静默写入。
-通话过程落库最终转写与（非记忆）工具调用（父母私有，失败不打断通话）。
+提醒/分享经 Function Calling；need_confirmation 时推送 action.pending 大卡，
+点卡确认走 action.confirm，亦可语音说「好」再以 user_confirmed=true 落库。
+记忆开场注入并静默写入；通话过程落库最终转写与（非记忆）工具调用。
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from coco.database import get_session_factory
 from coco.errors import AppError
 from coco.models.auth import AuthSession
 from coco.models.conversation import ConversationItemKind, ConversationStatus
+from coco.models.family import FamilyStatus
 from coco.models.user import User, UserRole, UserStatus
 from coco.modules.conversations.service import (
     append_tool_call,
@@ -34,7 +36,14 @@ from coco.modules.conversations.service import (
     end_conversation,
     start_conversation,
 )
+from coco.modules.family.service import get_family
 from coco.modules.memories.service import MemoryService
+from coco.modules.voice.pending_actions import (
+    CONFIRMABLE_KINDS,
+    PendingActionStore,
+    PendingVoiceAction,
+    new_draft_id,
+)
 from coco.modules.voice.prompts import (
     COCO_REALTIME_COMPANION_PROMPT,
     build_companion_instructions,
@@ -50,6 +59,18 @@ from coco.providers.qwen_realtime import (
 from coco.security import decode_access_token
 
 logger = logging.getLogger(__name__)
+
+# 写回模型：屏幕已出卡，禁止连环「对吗」
+_NEED_CONFIRM_UI_HINT = (
+    "屏幕已弹出确认大卡。只需简短说一句：请点一下确认，或者说好。不要连环追问，不要声称已办妥。"
+)
+_SCREEN_CONFIRMED_PROMPT = (
+    "用户已在屏幕上确认该操作，业务已办妥。"
+    "请直接简短告知已经设好/已经告诉家人，不要再追问对不对，也不要再次调用创建工具。"
+)
+_SCREEN_CANCELLED_PROMPT = (
+    "用户在屏幕上点了「先不要」，该操作已取消。请简短确认已取消，不要再执行该操作。"
+)
 
 RealtimeClientFactory = Callable[..., Awaitable[QwenAudioRealtimeClient] | QwenAudioRealtimeClient]
 
@@ -164,17 +185,45 @@ async def create_default_realtime_client(
     return client
 
 
+def _vendor_error_fields(event: dict[str, Any]) -> tuple[str, str, str]:
+    """解析百炼 error 事件的 code / type / message（供日志与可恢复判断）。"""
+    error = event.get("error")
+    code = "realtime.vendor_error"
+    err_type = ""
+    message = ""
+    if isinstance(error, dict):
+        code = str(error.get("code") or code)
+        err_type = str(error.get("type") or "")
+        raw = error.get("message")
+        if isinstance(raw, str):
+            message = raw
+    return code, err_type, message
+
+
+def is_recoverable_vendor_error(event: dict[str, Any]) -> bool:
+    """客户端状态类错误：连接可继续，不应整通挂掉。"""
+    code, err_type, message = _vendor_error_fields(event)
+    text = f"{code} {err_type} {message}".lower()
+    # 上一轮 response 未结束又发 response.create；或无进行中 response 时 cancel
+    if "another response is in progress" in text:
+        return True
+    if "no active response" in text or "no response to cancel" in text:
+        return True
+    if err_type == "invalid_request_error" and "response" in text and (
+        "progress" in text or "cancel" in text
+    ):
+        return True
+    return False
+
+
 def map_vendor_event(
     event: dict[str, Any], assistant_text: str
 ) -> tuple[dict[str, Any] | None, str]:
     """把百炼原生事件映射为客户端精简协议；未知事件返回 None。"""
     event_type = event.get("type")
     if event_type == "error":
-        error = event.get("error")
+        code, _, _ = _vendor_error_fields(event)
         message = "语音服务暂时不可用，请稍后再试。"
-        code = "realtime.vendor_error"
-        if isinstance(error, dict):
-            code = str(error.get("code") or code)
         return _client_event("error", code=code, message=message), assistant_text
 
     if event_type == "input_audio_buffer.speech_started":
@@ -277,6 +326,8 @@ async def run_realtime_bridge(
                 await maybe_client if asyncio.iscoroutine(maybe_client) else maybe_client,
             )
         vendor = active_vendor
+        # 通话作用域：提醒/分享待确认草稿（点卡或语音二选一）
+        pending_store = PendingActionStore()
         await _send_json(websocket, _client_event("session.ready"))
 
         recv_task = asyncio.create_task(
@@ -287,11 +338,20 @@ async def run_realtime_bridge(
                 user_id=user_id,
                 conversation_id=conversation_id,
                 seq=seq,
+                pending_store=pending_store,
             ),
             name="realtime-vendor-forward",
         )
         try:
-            await _consume_client_events(websocket, active_vendor)
+            await _consume_client_events(
+                websocket,
+                active_vendor,
+                settings=settings,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                seq=seq,
+                pending_store=pending_store,
+            )
         finally:
             # 先关闭供应商连接以结束 events()，再等待下行转发收尾。
             with contextlib.suppress(Exception):
@@ -347,7 +407,80 @@ async def run_realtime_bridge(
             await websocket.close()
 
 
-async def _consume_client_events(websocket: WebSocket, vendor: QwenAudioRealtimeClient) -> None:
+async def _resolve_child_display_name(user_id: UUID) -> str:
+    """分享卡「给谁」：绑定子女昵称，没有则用「家人」。"""
+    factory = get_session_factory()
+    async with factory() as session:
+        user = await session.get(User, user_id)
+        if user is None:
+            return "家人"
+        family = await get_family(session, user)
+        if (
+            family is None
+            or family.child_user_id is None
+            or family.status != FamilyStatus.ACTIVE.value
+        ):
+            return "家人"
+        child = await session.get(User, family.child_user_id)
+        name = (child.display_name if child else None) or ""
+        return name.strip() or "家人"
+
+
+def _build_pending_display(
+    kind: str,
+    arguments: dict[str, Any],
+    tool_result: dict[str, Any],
+    *,
+    share_to: str = "家人",
+) -> dict[str, Any]:
+    if kind == "create_reminder":
+        schedule_type = str(
+            arguments.get("schedule_type") or tool_result.get("schedule_type") or "ONCE"
+        )
+        schedule_time = str(
+            tool_result.get("schedule_time") or arguments.get("schedule_time") or ""
+        )
+        # 工具结果可能是 HH:MM，参数也可能是
+        if len(schedule_time) >= 5 and schedule_time[2] == ":":
+            schedule_time = schedule_time[:5]
+        title = str(arguments.get("title") or tool_result.get("title") or "").strip()
+        return {
+            "title": title,
+            "schedule_type": schedule_type,
+            "schedule_time": schedule_time,
+            "repeat_label": "每天" if schedule_type == "DAILY" else "仅一次",
+        }
+    if kind == "share_to_child":
+        return {
+            "summary": str(arguments.get("summary") or tool_result.get("summary") or "").strip(),
+            "urgency": str(arguments.get("urgency") or tool_result.get("urgency") or "LOW"),
+            "share_to": share_to,
+        }
+    return {}
+
+
+def _enrich_need_confirmation_output(raw_output: str) -> str:
+    try:
+        parsed = json.loads(raw_output)
+    except json.JSONDecodeError:
+        return raw_output
+    if not isinstance(parsed, dict) or parsed.get("status") != "need_confirmation":
+        return raw_output
+    parsed["ui"] = "confirmation_card_shown"
+    parsed["hint"] = _NEED_CONFIRM_UI_HINT
+    return json.dumps(parsed, ensure_ascii=False)
+
+
+async def _consume_client_events(
+    websocket: WebSocket,
+    vendor: QwenAudioRealtimeClient,
+    *,
+    settings: Settings,
+    user_id: UUID,
+    conversation_id: UUID | None,
+    seq: _SeqCounter,
+    pending_store: PendingActionStore,
+) -> None:
     while True:
         raw = await websocket.receive_text()
         try:
@@ -384,10 +517,152 @@ async def _consume_client_events(websocket: WebSocket, vendor: QwenAudioRealtime
             if pcm:
                 await vendor.append_audio(pcm)
             continue
+        if event_type == "action.confirm":
+            draft_id = event.get("draft_id")
+            if isinstance(draft_id, str) and draft_id:
+                await _confirm_pending_from_screen(
+                    websocket,
+                    vendor,
+                    draft_id=draft_id,
+                    settings=settings,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    seq=seq,
+                    pending_store=pending_store,
+                )
+            continue
+        if event_type == "action.cancel":
+            draft_id = event.get("draft_id")
+            if isinstance(draft_id, str) and draft_id:
+                await _cancel_pending_from_screen(
+                    websocket,
+                    vendor,
+                    draft_id=draft_id,
+                    pending_store=pending_store,
+                )
+            continue
         # 忽略未知上行事件，避免供应商协议泄漏到客户端约定。
 
 
+async def _confirm_pending_from_screen(
+    websocket: WebSocket,
+    vendor: QwenAudioRealtimeClient,
+    *,
+    draft_id: str,
+    settings: Settings,
+    user_id: UUID,
+    conversation_id: UUID | None,
+    seq: _SeqCounter,
+    pending_store: PendingActionStore,
+) -> None:
+    """大卡点确认：落库后注入模型，避免再口头追问。"""
+    pending = await pending_store.take_matching(draft_id)
+    if pending is None:
+        # 语音侧可能已确认：幂等收卡，不重复写
+        await _send_json(
+            websocket,
+            _client_event(
+                "action.resolved",
+                draft_id=draft_id,
+                status="already_resolved",
+            ),
+        )
+        return
+
+    confirmed_args = {**pending.arguments, "user_confirmed": True}
+    factory = get_session_factory()
+    async with factory() as session:
+        fresh_user = await session.get(User, user_id)
+        if fresh_user is None:
+            await _send_json(
+                websocket,
+                _client_event(
+                    "error",
+                    code="auth.invalid_token",
+                    message="登录状态无效，请重新登录。刚才没有完成确认。",
+                ),
+            )
+            return
+        output = await dispatch_voice_tool(
+            session=session,
+            settings=settings,
+            user=fresh_user,
+            name=pending.kind,
+            arguments=confirmed_args,
+        )
+
+    try:
+        result = json.loads(output)
+    except json.JSONDecodeError:
+        result = {"status": "error", "message": "刚才没办成，请再说一次。"}
+
+    if conversation_id is not None:
+        await append_tool_call(
+            conversation_id,
+            seq=seq.next(),
+            tool_name=pending.kind,
+            arguments=confirmed_args,
+            result_output=output,
+        )
+
+    if isinstance(result, dict) and result.get("status") == "error":
+        # 失败不拆通话：恢复草稿并重新出卡，由模型口头说明原因
+        await pending_store.replace(pending)
+        await _send_json(
+            websocket,
+            _client_event("action.pending", **pending.to_client_payload()),
+        )
+        fail_msg = str(result.get("message") or "刚才没办成，请再说一次。")
+        with contextlib.suppress(Exception):
+            await vendor.cancel_response()
+        with contextlib.suppress(Exception):
+            await vendor.inject_user_text_and_respond(
+                f"用户点了屏幕确认，但业务失败：{fail_msg}请简短说明原因，可请用户再试或改说法。"
+            )
+        return
+
+    await _send_json(
+        websocket,
+        _client_event(
+            "action.resolved",
+            draft_id=draft_id,
+            kind=pending.kind,
+            status="confirmed",
+        ),
+    )
+    with contextlib.suppress(Exception):
+        await vendor.cancel_response()
+    with contextlib.suppress(Exception):
+        await vendor.inject_user_text_and_respond(_SCREEN_CONFIRMED_PROMPT)
+
+
+async def _cancel_pending_from_screen(
+    websocket: WebSocket,
+    vendor: QwenAudioRealtimeClient,
+    *,
+    draft_id: str,
+    pending_store: PendingActionStore,
+) -> None:
+    pending = await pending_store.take_matching(draft_id)
+    await _send_json(
+        websocket,
+        _client_event(
+            "action.resolved",
+            draft_id=draft_id,
+            kind=pending.kind if pending else None,
+            status="cancelled",
+        ),
+    )
+    if pending is None:
+        return
+    with contextlib.suppress(Exception):
+        await vendor.cancel_response()
+    with contextlib.suppress(Exception):
+        await vendor.inject_user_text_and_respond(_SCREEN_CANCELLED_PROMPT)
+
+
 async def _handle_function_call(
+    websocket: WebSocket,
     vendor: QwenAudioRealtimeClient,
     event: dict[str, Any],
     *,
@@ -395,6 +670,7 @@ async def _handle_function_call(
     user_id: UUID,
     conversation_id: UUID | None,
     seq: _SeqCounter,
+    pending_store: PendingActionStore,
 ) -> None:
     call_id = event.get("call_id")
     name = event.get("name")
@@ -430,6 +706,17 @@ async def _handle_function_call(
                 arguments=arguments,
             )
 
+    # need_confirmation → 推大卡；语音确认成功 → 收卡（防双通道重复）
+    if name in CONFIRMABLE_KINDS:
+        output = await _sync_pending_after_tool(
+            websocket,
+            name=name,
+            arguments=arguments,
+            output=output,
+            user_id=user_id,
+            pending_store=pending_store,
+        )
+
     # 记忆静默写入：不进通话历史，父母只在「可可记得的我」里看
     if conversation_id is not None and name != "save_memory":
         await append_tool_call(
@@ -439,7 +726,63 @@ async def _handle_function_call(
             arguments=arguments,
             result_output=output,
         )
-    await vendor.submit_tool_result(call_id=call_id, output=output)
+    # 只写回结果；response.create 须等本轮 response.done，否则百炼会报 in progress
+    await vendor.send_tool_output(call_id=call_id, output=output)
+
+
+async def _sync_pending_after_tool(
+    websocket: WebSocket,
+    *,
+    name: str,
+    arguments: dict[str, Any],
+    output: str,
+    user_id: UUID,
+    pending_store: PendingActionStore,
+) -> str:
+    try:
+        result = json.loads(output)
+    except json.JSONDecodeError:
+        return output
+    if not isinstance(result, dict):
+        return output
+
+    status = result.get("status")
+    if status == "need_confirmation":
+        share_to = "家人"
+        if name == "share_to_child":
+            share_to = await _resolve_child_display_name(user_id)
+        display = _build_pending_display(name, arguments, result, share_to=share_to)
+        # 存确认时用的参数快照（不含 user_confirmed，确认时再置 true）
+        snap = {k: v for k, v in arguments.items() if k != "user_confirmed"}
+        action = PendingVoiceAction(
+            draft_id=new_draft_id(),
+            kind=name,
+            arguments=snap,
+            display=display,
+        )
+        await pending_store.replace(action)
+        await _send_json(
+            websocket,
+            _client_event("action.pending", **action.to_client_payload()),
+        )
+        return _enrich_need_confirmation_output(output)
+
+    if status == "error":
+        return output
+
+    # 落库成功（含语音说「好」后的 true 调用）：收起大卡
+    if result.get("id") is not None:
+        cleared = await pending_store.clear_if_kind(name)
+        await _send_json(
+            websocket,
+            _client_event(
+                "action.resolved",
+                draft_id=cleared.draft_id if cleared else None,
+                kind=name,
+                status="confirmed",
+            ),
+        )
+    return output
 
 
 async def _forward_vendor_events(
@@ -450,9 +793,12 @@ async def _forward_vendor_events(
     user_id: UUID,
     conversation_id: UUID | None,
     seq: _SeqCounter,
+    pending_store: PendingActionStore,
 ) -> None:
     assistant_text = ""
     final_sent = False
+    # 工具已写回、等待本轮 response.done 后再 create 二轮（避免 in-progress 冲突）
+    needs_tool_followup = False
     try:
         async for event in vendor.events():
             logger.debug(
@@ -464,23 +810,26 @@ async def _forward_vendor_events(
                 assistant_text = ""
                 final_sent = False
 
-            # Function Calling：执行业务后写回，不直接透传给客户端
+            # Function Calling：执行业务；need_confirmation 时另推 action.pending
             if event_type == "response.function_call_arguments.done":
                 try:
                     await _handle_function_call(
+                        websocket,
                         vendor,
                         event,
                         settings=settings,
                         user_id=user_id,
                         conversation_id=conversation_id,
                         seq=seq,
+                        pending_store=pending_store,
                     )
+                    needs_tool_followup = True
                 except Exception:
                     logger.exception("realtime_function_call_failed")
                     call_id = event.get("call_id")
                     if isinstance(call_id, str):
                         with contextlib.suppress(Exception):
-                            await vendor.submit_tool_result(
+                            await vendor.send_tool_output(
                                 call_id=call_id,
                                 output=json.dumps(
                                     {
@@ -490,7 +839,41 @@ async def _forward_vendor_events(
                                     ensure_ascii=False,
                                 ),
                             )
+                            needs_tool_followup = True
                 continue
+
+            # 本轮结束：若刚写回过工具结果，再触发基于结果的口语回复
+            if event_type == "response.done" and needs_tool_followup:
+                needs_tool_followup = False
+                mapped_done, assistant_text = map_vendor_event(event, assistant_text)
+                if mapped_done is not None and mapped_done.get("type") == "assistant.final":
+                    if not final_sent:
+                        final_sent = True
+                        text = str(mapped_done.get("text") or "").strip()
+                        if conversation_id is not None and text:
+                            await append_utterance(
+                                conversation_id,
+                                seq=seq.next(),
+                                kind=ConversationItemKind.ASSISTANT.value,
+                                text=text,
+                            )
+                        await _send_json(websocket, mapped_done)
+                    assistant_text = ""
+                with contextlib.suppress(Exception):
+                    await vendor.create_response()
+                continue
+
+            if event_type == "error":
+                code, err_type, vendor_msg = _vendor_error_fields(event)
+                logger.warning(
+                    "realtime_vendor_error code=%s type=%s message=%s",
+                    code,
+                    err_type,
+                    vendor_msg[:300],
+                )
+                # 状态类错误保持通话；致命错误才下发给父母端错误卡
+                if is_recoverable_vendor_error(event):
+                    continue
 
             mapped, assistant_text = map_vendor_event(event, assistant_text)
             if mapped is None:

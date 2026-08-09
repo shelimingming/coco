@@ -26,8 +26,11 @@ class _ChildComposeMessagePageState
 
   final _customController = TextEditingController();
   MessagePreview? _preview;
-  bool _busy = false;
+  // 区分预览/发送，让对应按钮显示语义 loading
+  _ComposeBusy? _busy;
   String? _error;
+
+  bool get _isBusy => _busy != null;
 
   @override
   void dispose() {
@@ -42,7 +45,7 @@ class _ChildComposeMessagePageState
       return;
     }
     setState(() {
-      _busy = true;
+      _busy = _ComposeBusy.preview;
       _error = null;
       _preview = null;
     });
@@ -51,12 +54,12 @@ class _ChildComposeMessagePageState
       if (!mounted) return;
       setState(() {
         _preview = preview;
-        _busy = false;
+        _busy = null;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _busy = false;
+        _busy = null;
         _error = error is ApiException
             ? error.message
             : '预览失败。您可以再试一次，消息没有发出去。';
@@ -68,7 +71,7 @@ class _ChildComposeMessagePageState
     final preview = _preview;
     if (preview == null) return;
     setState(() {
-      _busy = true;
+      _busy = _ComposeBusy.send;
       _error = null;
     });
     try {
@@ -88,7 +91,7 @@ class _ChildComposeMessagePageState
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _busy = false;
+        _busy = null;
         _error = error is ApiException
             ? error.message
             : '发送失败。您可以再试一次，消息没有发出去。';
@@ -120,7 +123,7 @@ class _ChildComposeMessagePageState
                   (text) => ActionChip(
                     label: Text(text),
                     backgroundColor: CocoColors.childPrimarySoft,
-                    onPressed: _busy ? null : () => _previewText(text),
+                    onPressed: _isBusy ? null : () => _previewText(text),
                   ),
                 )
                 .toList(),
@@ -134,7 +137,9 @@ class _ChildComposeMessagePageState
           const SizedBox(height: CocoSpace.s3),
           CocoSecondaryButton(
             label: '预览这句话',
-            onPressed: _busy
+            loading: _busy == _ComposeBusy.preview,
+            loadingLabel: '正在预览…',
+            onPressed: _isBusy
                 ? null
                 : () => _previewText(_customController.text),
           ),
@@ -168,9 +173,9 @@ class _ChildComposeMessagePageState
             const SizedBox(height: CocoSpace.s4),
             CocoPrimaryButton(
               label: '确认发送',
-              loading: _busy,
+              loading: _busy == _ComposeBusy.send,
               loadingLabel: '正在发送…',
-              onPressed: _send,
+              onPressed: _isBusy ? null : _send,
             ),
           ],
           if (_error != null) ...[
@@ -183,9 +188,14 @@ class _ChildComposeMessagePageState
             ),
           ],
           const SizedBox(height: CocoSpace.s6),
-          CocoSecondaryButton(label: '返回', onPressed: () => context.pop()),
+          CocoSecondaryButton(
+            label: '返回',
+            onPressed: _isBusy ? null : () => context.pop(),
+          ),
         ],
       ),
     );
   }
 }
+
+enum _ComposeBusy { preview, send }
