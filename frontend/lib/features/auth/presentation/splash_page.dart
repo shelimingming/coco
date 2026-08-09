@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/tokens.dart';
 
+/// 启动页品牌图标（与桌面 AppIcon 同源）。
+const String kAppIconAsset = 'assets/images/coco_app_icon.png';
+
 class SplashPage extends StatelessWidget {
   const SplashPage({super.key});
 
@@ -13,19 +16,31 @@ class SplashPage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Semantics(
+              label: '可可',
+              image: true,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(CocoRadius.xl),
+                child: Image.asset(
+                  kAppIconAsset,
+                  width: 120,
+                  height: 120,
+                  fit: BoxFit.cover,
+                  excludeFromSemantics: true,
+                ),
+              ),
+            ),
+            const SizedBox(height: CocoSpace.s6),
             Text(
               '可可',
               style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                    color: CocoColors.parentPrimary,
-                  ),
+                color: CocoColors.parentPrimary,
+              ),
             ),
             const SizedBox(height: CocoSpace.s6),
             const CircularProgressIndicator(),
             const SizedBox(height: CocoSpace.s4),
-            Text(
-              '正在准备…',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
+            Text('正在准备…', style: Theme.of(context).textTheme.bodyLarge),
           ],
         ),
       ),

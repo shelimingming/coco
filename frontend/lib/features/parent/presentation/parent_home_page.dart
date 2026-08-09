@@ -6,7 +6,10 @@ import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../../auth/application/auth_controller.dart';
 
-/// 父母端占位首页：问候 + 大号「和我说话」按钮。
+/// 默认陪伴形象：与 App 图标同源的小狗图。
+const String kCompanionDogAsset = 'assets/images/coco_companion_dog.png';
+
+/// 父母端占位首页：问候 + 小狗形象 + 大号「和我说话」按钮。
 class ParentHomePage extends ConsumerWidget {
   const ParentHomePage({super.key});
 
@@ -35,19 +38,20 @@ class ParentHomePage extends ConsumerWidget {
             ),
           ),
           const Spacer(),
+          // 老人端首页主视觉：一屏一事，突出陪伴形象
           Center(
-            child: Container(
-              width: 160,
-              height: 160,
-              decoration: BoxDecoration(
-                color: CocoColors.parentPrimarySoft,
-                borderRadius: BorderRadius.circular(CocoRadius.pill),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                '可可',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  color: CocoColors.parentPrimary,
+            child: Semantics(
+              label: '可可，陪伴小狗',
+              image: true,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(CocoRadius.xl),
+                child: Image.asset(
+                  kCompanionDogAsset,
+                  width: 280,
+                  height: 280,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                  excludeFromSemantics: true,
                 ),
               ),
             ),
