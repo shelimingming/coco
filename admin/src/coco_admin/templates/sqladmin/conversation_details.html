@@ -1,0 +1,59 @@
+{% extends "sqladmin/details.html" %}
+{% block content %}
+{{ super() }}
+{% if aggregate and aggregate.conversation %}
+<div class="col-12 mt-3">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">会话回放（只读）</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-secondary mb-3">
+        用户：{{ aggregate.user.display_name if aggregate.user else "未知" }}
+        · 条目 {{ aggregate.items|length }} 条
+        · 不含原始音频
+      </p>
+      <div class="table-responsive">
+        <table class="table table-sm table-vcenter">
+          <thead>
+            <tr>
+              <th style="width: 4rem;">序号</th>
+              <th style="width: 6rem;">类型</th>
+              <th>内容</th>
+              <th style="width: 10rem;">工具</th>
+              <th style="width: 12rem;">时间</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for item in aggregate.items %}
+            <tr>
+              <td>{{ item.seq }}</td>
+              <td>{{ item.kind }}</td>
+              <td>
+                {% if item.kind == "TOOL" %}
+                  {{ item.display_summary or "（工具调用）" }}
+                  {% if item.arguments_json or item.result_json %}
+                    <details class="mt-1">
+                      <summary class="text-secondary">参数 / 结果 JSON</summary>
+                      <pre class="small mb-0">{{ item.arguments_json }}</pre>
+                      <pre class="small mb-0">{{ item.result_json }}</pre>
+                    </details>
+                  {% endif %}
+                {% else %}
+                  {{ item.text or "（无文本）" }}
+                {% endif %}
+              </td>
+              <td>{{ item.tool_name or "—" }}</td>
+              <td>{{ item.created_at }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="text-secondary">本次通话没有记下条目</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

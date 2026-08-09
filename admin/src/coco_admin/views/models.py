@@ -1,6 +1,6 @@
-"""11 张业务表的 SQLAdmin ModelView：默认只读，少量运营动作。
+"""业务表的 SQLAdmin ModelView：默认只读，少量运营动作。
 
-列表不展示 UUID 主键；用户/家庭/提醒外键展示可读名称，完整 id 仅在详情可见。
+列表不展示 UUID 主键；用户/家庭/提醒/会话外键展示可读名称，完整 id 仅在详情可见。
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from uuid import UUID
 
 from coco.models.auth import AuthSession, PhoneCode
 from coco.models.care import CareShare, FamilyMessage
+from coco.models.conversation import Conversation, ConversationItem
 from coco.models.family import Family, FamilyInvite
 from coco.models.memory import Memory
 from coco.models.notification import Notification
@@ -23,8 +24,14 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 from coco_admin.database import get_session_factory
-from coco_admin.views.aggregates import load_family_aggregate, load_user_aggregate
+from coco_admin.views.aggregates import (
+    load_conversation_aggregate,
+    load_family_aggregate,
+    load_user_aggregate,
+)
 from coco_admin.views.labels import (
+    format_conversation_label,
+    format_conversation_label_detail,
     format_family_label,
     format_family_label_detail,
     format_reminder_title,
@@ -67,6 +74,7 @@ class ReadOnlyModelView(ModelView):
     label_user_attrs: ClassVar[tuple[str, ...]] = ()
     label_family_attrs: ClassVar[tuple[str, ...]] = ()
     label_reminder_attrs: ClassVar[tuple[str, ...]] = ()
+    label_conversation_attrs: ClassVar[tuple[str, ...]] = ()
 
     async def list(self, request: Request) -> Pagination:
         pagination = await super().list(request)
@@ -76,6 +84,7 @@ class ReadOnlyModelView(ModelView):
             user_attrs=self.label_user_attrs,
             family_attrs=self.label_family_attrs,
             reminder_attrs=self.label_reminder_attrs,
+            conversation_attrs=self.label_conversation_attrs,
         )
         return pagination
 
@@ -88,6 +97,7 @@ class ReadOnlyModelView(ModelView):
                 user_attrs=self.label_user_attrs,
                 family_attrs=self.label_family_attrs,
                 reminder_attrs=self.label_reminder_attrs,
+                conversation_attrs=self.label_conversation_attrs,
             )
         return model
 
@@ -336,6 +346,118 @@ class ReminderOccurrenceAdmin(ReadOnlyModelView, model=ReminderOccurrence):
     ]
     column_sortable_list = [ReminderOccurrence.due_at, ReminderOccurrence.state]
     column_default_sort = [(ReminderOccurrence.due_at, True)]
+
+
+class ConversationAdmin(ReadOnlyModelView, model=Conversation):
+    name = "语音会话"
+    name_plural = "语音会话"
+    icon = "fa-solid fa-headset"
+    category = "业务"
+    label_user_attrs = ("user_id",)
+    column_list = [
+        Conversation.user_id,
+        Conversation.status,
+        Conversation.channel,
+        Conversation.started_at,
+        Conversation.ended_at,
+        Conversation.created_at,
+    ]
+    column_labels = {
+        Conversation.user_id: "用户",
+        Conversation.status: "状态",
+        Conversation.channel: "通道",
+        Conversation.started_at: "开始时间",
+        Conversation.ended_at: "结束时间",
+        Conversation.created_at: "创建时间",
+        Conversation.id: "会话 ID",
+    }
+    column_formatters = {Conversation.user_id: format_user_name}
+    column_formatters_detail = {Conversation.user_id: format_user_name_detail}
+    column_filters = [
+        StaticValuesFilter(
+            Conversation.status,
+            values=[
+                ("ACTIVE", "进行中"),
+                ("CLOSED", "已结束"),
+                ("ERROR", "异常结束"),
+            ],
+        ),
+        StaticValuesFilter(
+            Conversation.channel,
+            values=[("VOICE_REALTIME", "实时语音")],
+        ),
+    ]
+    column_sortable_list = [
+        Conversation.started_at,
+        Conversation.ended_at,
+        Conversation.status,
+        Conversation.created_at,
+    ]
+    column_default_sort = [(Conversation.started_at, True)]
+    details_template = "sqladmin/conversation_details.html"
+
+    async def details_context(self, request: Request) -> dict:
+        pk = request.path_params.get("pk")
+        if not pk:
+            return {}
+        factory = get_session_factory()
+        async with factory() as session:
+            data = await load_conversation_aggregate(session, UUID(str(pk)))
+        return {"aggregate": data}
+
+
+class ConversationItemAdmin(ReadOnlyModelView, model=ConversationItem):
+    name = "会话条目"
+    name_plural = "会话条目"
+    icon = "fa-solid fa-list-ul"
+    category = "业务"
+    label_conversation_attrs = ("conversation_id",)
+    column_list = [
+        ConversationItem.conversation_id,
+        ConversationItem.seq,
+        ConversationItem.kind,
+        ConversationItem.text,
+        ConversationItem.tool_name,
+        ConversationItem.display_summary,
+        ConversationItem.created_at,
+    ]
+    column_labels = {
+        ConversationItem.conversation_id: "会话",
+        ConversationItem.seq: "序号",
+        ConversationItem.kind: "类型",
+        ConversationItem.text: "文本",
+        ConversationItem.tool_name: "工具",
+        ConversationItem.display_summary: "白话摘要",
+        ConversationItem.arguments_json: "工具参数",
+        ConversationItem.result_json: "工具结果",
+        ConversationItem.created_at: "创建时间",
+        ConversationItem.id: "条目 ID",
+    }
+    column_formatters = {ConversationItem.conversation_id: format_conversation_label}
+    column_formatters_detail = {
+        ConversationItem.conversation_id: format_conversation_label_detail,
+    }
+    column_searchable_list = [
+        ConversationItem.text,
+        ConversationItem.display_summary,
+        ConversationItem.tool_name,
+    ]
+    column_filters = [
+        StaticValuesFilter(
+            ConversationItem.kind,
+            values=[
+                ("USER", "用户"),
+                ("ASSISTANT", "可可"),
+                ("TOOL", "工具"),
+            ],
+        ),
+    ]
+    column_sortable_list = [
+        ConversationItem.created_at,
+        ConversationItem.seq,
+        ConversationItem.kind,
+    ]
+    column_default_sort = [(ConversationItem.created_at, True)]
 
 
 class MemoryAdmin(ReadOnlyModelView, model=Memory):
@@ -593,6 +715,8 @@ ALL_MODEL_VIEWS: list[type[ModelView]] = [
     FamilyInviteAdmin,
     ReminderAdmin,
     ReminderOccurrenceAdmin,
+    ConversationAdmin,
+    ConversationItemAdmin,
     MemoryAdmin,
     CareShareAdmin,
     FamilyMessageAdmin,

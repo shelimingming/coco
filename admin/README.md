@@ -22,5 +22,5 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 
 - ORM 复用 `backend` 的 `coco` 包，不复制表定义。
 - 业务数据默认只读；支持禁用/启用用户、吊销会话。
-- 语音对话未落库，后台不提供聊天回放。
+- 语音会话与会话条目可只读查看（转写 + 工具调用；无原始音频）。
 - 更完整说明见 [`doc/admin.md`](../doc/admin.md)。

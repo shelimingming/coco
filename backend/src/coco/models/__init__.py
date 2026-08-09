@@ -3,6 +3,7 @@
 from coco.models.auth import AuthSession, PhoneCode
 from coco.models.base import Base
 from coco.models.care import CareShare, FamilyMessage
+from coco.models.conversation import Conversation, ConversationItem
 from coco.models.family import Family, FamilyInvite
 from coco.models.memory import Memory
 from coco.models.notification import Notification
@@ -13,6 +14,8 @@ __all__ = [
     "AuthSession",
     "Base",
     "CareShare",
+    "Conversation",
+    "ConversationItem",
     "Family",
     "FamilyInvite",
     "FamilyMessage",

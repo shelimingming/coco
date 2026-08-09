@@ -63,6 +63,25 @@
         </table>
       </div>
 
+      <h4>语音会话（最近 {{ aggregate.conversations|length }}）</h4>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>开始</th><th>结束</th><th>状态</th><th>通道</th></tr></thead>
+          <tbody>
+          {% for c in aggregate.conversations %}
+            <tr>
+              <td>{{ c.started_at }}</td>
+              <td>{{ c.ended_at or "进行中" }}</td>
+              <td>{{ c.status }}</td>
+              <td>{{ c.channel }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
       <h4>关怀摘要（最近 {{ aggregate.care_shares|length }}）</h4>
       <div class="table-responsive mb-3">
         <table class="table table-sm">

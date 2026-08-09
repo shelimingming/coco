@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from coco.models.care import CareShare, FamilyMessage
+from coco.models.conversation import Conversation
 from coco.models.family import Family
 from coco.models.memory import Memory
 from coco.models.notification import Notification
@@ -130,6 +131,20 @@ async def collect_stats(session: AsyncSession, *, now: datetime | None = None) -
         select(func.count()).select_from(Notification).where(Notification.read_at.is_(None)),
     )
 
+    conversations_total = await _count(session, select(func.count()).select_from(Conversation))
+    conversations_today = await _count(
+        session,
+        select(func.count())
+        .select_from(Conversation)
+        .where(Conversation.started_at >= today_start),
+    )
+    conversations_by_status: dict[str, int] = {}
+    for status in ("ACTIVE", "CLOSED", "ERROR"):
+        conversations_by_status[status] = await _count(
+            session,
+            select(func.count()).select_from(Conversation).where(Conversation.status == status),
+        )
+
     trend_days = [today - timedelta(days=i) for i in range(6, -1, -1)]
     trend = await _daily_trend(session, trend_days)
 
@@ -178,12 +193,17 @@ async def collect_stats(session: AsyncSession, *, now: datetime | None = None) -
         "notifications": {
             "unread": notifications_unread,
         },
+        "conversations": {
+            "total": conversations_total,
+            "today": conversations_today,
+            "by_status": conversations_by_status,
+        },
         "trend_7d": trend,
     }
 
 
 async def _daily_trend(session: AsyncSession, days: list[date]) -> list[dict[str, Any]]:
-    """按日统计新用户 / 新提醒 / 新关怀 / 新消息。"""
+    """按日统计新用户 / 新提醒 / 新关怀 / 新消息 / 语音会话。"""
     if not days:
         return []
     start = _utc_day_start(days[0])
@@ -203,6 +223,7 @@ async def _daily_trend(session: AsyncSession, days: list[date]) -> list[dict[str
     reminders = await _by_day(Reminder, Reminder.created_at)
     care = await _by_day(CareShare, CareShare.created_at)
     messages = await _by_day(FamilyMessage, FamilyMessage.created_at)
+    conversations = await _by_day(Conversation, Conversation.started_at)
 
     return [
         {
@@ -211,6 +232,7 @@ async def _daily_trend(session: AsyncSession, days: list[date]) -> list[dict[str
             "reminders": reminders.get(day, 0),
             "care_shares": care.get(day, 0),
             "messages": messages.get(day, 0),
+            "conversations": conversations.get(day, 0),
         }
         for day in days
     ]

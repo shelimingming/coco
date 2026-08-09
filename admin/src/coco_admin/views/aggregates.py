@@ -7,6 +7,7 @@ from typing import Any
 
 from coco.models.auth import AuthSession
 from coco.models.care import CareShare, FamilyMessage
+from coco.models.conversation import Conversation, ConversationItem
 from coco.models.family import Family, FamilyInvite
 from coco.models.memory import Memory
 from coco.models.notification import Notification
@@ -81,6 +82,14 @@ async def load_user_aggregate(session: AsyncSession, user_id: uuid.UUID) -> dict
             .limit(20)
         )
     ).all()
+    conversations = (
+        await session.scalars(
+            select(Conversation)
+            .where(Conversation.user_id == user_id)
+            .order_by(Conversation.started_at.desc())
+            .limit(30)
+        )
+    ).all()
 
     # 聚合表用展示名，避免详情里再铺一长串 UUID
     related_user_ids = {user_id}
@@ -95,9 +104,7 @@ async def load_user_aggregate(session: AsyncSession, user_id: uuid.UUID) -> dict
         related_user_ids.add(msg.from_user_id)
         related_user_ids.add(msg.to_user_id)
 
-    related_users = (
-        await session.scalars(select(User).where(User.id.in_(related_user_ids)))
-    ).all()
+    related_users = (await session.scalars(select(User).where(User.id.in_(related_user_ids)))).all()
     users_by_id = {u.id: u for u in related_users}
 
     return {
@@ -110,6 +117,30 @@ async def load_user_aggregate(session: AsyncSession, user_id: uuid.UUID) -> dict
         "messages": messages,
         "notifications": notifications,
         "sessions": sessions,
+        "conversations": conversations,
+    }
+
+
+async def load_conversation_aggregate(
+    session: AsyncSession, conversation_id: uuid.UUID
+) -> dict[str, Any]:
+    """会话详情：用户名 + 按序号排列的转写/工具条目。"""
+    conversation = await session.get(Conversation, conversation_id)
+    if conversation is None:
+        return {"conversation": None}
+
+    user = await session.get(User, conversation.user_id)
+    items = (
+        await session.scalars(
+            select(ConversationItem)
+            .where(ConversationItem.conversation_id == conversation_id)
+            .order_by(ConversationItem.seq.asc())
+        )
+    ).all()
+    return {
+        "conversation": conversation,
+        "user": user,
+        "items": items,
     }
 
 

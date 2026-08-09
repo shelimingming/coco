@@ -11,6 +11,8 @@ import '../features/child/presentation/child_shell.dart';
 import '../features/family/presentation/child_family_page.dart';
 import '../features/family/presentation/child_join_page.dart';
 import '../features/family/presentation/parent_family_page.dart';
+import '../features/history/presentation/history_detail_page.dart';
+import '../features/history/presentation/history_page.dart';
 import '../features/memories/presentation/memories_page.dart';
 import '../features/messages/presentation/child_compose_message_page.dart';
 import '../features/messages/presentation/child_messages_page.dart';
@@ -92,6 +94,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'memories',
             builder: (context, state) => const MemoriesPage(),
+          ),
+          GoRoute(
+            path: 'history',
+            builder: (context, state) => const HistoryPage(),
+            routes: [
+              GoRoute(
+                path: ':id',
+                builder: (context, state) => HistoryDetailPage(
+                  conversationId: state.pathParameters['id']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),

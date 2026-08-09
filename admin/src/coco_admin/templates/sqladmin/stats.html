@@ -98,6 +98,23 @@
         </div>
       </div>
 
+      <div class="row mb-3">
+        <div class="col-lg-6">
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">语音会话</h3></div>
+            <div class="card-body">
+              <div class="h1 mb-2">{{ stats.conversations.total }}</div>
+              <ul class="list-unstyled mb-0">
+                <li>今日开始：{{ stats.conversations.today }}</li>
+                <li>进行中：{{ stats.conversations.by_status.ACTIVE }}</li>
+                <li>已结束：{{ stats.conversations.by_status.CLOSED }}</li>
+                <li>异常结束：{{ stats.conversations.by_status.ERROR }}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header"><h3 class="card-title">近 7 日趋势</h3></div>
         <div class="card-body">
@@ -120,6 +137,7 @@
         { label: "新提醒", data: trend.map((d) => d.reminders), tension: 0.25 },
         { label: "新关怀", data: trend.map((d) => d.care_shares), tension: 0.25 },
         { label: "新消息", data: trend.map((d) => d.messages), tension: 0.25 },
+        { label: "语音会话", data: trend.map((d) => d.conversations || 0), tension: 0.25 },
       ],
     },
     options: {

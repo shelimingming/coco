@@ -55,6 +55,16 @@ class ParentFunctionsPage extends StatelessWidget {
             onTap: () => context.push('/parent/memories'),
           ),
           _FunctionTile(
+            label: '历史记录',
+            // 暖色中性底：介于记忆与设置之间，仍只用父母端 token
+            background: Color.alphaBlend(
+              CocoColors.parentPrimary.withValues(alpha: 0.10),
+              CocoColors.neutral100,
+            ),
+            icon: Icons.history_rounded,
+            onTap: () => context.push('/parent/history'),
+          ),
+          _FunctionTile(
             label: '我的',
             background: Color.alphaBlend(
               CocoColors.parentSecondary.withValues(alpha: 0.16),

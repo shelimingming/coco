@@ -2,6 +2,7 @@
 
 密钥只留在服务端；下行事件脱敏后不含供应商原始音频原文日志。
 写操作经 Function Calling 进入业务 service，user_confirmed 由代码兜底。
+通话过程落库最终转写与工具调用（父母私有，失败不打断通话）。
 """
 
 from __future__ import annotations
@@ -25,7 +26,14 @@ from coco.config import Settings
 from coco.database import get_session_factory
 from coco.errors import AppError
 from coco.models.auth import AuthSession
+from coco.models.conversation import ConversationItemKind, ConversationStatus
 from coco.models.user import User, UserRole, UserStatus
+from coco.modules.conversations.service import (
+    append_tool_call,
+    append_utterance,
+    end_conversation,
+    start_conversation,
+)
 from coco.modules.voice.prompts import COCO_REALTIME_COMPANION_PROMPT
 from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
 from coco.providers.qwen_realtime import (
@@ -40,6 +48,17 @@ from coco.security import decode_access_token
 logger = logging.getLogger(__name__)
 
 RealtimeClientFactory = Callable[..., Awaitable[QwenAudioRealtimeClient] | QwenAudioRealtimeClient]
+
+
+class _SeqCounter:
+    """单次通话内单调序号，避免多条短 session 竞态。"""
+
+    def __init__(self) -> None:
+        self._value = 0
+
+    def next(self) -> int:
+        self._value += 1
+        return self._value
 
 
 def _client_event(type_: str, **payload: Any) -> dict[str, Any]:
@@ -197,9 +216,11 @@ async def run_realtime_bridge(
 ) -> None:
     """桥接供应商 Realtime，直到任一侧关闭。
 
-    调用前须已 accept，并完成父母端鉴权；长连接期间用短生命周期 session 执行工具。
+    调用前须已 accept，并完成父母端鉴权；长连接期间用短生命周期 session 执行工具与落库。
     """
     vendor: QwenAudioRealtimeClient | None = None
+    conversation_id: UUID | None = None
+    end_status = ConversationStatus.CLOSED.value
     try:
         if not settings.realtime_available and client_factory is None:
             await _send_json(
@@ -213,6 +234,9 @@ async def run_realtime_bridge(
             await websocket.close(code=1013)
             return
 
+        conversation_id = await start_conversation(user_id)
+        seq = _SeqCounter()
+
         factory = client_factory or create_default_realtime_client
         maybe_client = factory(settings)
         active_vendor = cast(
@@ -223,7 +247,14 @@ async def run_realtime_bridge(
         await _send_json(websocket, _client_event("session.ready"))
 
         recv_task = asyncio.create_task(
-            _forward_vendor_events(websocket, active_vendor, settings=settings, user_id=user_id),
+            _forward_vendor_events(
+                websocket,
+                active_vendor,
+                settings=settings,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                seq=seq,
+            ),
             name="realtime-vendor-forward",
         )
         try:
@@ -241,6 +272,7 @@ async def run_realtime_bridge(
                     with contextlib.suppress(asyncio.CancelledError):
                         await recv_task
     except AppError as exc:
+        end_status = ConversationStatus.ERROR.value
         await _send_json(
             websocket,
             _client_event("error", code=exc.code, message=exc.message),
@@ -248,28 +280,32 @@ async def run_realtime_bridge(
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close(code=1008 if exc.status_code in {401, 403} else 1011)
     except RealtimeProviderError as exc:
+        end_status = ConversationStatus.ERROR.value
         logger.warning("realtime_vendor_failed code=%s", exc.code)
         await _send_json(
             websocket,
             _client_event(
                 "error",
                 code=exc.code,
-                message="刚才连不上语音服务。您可以稍后再试，刚才没有录下任何声音。",
+                message="刚才连不上语音服务。您可以稍后再试；若已说过话，可在历史记录里查看。",
             ),
         )
     except WebSocketDisconnect:
         pass
     except Exception:
+        end_status = ConversationStatus.ERROR.value
         logger.exception("realtime_bridge_unexpected")
         await _send_json(
             websocket,
             _client_event(
                 "error",
                 code="realtime.internal_error",
-                message="语音通话出了点问题。您可以稍后再试，刚才的内容没有额外保存。",
+                message="语音通话出了点问题。您可以稍后再试；已说过的内容会尽量保存在历史记录里。",
             ),
         )
     finally:
+        if conversation_id is not None:
+            await end_conversation(conversation_id, status=end_status)
         if vendor is not None:
             with contextlib.suppress(Exception):
                 await vendor.close()
@@ -324,6 +360,8 @@ async def _handle_function_call(
     *,
     settings: Settings,
     user_id: UUID,
+    conversation_id: UUID | None,
+    seq: _SeqCounter,
 ) -> None:
     call_id = event.get("call_id")
     name = event.get("name")
@@ -358,6 +396,15 @@ async def _handle_function_call(
                 name=name,
                 arguments=arguments,
             )
+
+    if conversation_id is not None:
+        await append_tool_call(
+            conversation_id,
+            seq=seq.next(),
+            tool_name=name,
+            arguments=arguments,
+            result_output=output,
+        )
     await vendor.submit_tool_result(call_id=call_id, output=output)
 
 
@@ -367,6 +414,8 @@ async def _forward_vendor_events(
     *,
     settings: Settings,
     user_id: UUID,
+    conversation_id: UUID | None,
+    seq: _SeqCounter,
 ) -> None:
     assistant_text = ""
     final_sent = False
@@ -384,7 +433,14 @@ async def _forward_vendor_events(
             # Function Calling：执行业务后写回，不直接透传给客户端
             if event_type == "response.function_call_arguments.done":
                 try:
-                    await _handle_function_call(vendor, event, settings=settings, user_id=user_id)
+                    await _handle_function_call(
+                        vendor,
+                        event,
+                        settings=settings,
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                        seq=seq,
+                    )
                 except Exception:
                     logger.exception("realtime_function_call_failed")
                     call_id = event.get("call_id")
@@ -409,7 +465,24 @@ async def _forward_vendor_events(
                 if final_sent:
                     continue
                 final_sent = True
+                text = str(mapped.get("text") or "").strip()
+                if conversation_id is not None and text:
+                    await append_utterance(
+                        conversation_id,
+                        seq=seq.next(),
+                        kind=ConversationItemKind.ASSISTANT.value,
+                        text=text,
+                    )
                 assistant_text = ""
+            elif mapped.get("type") == "user.final":
+                text = str(mapped.get("text") or "").strip()
+                if conversation_id is not None and text:
+                    await append_utterance(
+                        conversation_id,
+                        seq=seq.next(),
+                        kind=ConversationItemKind.USER.value,
+                        text=text,
+                    )
             await _send_json(websocket, mapped)
     except RealtimeProviderError as exc:
         await _send_json(
@@ -417,7 +490,7 @@ async def _forward_vendor_events(
             _client_event(
                 "error",
                 code=exc.code,
-                message="语音服务中断了。您可以重新点形象开始。刚才的内容没有额外保存。",
+                message="语音服务中断了。您可以重新点形象开始；已说过的内容会尽量保存在历史记录里。",
             ),
         )
     except WebSocketDisconnect:

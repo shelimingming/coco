@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from coco.models.conversation import Conversation
 from coco.models.family import Family
 from coco.models.reminder import Reminder
 from coco.models.user import User
@@ -21,6 +22,7 @@ class AdminLabelMaps:
     users: dict[UUID, str] = field(default_factory=dict)
     families: dict[UUID, str] = field(default_factory=dict)
     reminders: dict[UUID, str] = field(default_factory=dict)
+    conversations: dict[UUID, str] = field(default_factory=dict)
 
 
 def labels_from_request(request: Request | None) -> AdminLabelMaps:
@@ -47,19 +49,30 @@ async def warm_admin_labels(
     user_attrs: tuple[str, ...] = (),
     family_attrs: tuple[str, ...] = (),
     reminder_attrs: tuple[str, ...] = (),
+    conversation_attrs: tuple[str, ...] = (),
 ) -> AdminLabelMaps:
     """按当前页行预加载可读标签，供 column_formatters 同步读取。"""
     user_ids = _collect_uuids(rows, user_attrs)
     family_ids = _collect_uuids(rows, family_attrs)
     reminder_ids = _collect_uuids(rows, reminder_attrs)
+    conversation_ids = _collect_uuids(rows, conversation_attrs)
 
     maps = AdminLabelMaps()
-    if not user_ids and not family_ids and not reminder_ids:
+    if not user_ids and not family_ids and not reminder_ids and not conversation_ids:
         request.state.admin_labels = maps
         return maps
 
     factory = get_session_factory()
     async with factory() as session:
+        if conversation_ids:
+            conversations = (
+                await session.scalars(
+                    select(Conversation).where(Conversation.id.in_(conversation_ids))
+                )
+            ).all()
+            for conv in conversations:
+                user_ids.add(conv.user_id)
+
         if family_ids:
             families = (
                 await session.scalars(select(Family).where(Family.id.in_(family_ids)))
@@ -90,6 +103,17 @@ async def warm_admin_labels(
                 await session.scalars(select(Reminder).where(Reminder.id.in_(reminder_ids)))
             ).all()
             maps.reminders = {r.id: r.title for r in reminders}
+
+        if conversation_ids:
+            conversations = (
+                await session.scalars(
+                    select(Conversation).where(Conversation.id.in_(conversation_ids))
+                )
+            ).all()
+            for conv in conversations:
+                owner = maps.users.get(conv.user_id, "未知用户")
+                started = conv.started_at.strftime("%m-%d %H:%M") if conv.started_at else "?"
+                maps.conversations[conv.id] = f"{owner} · {started}"
 
     request.state.admin_labels = maps
     return maps
@@ -140,3 +164,20 @@ def format_reminder_title_detail(model: Any, attr: str, request: Request | None 
         return Markup("—")
     title = escape(format_reminder_title(model, attr, request))
     return Markup(f"{title}<br><code class='text-secondary'>{escape(str(rid))}</code>")
+
+
+def format_conversation_label(model: Any, attr: str, request: Request | None = None) -> str:
+    cid = getattr(model, attr, None)
+    if cid is None:
+        return "—"
+    return labels_from_request(request).conversations.get(cid) or "未知会话"
+
+
+def format_conversation_label_detail(
+    model: Any, attr: str, request: Request | None = None
+) -> Markup:
+    cid = getattr(model, attr, None)
+    if cid is None:
+        return Markup("—")
+    label = escape(format_conversation_label(model, attr, request))
+    return Markup(f"{label}<br><code class='text-secondary'>{escape(str(cid))}</code>")
