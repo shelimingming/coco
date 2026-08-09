@@ -6,183 +6,201 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
-import '../../../core/widgets/coco_text_field.dart';
-import '../data/messages_api.dart';
+import '../../care/application/care_providers.dart';
+import '../application/messages_providers.dart';
 import '../domain/models.dart';
 
-/// 子女报平安：快捷状态 + 自定义，预览确认后发送。
-class ChildMessagesPage extends ConsumerStatefulWidget {
+/// 子女端留言 Tab：已发报平安列表，主入口进入撰写页。
+class ChildMessagesPage extends ConsumerWidget {
   const ChildMessagesPage({super.key});
 
   @override
-  ConsumerState<ChildMessagesPage> createState() => _ChildMessagesPageState();
-}
-
-class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
-  static const _presets = [
-    '吃过饭了',
-    '正在忙，一切都好',
-    '已经到家',
-    '准备休息',
-  ];
-
-  final _customController = TextEditingController();
-  MessagePreview? _preview;
-  bool _busy = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _customController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _previewText(String text) async {
-    final cleaned = text.trim();
-    if (cleaned.isEmpty) {
-      setState(() => _error = '请先选择或输入要发送的内容。');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-      _preview = null;
-    });
-    try {
-      final preview = await ref.read(messagesApiProvider).preview(cleaned);
-      if (!mounted) return;
-      setState(() {
-        _preview = preview;
-        _busy = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = error is ApiException
-            ? error.message
-            : '预览失败。您可以再试一次，消息没有发出去。';
-      });
-    }
-  }
-
-  Future<void> _send() async {
-    final preview = _preview;
-    if (preview == null) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await ref.read(messagesApiProvider).send(
-            originalText: preview.originalText,
-            deliveredText: preview.deliveredText,
-          );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已发送给父母。')),
-      );
-      context.pop();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = error is ApiException
-            ? error.message
-            : '发送失败。您可以再试一次，消息没有发出去。';
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final preview = _preview;
+    final messagesAsync = ref.watch(familyMessagesProvider);
 
     return CocoScaffold(
-      title: '报个平安',
-      body: ListView(
-        children: [
-          Text(
-            '选一句快捷状态，或自己写一句。发送前会先让您预览。',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: CocoColors.neutral700,
-            ),
-          ),
-          const SizedBox(height: CocoSpace.s5),
-          Wrap(
-            spacing: CocoSpace.s3,
-            runSpacing: CocoSpace.s3,
-            children: _presets
-                .map(
-                  (text) => ActionChip(
-                    label: Text(text),
-                    backgroundColor: CocoColors.childPrimarySoft,
-                    onPressed: _busy ? null : () => _previewText(text),
+      title: '留言',
+      body: messagesAsync.when(
+        loading: () => const _MessagesSkeleton(),
+        error: (error, _) {
+          if (isFamilyNotFound(error)) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '这里是你发给父母的报平安，不是聊天室。',
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: CocoColors.neutral700,
                   ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: CocoSpace.s6),
-          CocoTextField(
-            controller: _customController,
-            label: '自己写一句',
-            hint: '例如：刚开完会，晚上再联系',
-          ),
-          const SizedBox(height: CocoSpace.s3),
-          CocoSecondaryButton(
-            label: '预览这句话',
-            onPressed: _busy
-                ? null
-                : () => _previewText(_customController.text),
-          ),
-          if (preview != null) ...[
-            const SizedBox(height: CocoSpace.s6),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(CocoSpace.s5),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+                const SizedBox(height: CocoSpace.s4),
+                Text('请先加入家庭，才能给父母报平安。', style: theme.textTheme.bodyLarge),
+                const Spacer(),
+                CocoPrimaryButton(
+                  label: '去加入家庭',
+                  onPressed: () => context.push('/child/join'),
+                ),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                error is ApiException
+                    ? error.message
+                    : '留言加载失败。您可以再试一次，数据没有丢失。',
+                style: theme.textTheme.bodyLarge,
+              ),
+              const Spacer(),
+              CocoPrimaryButton(
+                label: '再试一次',
+                onPressed: () => ref.invalidate(familyMessagesProvider),
+              ),
+            ],
+          );
+        },
+        data: (messages) => RefreshIndicator(
+          onRefresh: () async => ref.invalidate(familyMessagesProvider),
+          child: messages.isEmpty
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   children: [
-                    Text('发送预览', style: theme.textTheme.titleMedium),
-                    const SizedBox(height: CocoSpace.s3),
                     Text(
-                      preview.deliveredText,
-                      style: theme.textTheme.bodyLarge,
+                      '这里是你发给父母的报平安，不是聊天室。',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: CocoColors.neutral700,
+                      ),
                     ),
                     const SizedBox(height: CocoSpace.s2),
                     Text(
-                      preview.translated
-                          ? '以上由 AI 转译，便于父母理解。'
-                          : '当前为原文直发（未走 AI 转译）。',
+                      '报平安会转成父母好听懂的话，发送前可预览。',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: CocoColors.neutral700,
                       ),
                     ),
+                    const SizedBox(height: CocoSpace.s10),
+                    CocoPrimaryButton(
+                      label: '报个平安',
+                      onPressed: () => context.push('/child/messages/compose'),
+                    ),
+                  ],
+                )
+              : ListView(
+                  children: [
+                    Text(
+                      '这里是你发给父母的报平安，不是聊天室。',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: CocoColors.neutral700,
+                      ),
+                    ),
+                    const SizedBox(height: CocoSpace.s4),
+                    CocoPrimaryButton(
+                      label: '报个平安',
+                      onPressed: () => context.push('/child/messages/compose'),
+                    ),
+                    const SizedBox(height: CocoSpace.s5),
+                    ...messages.map(
+                      (message) => Padding(
+                        padding: const EdgeInsets.only(bottom: CocoSpace.s3),
+                        child: _MessageCard(message: message),
+                      ),
+                    ),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageCard extends StatelessWidget {
+  const _MessageCard({required this.message});
+
+  final FamilyMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final time = _formatTime(message.createdAt);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(CocoSpace.s5),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('你', style: theme.textTheme.titleSmall),
+                const Spacer(),
+                Text(
+                  time,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: CocoColors.neutral500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: CocoSpace.s2),
+            Text(message.deliveredText, style: theme.textTheme.bodyLarge),
+            if (message.originalText != message.deliveredText) ...[
+              const SizedBox(height: CocoSpace.s2),
+              Text(
+                '原文：${message.originalText}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: CocoColors.neutral700,
+                ),
               ),
-            ),
-            const SizedBox(height: CocoSpace.s4),
-            CocoPrimaryButton(
-              label: '确认发送',
-              loading: _busy,
-              loadingLabel: '正在发送…',
-              onPressed: _send,
-            ),
+            ],
           ],
-          if (_error != null) ...[
-            const SizedBox(height: CocoSpace.s4),
-            Text(
-              _error!,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: CocoColors.danger,
-              ),
-            ),
-          ],
-          const SizedBox(height: CocoSpace.s6),
-          CocoSecondaryButton(label: '返回', onPressed: () => context.pop()),
-        ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    final local = time.toLocal();
+    final mm = local.month.toString().padLeft(2, '0');
+    final dd = local.day.toString().padLeft(2, '0');
+    final hh = local.hour.toString().padLeft(2, '0');
+    final min = local.minute.toString().padLeft(2, '0');
+    return '$mm-$dd $hh:$min';
+  }
+}
+
+class _MessagesSkeleton extends StatelessWidget {
+  const _MessagesSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: const [
+        _SkeletonBox(height: 48),
+        SizedBox(height: CocoSpace.s4),
+        _SkeletonBox(height: 52),
+        SizedBox(height: CocoSpace.s5),
+        _SkeletonBox(height: 88),
+        SizedBox(height: CocoSpace.s3),
+        _SkeletonBox(height: 88),
+      ],
+    );
+  }
+}
+
+class _SkeletonBox extends StatelessWidget {
+  const _SkeletonBox({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: CocoColors.neutral100,
+        borderRadius: BorderRadius.circular(CocoRadius.md),
+        border: Border.all(color: CocoColors.childBorder),
       ),
     );
   }

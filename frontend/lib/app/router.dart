@@ -7,16 +7,23 @@ import '../features/auth/domain/models.dart';
 import '../features/auth/presentation/login_page.dart';
 import '../features/auth/presentation/splash_page.dart';
 import '../features/child/presentation/child_home_page.dart';
-import '../features/child/presentation/child_settings_page.dart';
+import '../features/child/presentation/child_shell.dart';
+import '../features/family/presentation/child_family_page.dart';
 import '../features/family/presentation/child_join_page.dart';
 import '../features/family/presentation/parent_family_page.dart';
 import '../features/memories/presentation/memories_page.dart';
+import '../features/messages/presentation/child_compose_message_page.dart';
 import '../features/messages/presentation/child_messages_page.dart';
 import '../features/parent/presentation/parent_functions_page.dart';
 import '../features/parent/presentation/parent_home_page.dart';
 import '../features/parent/presentation/parent_settings_page.dart';
 import '../features/reminders/presentation/new_reminder_page.dart';
 import '../features/reminders/presentation/reminders_page.dart';
+
+/// 根导航：全屏子页（加入家庭、报平安撰写）盖住底部三栏。
+final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(
+  debugLabel: 'root',
+);
 
 /// 路由只判断：是否 bootstrap、是否登录、角色是否匹配。
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -27,6 +34,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   ref.onDispose(refresh.dispose);
 
   return GoRouter(
+    navigatorKey: _rootNavigatorKey,
     initialLocation: '/splash',
     refreshListenable: refresh,
     redirect: (context, state) {
@@ -87,23 +95,57 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      GoRoute(
-        path: '/child',
-        builder: (context, state) => const ChildHomePage(),
-        routes: [
-          GoRoute(
-            path: 'settings',
-            builder: (context, state) => const ChildSettingsPage(),
+      // 子女端：底部三栏（近况 / 留言 / 家庭）
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return ChildShell(navigationShell: navigationShell);
+        },
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/child',
+                builder: (context, state) => const ChildHomePage(),
+                routes: [
+                  GoRoute(
+                    path: 'join',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const ChildJoinPage(),
+                  ),
+                ],
+              ),
+            ],
           ),
-          GoRoute(
-            path: 'join',
-            builder: (context, state) => const ChildJoinPage(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/child/messages',
+                builder: (context, state) => const ChildMessagesPage(),
+                routes: [
+                  GoRoute(
+                    path: 'compose',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) =>
+                        const ChildComposeMessagePage(),
+                  ),
+                ],
+              ),
+            ],
           ),
-          GoRoute(
-            path: 'messages',
-            builder: (context, state) => const ChildMessagesPage(),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/child/family',
+                builder: (context, state) => const ChildFamilyPage(),
+              ),
+            ],
           ),
         ],
+      ),
+      // 旧设置入口并入家庭 Tab
+      GoRoute(
+        path: '/child/settings',
+        redirect: (context, state) => '/child/family',
       ),
     ],
   );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
@@ -10,7 +11,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../care/application/care_providers.dart';
 import '../../care/domain/models.dart';
 
-/// 子女端今日状态：接真实 API，未绑定则引导加入家庭。
+/// 子女端近况：结论优先，回答「今天要不要管」。
 class ChildHomePage extends ConsumerWidget {
   const ChildHomePage({super.key});
 
@@ -21,26 +22,13 @@ class ChildHomePage extends ConsumerWidget {
     final todayAsync = ref.watch(childTodayProvider);
 
     return CocoScaffold(
-      title: '今日状态',
-      actions: [
-        IconButton(
-          tooltip: '报平安',
-          onPressed: () => context.push('/child/messages'),
-          icon: const Icon(Icons.favorite_outline),
-        ),
-        IconButton(
-          tooltip: '设置',
-          onPressed: () => context.push('/child/settings'),
-          icon: const Icon(Icons.settings_outlined),
-        ),
-      ],
+      title: '近况',
       body: todayAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const _TodaySkeleton(),
         error: (error, _) {
           if (isFamilyNotFound(error)) {
             return _JoinFamilyGuide(
               name: user?.displayName ?? '家人',
-              // 加入成功后若仍残留未绑定错误，下拉可重新拉取
               onRefresh: () => ref.refresh(childTodayProvider.future),
             );
           }
@@ -50,7 +38,7 @@ class ChildHomePage extends ConsumerWidget {
               Text(
                 error is ApiException
                     ? error.message
-                    : '今日状态加载失败。您可以再试一次，数据没有丢失。',
+                    : '近况加载失败。您可以再试一次，数据没有丢失。',
                 style: theme.textTheme.bodyLarge,
               ),
               const Spacer(),
@@ -69,52 +57,67 @@ class ChildHomePage extends ConsumerWidget {
                 '你好，${user?.displayName ?? '家人'}',
                 style: theme.textTheme.titleLarge,
               ),
-              const SizedBox(height: CocoSpace.s2),
-              Text(
-                '打开 App，先看父母今天是否安稳。',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: CocoColors.neutral700,
-                ),
-              ),
               const SizedBox(height: CocoSpace.s6),
-              _StatusCard(today: today),
+              _StatusSection(today: today),
               const SizedBox(height: CocoSpace.s4),
-              _AttentionCard(items: today.attentionItems),
+              _AttentionSection(items: today.attentionItems),
               const SizedBox(height: CocoSpace.s4),
-              _ReminderStatusCard(items: today.reminderItems),
-              const SizedBox(height: CocoSpace.s6),
-              Card(
-                color: CocoColors.childPrimarySoft,
-                child: InkWell(
-                  onTap: () => context.push('/child/messages'),
-                  borderRadius: BorderRadius.circular(CocoRadius.lg),
-                  child: Padding(
-                    padding: const EdgeInsets.all(CocoSpace.s5),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.favorite,
-                          color: CocoColors.childAccent,
-                          size: 28,
-                        ),
-                        const SizedBox(width: CocoSpace.s3),
-                        Expanded(
-                          child: Text(
-                            '发条报平安',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: CocoColors.neutral950,
-                            ),
-                          ),
-                        ),
-                        const Icon(Icons.chevron_right),
-                      ],
+              _ReminderSection(items: today.reminderItems),
+              // NORMAL 时轻量次入口，主入口在「留言」Tab
+              if (today.status == ChildTodayStatus.normal) ...[
+                const SizedBox(height: CocoSpace.s8),
+                TextButton(
+                  onPressed: () => context.push('/child/messages/compose'),
+                  child: Text(
+                    '给父母报个平安',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: CocoColors.childPrimary,
                     ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _TodaySkeleton extends StatelessWidget {
+  const _TodaySkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        _SkeletonBox(height: 28, width: 160),
+        const SizedBox(height: CocoSpace.s6),
+        const _SkeletonBox(height: 96),
+        const SizedBox(height: CocoSpace.s4),
+        const _SkeletonBox(height: 120),
+        const SizedBox(height: CocoSpace.s4),
+        const _SkeletonBox(height: 100),
+      ],
+    );
+  }
+}
+
+class _SkeletonBox extends StatelessWidget {
+  const _SkeletonBox({required this.height, this.width});
+
+  final double height;
+  final double? width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      width: width ?? double.infinity,
+      decoration: BoxDecoration(
+        color: CocoColors.neutral100,
+        borderRadius: BorderRadius.circular(CocoRadius.md),
+        border: Border.all(color: CocoColors.childBorder),
       ),
     );
   }
@@ -137,7 +140,7 @@ class _JoinFamilyGuide extends StatelessWidget {
           Text('你好，$name', style: theme.textTheme.titleLarge),
           const SizedBox(height: CocoSpace.s3),
           Text(
-            '还没有绑定父母。请向父母索取邀请码，完成绑定后这里会显示今日状态。',
+            '还没有绑定父母。请向父母索取邀请码，完成绑定后这里会显示近况。',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: CocoColors.neutral700,
             ),
@@ -153,10 +156,16 @@ class _JoinFamilyGuide extends StatelessWidget {
   }
 }
 
-class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.today});
+class _StatusSection extends StatelessWidget {
+  const _StatusSection({required this.today});
 
   final ChildToday today;
+
+  Future<void> _openPhoneApp() async {
+    // 无通讯录号码时只打开系统电话，不预填、不自动拨号
+    final uri = Uri(scheme: 'tel');
+    await launchUrl(uri);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -179,7 +188,7 @@ class _StatusCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(CocoSpace.s5),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(today.headline, style: theme.textTheme.titleMedium),
             if (today.needsContactReason != null) ...[
@@ -191,6 +200,17 @@ class _StatusCard extends StatelessWidget {
                 ),
               ),
             ],
+            if (today.status == ChildTodayStatus.needContact) ...[
+              const SizedBox(height: CocoSpace.s4),
+              CocoPrimaryButton(label: '打开电话 App', onPressed: _openPhoneApp),
+              const SizedBox(height: CocoSpace.s2),
+              Text(
+                '建议电话联系一下。系统不会自动拨号。',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: CocoColors.neutral700,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -198,8 +218,8 @@ class _StatusCard extends StatelessWidget {
   }
 }
 
-class _AttentionCard extends StatelessWidget {
-  const _AttentionCard({required this.items});
+class _AttentionSection extends StatelessWidget {
+  const _AttentionSection({required this.items});
 
   final List<CareShare> items;
 
@@ -216,7 +236,7 @@ class _AttentionCard extends StatelessWidget {
             const SizedBox(height: CocoSpace.s2),
             if (items.isEmpty)
               Text(
-                '暂无待处理事项。',
+                '今天没有需要你处理的事。',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: CocoColors.neutral700,
                 ),
@@ -235,8 +255,8 @@ class _AttentionCard extends StatelessWidget {
   }
 }
 
-class _ReminderStatusCard extends StatelessWidget {
-  const _ReminderStatusCard({required this.items});
+class _ReminderSection extends StatelessWidget {
+  const _ReminderSection({required this.items});
 
   final List<ChildTodayReminderItem> items;
 
@@ -249,7 +269,7 @@ class _ReminderStatusCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('提醒状态', style: theme.textTheme.titleMedium),
+            Text('提醒概况', style: theme.textTheme.titleMedium),
             const SizedBox(height: CocoSpace.s2),
             if (items.isEmpty)
               Text(

@@ -28,10 +28,7 @@ class MessagesApi {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/v1/messages',
-        data: {
-          'original_text': originalText,
-          'delivered_text': deliveredText,
-        },
+        data: {'original_text': originalText, 'delivered_text': deliveredText},
       );
       return FamilyMessage.fromJson(asJsonMap(response.data));
     } on DioException catch (error) {
