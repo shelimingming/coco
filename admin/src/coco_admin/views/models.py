@@ -1,8 +1,12 @@
-"""11 张业务表的 SQLAdmin ModelView：默认只读，少量运营动作。"""
+"""11 张业务表的 SQLAdmin ModelView：默认只读，少量运营动作。
+
+列表不展示 UUID 主键；用户/家庭/提醒外键展示可读名称，完整 id 仅在详情可见。
+"""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any, ClassVar
 from uuid import UUID
 
 from coco.models.auth import AuthSession, PhoneCode
@@ -14,11 +18,21 @@ from coco.models.reminder import Reminder, ReminderOccurrence
 from coco.models.user import User, UserStatus
 from sqladmin import ModelView, action
 from sqladmin.filters import StaticValuesFilter
+from sqladmin.pagination import Pagination
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 from coco_admin.database import get_session_factory
 from coco_admin.views.aggregates import load_family_aggregate, load_user_aggregate
+from coco_admin.views.labels import (
+    format_family_label,
+    format_family_label_detail,
+    format_reminder_title,
+    format_reminder_title_detail,
+    format_user_name,
+    format_user_name_detail,
+    warm_admin_labels,
+)
 
 try:
     # 新版 sqladmin 提供 Flash；旧版则降级为无 toast
@@ -49,6 +63,34 @@ class ReadOnlyModelView(ModelView):
     page_size = 50
     page_size_options = [25, 50, 100, 200]
 
+    # 列表页需预加载的外键属性名（用于可读标签）
+    label_user_attrs: ClassVar[tuple[str, ...]] = ()
+    label_family_attrs: ClassVar[tuple[str, ...]] = ()
+    label_reminder_attrs: ClassVar[tuple[str, ...]] = ()
+
+    async def list(self, request: Request) -> Pagination:
+        pagination = await super().list(request)
+        await warm_admin_labels(
+            request,
+            pagination.rows,
+            user_attrs=self.label_user_attrs,
+            family_attrs=self.label_family_attrs,
+            reminder_attrs=self.label_reminder_attrs,
+        )
+        return pagination
+
+    async def get_object_for_details(self, request: Request) -> Any:
+        model = await super().get_object_for_details(request)
+        if model is not None:
+            await warm_admin_labels(
+                request,
+                [model],
+                user_attrs=self.label_user_attrs,
+                family_attrs=self.label_family_attrs,
+                reminder_attrs=self.label_reminder_attrs,
+            )
+        return model
+
 
 class UserAdmin(ReadOnlyModelView, model=User):
     name = "用户"
@@ -56,16 +98,23 @@ class UserAdmin(ReadOnlyModelView, model=User):
     icon = "fa-solid fa-user"
     category = "核心"
     column_list = [
-        User.id,
         User.display_name,
         User.phone_masked,
         User.role,
         User.status,
         User.created_at,
     ]
+    column_labels = {
+        User.display_name: "用户名",
+        User.phone_masked: "手机号",
+        User.role: "角色",
+        User.status: "状态",
+        User.created_at: "创建时间",
+        User.id: "用户 ID",
+    }
     column_details_exclude_list = [User.phone_hash]
     column_searchable_list = [User.display_name, User.phone_masked]
-    column_sortable_list = [User.created_at, User.role, User.status]
+    column_sortable_list = [User.created_at, User.role, User.status, User.display_name]
     column_filters = [
         StaticValuesFilter(User.role, values=[("parent", "父母"), ("child", "子女")]),
         StaticValuesFilter(User.status, values=[("active", "正常"), ("disabled", "已禁用")]),
@@ -124,13 +173,28 @@ class FamilyAdmin(ReadOnlyModelView, model=Family):
     name_plural = "家庭"
     icon = "fa-solid fa-house"
     category = "核心"
+    label_user_attrs = ("parent_user_id", "child_user_id")
     column_list = [
-        Family.id,
         Family.parent_user_id,
         Family.child_user_id,
         Family.status,
         Family.created_at,
     ]
+    column_labels = {
+        Family.parent_user_id: "父母",
+        Family.child_user_id: "子女",
+        Family.status: "状态",
+        Family.created_at: "创建时间",
+        Family.id: "家庭 ID",
+    }
+    column_formatters = {
+        Family.parent_user_id: format_user_name,
+        Family.child_user_id: format_user_name,
+    }
+    column_formatters_detail = {
+        Family.parent_user_id: format_user_name_detail,
+        Family.child_user_id: format_user_name_detail,
+    }
     column_filters = [
         StaticValuesFilter(Family.status, values=[("active", "已绑定"), ("pending", "待加入")]),
     ]
@@ -153,8 +217,9 @@ class FamilyInviteAdmin(ReadOnlyModelView, model=FamilyInvite):
     name_plural = "家庭邀请码"
     icon = "fa-solid fa-ticket"
     category = "核心"
+    label_user_attrs = ("inviter_user_id",)
+    label_family_attrs = ("family_id",)
     column_list = [
-        FamilyInvite.id,
         FamilyInvite.code,
         FamilyInvite.family_id,
         FamilyInvite.inviter_user_id,
@@ -162,6 +227,23 @@ class FamilyInviteAdmin(ReadOnlyModelView, model=FamilyInvite):
         FamilyInvite.consumed_at,
         FamilyInvite.created_at,
     ]
+    column_labels = {
+        FamilyInvite.code: "邀请码",
+        FamilyInvite.family_id: "家庭",
+        FamilyInvite.inviter_user_id: "邀请人",
+        FamilyInvite.expires_at: "过期时间",
+        FamilyInvite.consumed_at: "使用时间",
+        FamilyInvite.created_at: "创建时间",
+        FamilyInvite.id: "记录 ID",
+    }
+    column_formatters = {
+        FamilyInvite.family_id: format_family_label,
+        FamilyInvite.inviter_user_id: format_user_name,
+    }
+    column_formatters_detail = {
+        FamilyInvite.family_id: format_family_label_detail,
+        FamilyInvite.inviter_user_id: format_user_name_detail,
+    }
     column_searchable_list = [FamilyInvite.code]
     column_sortable_list = [FamilyInvite.created_at, FamilyInvite.expires_at]
     column_default_sort = [(FamilyInvite.created_at, True)]
@@ -172,10 +254,10 @@ class ReminderAdmin(ReadOnlyModelView, model=Reminder):
     name_plural = "提醒"
     icon = "fa-solid fa-bell"
     category = "业务"
+    label_user_attrs = ("user_id",)
     column_list = [
-        Reminder.id,
-        Reminder.user_id,
         Reminder.title,
+        Reminder.user_id,
         Reminder.schedule_type,
         Reminder.schedule_time,
         Reminder.status,
@@ -183,6 +265,19 @@ class ReminderAdmin(ReadOnlyModelView, model=Reminder):
         Reminder.next_trigger_at,
         Reminder.created_at,
     ]
+    column_labels = {
+        Reminder.title: "标题",
+        Reminder.user_id: "用户",
+        Reminder.schedule_type: "类型",
+        Reminder.schedule_time: "时间",
+        Reminder.status: "状态",
+        Reminder.created_source: "来源",
+        Reminder.next_trigger_at: "下次触发",
+        Reminder.created_at: "创建时间",
+        Reminder.id: "提醒 ID",
+    }
+    column_formatters = {Reminder.user_id: format_user_name}
+    column_formatters_detail = {Reminder.user_id: format_user_name_detail}
     column_searchable_list = [Reminder.title]
     column_filters = [
         StaticValuesFilter(
@@ -205,8 +300,8 @@ class ReminderOccurrenceAdmin(ReadOnlyModelView, model=ReminderOccurrence):
     name_plural = "提醒发生记录"
     icon = "fa-solid fa-clock-rotate-left"
     category = "业务"
+    label_reminder_attrs = ("reminder_id",)
     column_list = [
-        ReminderOccurrence.id,
         ReminderOccurrence.reminder_id,
         ReminderOccurrence.due_at,
         ReminderOccurrence.state,
@@ -215,6 +310,18 @@ class ReminderOccurrenceAdmin(ReadOnlyModelView, model=ReminderOccurrence):
         ReminderOccurrence.confirmed_at,
         ReminderOccurrence.escalated_at,
     ]
+    column_labels = {
+        ReminderOccurrence.reminder_id: "提醒",
+        ReminderOccurrence.due_at: "到期时间",
+        ReminderOccurrence.state: "状态",
+        ReminderOccurrence.first_notified_at: "首次通知",
+        ReminderOccurrence.second_notified_at: "二次通知",
+        ReminderOccurrence.confirmed_at: "确认时间",
+        ReminderOccurrence.escalated_at: "升级时间",
+        ReminderOccurrence.id: "记录 ID",
+    }
+    column_formatters = {ReminderOccurrence.reminder_id: format_reminder_title}
+    column_formatters_detail = {ReminderOccurrence.reminder_id: format_reminder_title_detail}
     column_filters = [
         StaticValuesFilter(
             ReminderOccurrence.state,
@@ -236,8 +343,8 @@ class MemoryAdmin(ReadOnlyModelView, model=Memory):
     name_plural = "记忆"
     icon = "fa-solid fa-brain"
     category = "业务"
+    label_user_attrs = ("user_id",)
     column_list = [
-        Memory.id,
         Memory.user_id,
         Memory.category,
         Memory.source,
@@ -245,6 +352,17 @@ class MemoryAdmin(ReadOnlyModelView, model=Memory):
         Memory.content,
         Memory.created_at,
     ]
+    column_labels = {
+        Memory.user_id: "用户",
+        Memory.category: "分类",
+        Memory.source: "来源",
+        Memory.confirmed: "已确认",
+        Memory.content: "内容",
+        Memory.created_at: "创建时间",
+        Memory.id: "记忆 ID",
+    }
+    column_formatters = {Memory.user_id: format_user_name}
+    column_formatters_detail = {Memory.user_id: format_user_name_detail}
     column_searchable_list = [Memory.content]
     column_filters = [
         StaticValuesFilter(
@@ -266,8 +384,8 @@ class CareShareAdmin(ReadOnlyModelView, model=CareShare):
     name_plural = "关怀摘要"
     icon = "fa-solid fa-heart"
     category = "业务"
+    label_user_attrs = ("parent_id", "child_id")
     column_list = [
-        CareShare.id,
         CareShare.parent_id,
         CareShare.child_id,
         CareShare.urgency,
@@ -277,6 +395,25 @@ class CareShareAdmin(ReadOnlyModelView, model=CareShare):
         CareShare.summary,
         CareShare.created_at,
     ]
+    column_labels = {
+        CareShare.parent_id: "父母",
+        CareShare.child_id: "子女",
+        CareShare.urgency: "紧急度",
+        CareShare.reply_expectation: "回复预期",
+        CareShare.parent_confirmed: "父母已确认",
+        CareShare.read_at: "已读时间",
+        CareShare.summary: "摘要",
+        CareShare.created_at: "创建时间",
+        CareShare.id: "记录 ID",
+    }
+    column_formatters = {
+        CareShare.parent_id: format_user_name,
+        CareShare.child_id: format_user_name,
+    }
+    column_formatters_detail = {
+        CareShare.parent_id: format_user_name_detail,
+        CareShare.child_id: format_user_name_detail,
+    }
     column_searchable_list = [CareShare.summary]
     column_filters = [
         StaticValuesFilter(CareShare.urgency, values=[("LOW", "低"), ("ATTENTION", "需关注")]),
@@ -290,10 +427,11 @@ class FamilyMessageAdmin(ReadOnlyModelView, model=FamilyMessage):
     name_plural = "家庭消息"
     icon = "fa-solid fa-comments"
     category = "业务"
+    label_user_attrs = ("from_user_id", "to_user_id")
+    label_family_attrs = ("family_id",)
     column_list = [
-        FamilyMessage.id,
-        FamilyMessage.family_id,
         FamilyMessage.kind,
+        FamilyMessage.family_id,
         FamilyMessage.from_user_id,
         FamilyMessage.to_user_id,
         FamilyMessage.original_text,
@@ -301,6 +439,27 @@ class FamilyMessageAdmin(ReadOnlyModelView, model=FamilyMessage):
         FamilyMessage.acknowledged_at,
         FamilyMessage.created_at,
     ]
+    column_labels = {
+        FamilyMessage.kind: "类型",
+        FamilyMessage.family_id: "家庭",
+        FamilyMessage.from_user_id: "发送方",
+        FamilyMessage.to_user_id: "接收方",
+        FamilyMessage.original_text: "原文",
+        FamilyMessage.delivered_text: "送达文案",
+        FamilyMessage.acknowledged_at: "确认时间",
+        FamilyMessage.created_at: "创建时间",
+        FamilyMessage.id: "消息 ID",
+    }
+    column_formatters = {
+        FamilyMessage.family_id: format_family_label,
+        FamilyMessage.from_user_id: format_user_name,
+        FamilyMessage.to_user_id: format_user_name,
+    }
+    column_formatters_detail = {
+        FamilyMessage.family_id: format_family_label_detail,
+        FamilyMessage.from_user_id: format_user_name_detail,
+        FamilyMessage.to_user_id: format_user_name_detail,
+    }
     column_searchable_list = [FamilyMessage.original_text, FamilyMessage.delivered_text]
     column_filters = [
         StaticValuesFilter(
@@ -317,8 +476,8 @@ class NotificationAdmin(ReadOnlyModelView, model=Notification):
     name_plural = "通知"
     icon = "fa-solid fa-envelope"
     category = "业务"
+    label_user_attrs = ("user_id",)
     column_list = [
-        Notification.id,
         Notification.user_id,
         Notification.type,
         Notification.title,
@@ -326,6 +485,17 @@ class NotificationAdmin(ReadOnlyModelView, model=Notification):
         Notification.read_at,
         Notification.created_at,
     ]
+    column_labels = {
+        Notification.user_id: "用户",
+        Notification.type: "类型",
+        Notification.title: "标题",
+        Notification.body: "正文",
+        Notification.read_at: "已读时间",
+        Notification.created_at: "创建时间",
+        Notification.id: "通知 ID",
+    }
+    column_formatters = {Notification.user_id: format_user_name}
+    column_formatters_detail = {Notification.user_id: format_user_name_detail}
     column_searchable_list = [Notification.title, Notification.body]
     column_filters = [
         StaticValuesFilter(
@@ -346,14 +516,24 @@ class AuthSessionAdmin(ReadOnlyModelView, model=AuthSession):
     name_plural = "登录会话"
     icon = "fa-solid fa-key"
     category = "鉴权运维"
+    label_user_attrs = ("user_id",)
     column_list = [
-        AuthSession.id,
         AuthSession.user_id,
         AuthSession.device_id,
         AuthSession.expires_at,
         AuthSession.revoked_at,
         AuthSession.created_at,
     ]
+    column_labels = {
+        AuthSession.user_id: "用户",
+        AuthSession.device_id: "设备",
+        AuthSession.expires_at: "过期时间",
+        AuthSession.revoked_at: "吊销时间",
+        AuthSession.created_at: "创建时间",
+        AuthSession.id: "会话 ID",
+    }
+    column_formatters = {AuthSession.user_id: format_user_name}
+    column_formatters_detail = {AuthSession.user_id: format_user_name_detail}
     # refresh hash 不展示
     column_details_exclude_list = [AuthSession.refresh_token_hash]
     column_sortable_list = [AuthSession.created_at, AuthSession.expires_at]
@@ -386,15 +566,22 @@ class PhoneCodeAdmin(ReadOnlyModelView, model=PhoneCode):
     name_plural = "验证码记录"
     icon = "fa-solid fa-shield-halved"
     category = "鉴权运维"
-    # 仅 hash，无法还原明文手机号与验证码
+    # 仅 hash，无法还原明文手机号与验证码；列表也不展示 UUID
     column_list = [
-        PhoneCode.id,
         PhoneCode.purpose,
         PhoneCode.attempts,
         PhoneCode.expires_at,
         PhoneCode.consumed_at,
         PhoneCode.created_at,
     ]
+    column_labels = {
+        PhoneCode.purpose: "用途",
+        PhoneCode.attempts: "尝试次数",
+        PhoneCode.expires_at: "过期时间",
+        PhoneCode.consumed_at: "使用时间",
+        PhoneCode.created_at: "创建时间",
+        PhoneCode.id: "记录 ID",
+    }
     column_details_exclude_list = [PhoneCode.phone_hash, PhoneCode.code_hash]
     column_sortable_list = [PhoneCode.created_at, PhoneCode.expires_at]
     column_default_sort = [(PhoneCode.created_at, True)]

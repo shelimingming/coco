@@ -21,8 +21,8 @@
 ./scripts/dev_ios.sh
 ```
 
-依次完成：生成 `backend/.env` → 数据库预检 → `uv sync` → `alembic upgrade head` → 启动 uvicorn 并等健康检查 → 启动 iOS 26 模拟器 → `flutter run`。
-后端已在跑时会直接复用；`flutter run` 退出时脚本会顺手关掉自己拉起的后端。
+依次完成：生成 `backend/.env` / `admin/.env` → 数据库预检 → `uv sync` → `alembic upgrade head` → 启动用户 API（8000）与运营后台（8001）并等健康检查 → 启动 iOS 26 模拟器 → `flutter run`。
+服务已在跑时可加 `--reuse-backend` 复用；`flutter run` 退出时脚本会顺手关掉自己拉起的服务。
 
 常用参数：
 
@@ -33,9 +33,11 @@
 | `--device "iPhone 17"` | 指定机型（名称或 UDID），默认 iPhone 17 Pro；可写两次配双端 |
 | `--ios 26` | 指定 iOS 大版本（默认 26） |
 | `--lan` | 真机调试：后端监听 `0.0.0.0`，App 用 Mac 局域网 IP |
-| `--backend-only` / `--app-only` | 只起后端 / 只起 App |
+| `--backend-only` / `--app-only` | 只起 API+admin / 只起 App |
+| `--no-admin` | 不起运营后台 |
 | `--restart-backend` | 重启已占用端口的后端 |
-| `--port 8001` | 换后端端口 |
+| `--port 8002` | 换用户 API 端口（默认 8000；勿与 admin 冲突） |
+| `--admin-port 8002` | 换运营后台端口（默认 8001） |
 
 双角色联调示例：
 
@@ -47,7 +49,7 @@
 
 默认会启动两台（优先 `iPhone 17 Pro` + `iPhone 17`）：统一 `flutter build` 一次，再分别安装启动。构建日志在 `.dev/flutter-build.log`。两台会话本地隔离，可各登一个角色。
 
-后端日志在 `.dev/backend.log`，PID 在 `.dev/backend.pid`。
+日志与 PID：`.dev/backend.log` / `.dev/backend.pid`，`.dev/admin.log` / `.dev/admin.pid`。
 
 下面是手动分步启动的方式。
 

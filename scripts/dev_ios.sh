@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Coco 一键本地启动：后端 (FastAPI) + iOS 26 模拟器上的 Flutter App。
+# Coco 一键本地启动：用户 API + 运营后台 + iOS 26 模拟器上的 Flutter App。
 #
 # 用法：
-#   ./scripts/dev_ios.sh                       # 默认：iOS 26 模拟器 + 本地后端
+#   ./scripts/dev_ios.sh                       # 默认：iOS 26 模拟器 + 本地后端 + admin
 #   ./scripts/dev_ios.sh --dual                # 同时起两台模拟器，方便父母/子女双角色联调
 #   ./scripts/dev_ios.sh --dual --device "iPhone 17 Pro" --device "iPhone 17"
 #   ./scripts/dev_ios.sh --device "iPhone 17"  # 指定模拟器机型（名称或 UDID；可写两次配双端）
 #   ./scripts/dev_ios.sh --ios 26              # 指定 iOS 大版本（默认 26）
 #   ./scripts/dev_ios.sh --lan                 # 真机调试：后端监听 0.0.0.0，App 用局域网 IP
-#   ./scripts/dev_ios.sh --backend-only        # 只起后端
+#   ./scripts/dev_ios.sh --backend-only        # 只起用户 API + admin（不启 App）
 #   ./scripts/dev_ios.sh --app-only            # 只起 App（后端已在别处运行）
-#   ./scripts/dev_ios.sh --reuse-backend       # 端口上已有健康后端时复用，不重启
+#   ./scripts/dev_ios.sh --no-admin            # 不起运营后台
+#   ./scripts/dev_ios.sh --reuse-backend       # 端口上已有健康服务时复用，不重启
 #   ./scripts/dev_ios.sh --list                # 列出候选模拟器后退出
 
 set -Eeuo pipefail
@@ -18,10 +19,13 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_DIR="${ROOT_DIR}/backend"
+ADMIN_DIR="${ROOT_DIR}/admin"
 FRONTEND_DIR="${ROOT_DIR}/frontend"
 RUNTIME_DIR="${ROOT_DIR}/.dev"
 BACKEND_LOG="${RUNTIME_DIR}/backend.log"
 BACKEND_PID_FILE="${RUNTIME_DIR}/backend.pid"
+ADMIN_LOG="${RUNTIME_DIR}/admin.log"
+ADMIN_PID_FILE="${RUNTIME_DIR}/admin.pid"
 
 IOS_MAJOR="26"
 DEVICE_QUERY=""
@@ -29,8 +33,11 @@ DEVICE_QUERY_2=""
 API_BASE=""
 BACKEND_HOST="127.0.0.1"
 BACKEND_PORT="8000"
+# 运营后台固定默认 8001，与用户 API 分端口。
+ADMIN_PORT="8001"
 FLUTTER_MODE="debug"
 RUN_BACKEND=1
+RUN_ADMIN=1
 RUN_APP=1
 # 默认停掉已占用端口的后端再拉起，避免代码更新后仍复用旧进程。
 REUSE_BACKEND=0
@@ -40,9 +47,11 @@ LIST_ONLY=0
 # 双模拟器：各跑一份 App，本地数据隔离，可同时登录父母端与子女端。
 DUAL=0
 
-# 本次脚本是否亲自拉起了后端，决定退出时是否回收进程。
+# 本次脚本是否亲自拉起了服务，决定退出时是否回收进程。
 BACKEND_STARTED_BY_US=0
 BACKEND_PID=""
+ADMIN_STARTED_BY_US=0
+ADMIN_PID=""
 
 # 机型优先级：iOS 26 上优先用 17 Pro，其次退到别的 iPhone。
 PREFERRED_DEVICES=("iPhone 17 Pro" "iPhone 17" "iPhone 17 Pro Max" "iPhone Air" "iPhone 16 Pro")
@@ -101,7 +110,9 @@ parse_args() {
       --release) FLUTTER_MODE="release"; shift ;;
       --profile) FLUTTER_MODE="profile"; shift ;;
       --backend-only) RUN_APP=0; KEEP_BACKEND=1; shift ;;
-      --app-only) RUN_BACKEND=0; shift ;;
+      --app-only) RUN_BACKEND=0; RUN_ADMIN=0; shift ;;
+      --no-admin) RUN_ADMIN=0; shift ;;
+      --admin-port) ADMIN_PORT="${2:?--admin-port 需要一个端口}"; shift 2 ;;
       # --restart-backend：历史兼容；重启已是默认行为
       --restart-backend) REUSE_BACKEND=0; shift ;;
       --reuse-backend) REUSE_BACKEND=1; shift ;;
@@ -111,6 +122,11 @@ parse_args() {
       *) die "未知参数：$1" "运行 ./scripts/dev_ios.sh --help 查看用法。" ;;
     esac
   done
+
+  # 不起用户 API 时也不起 admin（除非以后单独加 --admin-only）。
+  if (( ! RUN_BACKEND )); then
+    RUN_ADMIN=0
+  fi
 }
 
 require_cmd() {
@@ -131,11 +147,11 @@ preflight() {
   mkdir -p "${RUNTIME_DIR}"
 }
 
-# ---------- 后端 ----------
+# ---------- 后端 / 运营后台 ----------
 
 # 从 .env 里取键值，缺省时回落到给定默认值。
 env_value() {
-  local key="$1" fallback="${2-}" file="${BACKEND_DIR}/.env" line
+  local key="$1" fallback="${2-}" file="${3:-${BACKEND_DIR}/.env}" line
   [[ -f "${file}" ]] || { printf '%s' "${fallback}"; return; }
   line="$(grep -E "^${key}=" "${file}" | tail -n 1 || true)"
   if [[ -z "${line}" ]]; then
@@ -151,6 +167,32 @@ ensure_env_file() {
     cp "${BACKEND_DIR}/.env.example" "${BACKEND_DIR}/.env"
     ok "已从 .env.example 生成 backend/.env（本地开发默认值）"
   fi
+}
+
+ensure_admin_env_file() {
+  if [[ ! -f "${ADMIN_DIR}/.env" ]]; then
+    [[ -f "${ADMIN_DIR}/.env.example" ]] || die "缺少 admin/.env 与 admin/.env.example。" "无法确定管理后台账号配置。"
+    cp "${ADMIN_DIR}/.env.example" "${ADMIN_DIR}/.env"
+    ok "已从 .env.example 生成 admin/.env（本地开发默认值）"
+  fi
+}
+
+# 单独开会话跑命令：避免脚本进程组被收掉时子服务跟着死。
+# 用法：run_detached <工作目录> <日志文件> <pid 文件> <命令...>
+run_detached() {
+  local cwd="$1" log_file="$2" pid_file="$3"
+  shift 3
+  local -a detach=(nohup)
+  if command -v setsid >/dev/null 2>&1; then
+    detach=(setsid)
+  elif command -v perl >/dev/null 2>&1; then
+    detach=(perl -e 'use POSIX; POSIX::setsid(); exec @ARGV or die $!;' --)
+  fi
+  (
+    cd "${cwd}"
+    "${detach[@]}" "$@" >>"${log_file}" 2>&1 &
+    printf '%s' "$!" >"${pid_file}"
+  )
 }
 
 check_database() {
@@ -174,15 +216,20 @@ backend_health_ok() {
   curl -fsS --max-time 2 "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null 2>&1
 }
 
-port_listener_pid() {
-  lsof -nP -tiTCP:"${BACKEND_PORT}" -sTCP:LISTEN 2>/dev/null | head -n 1
+admin_health_ok() {
+  curl -fsS --max-time 2 "http://127.0.0.1:${ADMIN_PORT}/health" >/dev/null 2>&1
 }
 
-stop_existing_backend() {
-  local pid
-  pid="$(port_listener_pid)"
+port_listener_pid() {
+  local port="$1"
+  lsof -nP -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | head -n 1
+}
+
+stop_port_listener() {
+  local port="$1" label="$2" pid
+  pid="$(port_listener_pid "${port}")"
   [[ -n "${pid}" ]] || return 0
-  info "结束占用 ${BACKEND_PORT} 端口的进程 (pid ${pid})"
+  info "结束占用 ${port} 端口的${label} (pid ${pid})"
   kill "${pid}" 2>/dev/null || true
   for _ in {1..20}; do
     kill -0 "${pid}" 2>/dev/null || return 0
@@ -196,22 +243,26 @@ start_backend() {
   ensure_env_file
   check_database
 
-  if (( REUSE_BACKEND )) && [[ -n "$(port_listener_pid)" ]]; then
+  if (( RUN_ADMIN )) && [[ "${BACKEND_PORT}" == "${ADMIN_PORT}" ]]; then
+    die "用户 API 与运营后台不能共用端口 ${BACKEND_PORT}。" "换后端：--port 8002；或换后台：--admin-port 8002。"
+  fi
+
+  if (( REUSE_BACKEND )) && [[ -n "$(port_listener_pid "${BACKEND_PORT}")" ]]; then
     if backend_health_ok; then
       ok "后端已在 http://127.0.0.1:${BACKEND_PORT} 运行，按 --reuse-backend 复用"
       return 0
     fi
-    die "端口 ${BACKEND_PORT} 被别的进程占用，且不是 Coco 后端。" "换端口：--port 8001，或先停掉占用进程。"
+    die "端口 ${BACKEND_PORT} 被别的进程占用，且不是 Coco 后端。" "换端口：--port 8002，或先停掉占用进程。"
   fi
 
   # 默认：有进程占着就先停，再按当前代码重新启动。
-  if [[ -n "$(port_listener_pid)" ]]; then
+  if [[ -n "$(port_listener_pid "${BACKEND_PORT}")" ]]; then
     if backend_health_ok; then
       info "检测到已有后端，将停掉并按当前代码重启"
     else
       warn "端口 ${BACKEND_PORT} 已被占用且健康检查失败，将尝试停掉后重启"
     fi
-    stop_existing_backend
+    stop_port_listener "${BACKEND_PORT}" "后端"
   fi
 
   info "同步后端依赖（uv sync）"
@@ -226,20 +277,9 @@ start_backend() {
 
   info "启动后端 uvicorn（${bind_host}:${BACKEND_PORT}）"
   : >"${BACKEND_LOG}"
-  # 单独开一个会话（setsid 或 perl 兜底），否则脚本所在进程组被整体收掉时后端会跟着死，
-  # --backend-only / --keep-backend 的“留着继续跑”就不成立。
-  local detach=(nohup)
-  if command -v setsid >/dev/null 2>&1; then
-    detach=(setsid)
-  elif command -v perl >/dev/null 2>&1; then
-    detach=(perl -e 'use POSIX; POSIX::setsid(); exec @ARGV or die $!;' --)
-  fi
-  (
-    cd "${BACKEND_DIR}"
-    "${detach[@]}" uv run uvicorn coco.main:app --host "${bind_host}" --port "${BACKEND_PORT}" \
-      >>"${BACKEND_LOG}" 2>&1 &
-    printf '%s' "$!" >"${BACKEND_PID_FILE}"
-  )
+  # --backend-only / --keep-backend 依赖独立会话，脚本退出后服务仍可继续跑。
+  run_detached "${BACKEND_DIR}" "${BACKEND_LOG}" "${BACKEND_PID_FILE}" \
+    uv run uvicorn coco.main:app --host "${bind_host}" --port "${BACKEND_PORT}"
   BACKEND_PID="$(cat "${BACKEND_PID_FILE}")"
   BACKEND_STARTED_BY_US=1
 
@@ -258,18 +298,78 @@ start_backend() {
   die "后端 30 秒内没有通过健康检查。" "查看 ${BACKEND_LOG} 后重试。"
 }
 
-cleanup() {
-  if (( BACKEND_STARTED_BY_US )) && (( ! KEEP_BACKEND )) && [[ -n "${BACKEND_PID}" ]]; then
-    if kill -0 "${BACKEND_PID}" 2>/dev/null; then
-      info "关闭后端 (pid ${BACKEND_PID})"
-      kill "${BACKEND_PID}" 2>/dev/null || true
-      sleep 1
+start_admin() {
+  ensure_admin_env_file
+
+  if (( REUSE_BACKEND )) && [[ -n "$(port_listener_pid "${ADMIN_PORT}")" ]]; then
+    if admin_health_ok; then
+      ok "运营后台已在 http://127.0.0.1:${ADMIN_PORT}/admin 运行，按 --reuse-backend 复用"
+      return 0
     fi
-    # uv run 是父进程，uvicorn 是它的子进程；父进程退出后补一刀，避免端口被占住。
-    local leftover
-    leftover="$(port_listener_pid)"
-    [[ -n "${leftover}" ]] && kill "${leftover}" 2>/dev/null || true
-    rm -f "${BACKEND_PID_FILE}"
+    die "端口 ${ADMIN_PORT} 被别的进程占用，且不是 Coco Admin。" "换端口：--admin-port 8002，或先停掉占用进程。"
+  fi
+
+  if [[ -n "$(port_listener_pid "${ADMIN_PORT}")" ]]; then
+    if admin_health_ok; then
+      info "检测到已有运营后台，将停掉并按当前代码重启"
+    else
+      warn "端口 ${ADMIN_PORT} 已被占用且健康检查失败，将尝试停掉后重启"
+    fi
+    stop_port_listener "${ADMIN_PORT}" "运营后台"
+  fi
+
+  info "同步运营后台依赖（uv sync）"
+  (cd "${ADMIN_DIR}" && uv sync --quiet) || die "admin uv sync 失败。" "手动执行：cd admin && uv sync"
+
+  local bind_host="127.0.0.1"
+  (( USE_LAN )) && bind_host="0.0.0.0"
+
+  info "启动运营后台 uvicorn（${bind_host}:${ADMIN_PORT}）"
+  : >"${ADMIN_LOG}"
+  run_detached "${ADMIN_DIR}" "${ADMIN_LOG}" "${ADMIN_PID_FILE}" \
+    uv run uvicorn coco_admin.main:app --host "${bind_host}" --port "${ADMIN_PORT}"
+  ADMIN_PID="$(cat "${ADMIN_PID_FILE}")"
+  ADMIN_STARTED_BY_US=1
+
+  for _ in {1..60}; do
+    if admin_health_ok; then
+      ok "运营后台就绪：http://127.0.0.1:${ADMIN_PORT}/admin"
+      dim "日志：${ADMIN_LOG}"
+      return 0
+    fi
+    if ! kill -0 "${ADMIN_PID}" 2>/dev/null; then
+      tail -n 20 "${ADMIN_LOG}" >&2 || true
+      die "运营后台启动即退出，数据未受影响。" "完整日志见 ${ADMIN_LOG}"
+    fi
+    sleep 0.5
+  done
+  die "运营后台 30 秒内没有通过健康检查。" "查看 ${ADMIN_LOG} 后重试。"
+}
+
+cleanup() {
+  if (( ! KEEP_BACKEND )); then
+    if (( ADMIN_STARTED_BY_US )) && [[ -n "${ADMIN_PID}" ]]; then
+      if kill -0 "${ADMIN_PID}" 2>/dev/null; then
+        info "关闭运营后台 (pid ${ADMIN_PID})"
+        kill "${ADMIN_PID}" 2>/dev/null || true
+      fi
+      local admin_leftover
+      admin_leftover="$(port_listener_pid "${ADMIN_PORT}")"
+      [[ -n "${admin_leftover}" ]] && kill "${admin_leftover}" 2>/dev/null || true
+      rm -f "${ADMIN_PID_FILE}"
+    fi
+    if (( BACKEND_STARTED_BY_US )) && [[ -n "${BACKEND_PID}" ]]; then
+      if kill -0 "${BACKEND_PID}" 2>/dev/null; then
+        info "关闭后端 (pid ${BACKEND_PID})"
+        kill "${BACKEND_PID}" 2>/dev/null || true
+        sleep 1
+      fi
+      # uv run 是父进程，uvicorn 是它的子进程；父进程退出后补一刀，避免端口被占住。
+      local leftover
+      leftover="$(port_listener_pid "${BACKEND_PORT}")"
+      [[ -n "${leftover}" ]] && kill "${leftover}" 2>/dev/null || true
+      rm -f "${BACKEND_PID_FILE}"
+    fi
   fi
 }
 
@@ -543,12 +643,20 @@ main() {
 
   if (( RUN_BACKEND )); then
     start_backend
+    if (( RUN_ADMIN )); then
+      start_admin
+    fi
   else
     backend_health_ok || warn "后端 http://127.0.0.1:${BACKEND_PORT} 没有响应，App 登录会失败。"
   fi
 
   if (( ! RUN_APP )); then
-    ok "后端已启动，脚本退出后仍保持运行。停止：kill \$(cat ${BACKEND_PID_FILE})"
+    ok "服务已启动，脚本退出后仍保持运行。"
+    dim "用户 API：http://127.0.0.1:${BACKEND_PORT}/docs  PID=$(cat "${BACKEND_PID_FILE}" 2>/dev/null || echo '?')"
+    if (( RUN_ADMIN )) || admin_health_ok; then
+      dim "运营后台：http://127.0.0.1:${ADMIN_PORT}/admin  PID=$(cat "${ADMIN_PID_FILE}" 2>/dev/null || echo '?')"
+    fi
+    dim "停止：kill \$(cat ${BACKEND_PID_FILE}) \$(cat ${ADMIN_PID_FILE} 2>/dev/null)"
     exit 0
   fi
 

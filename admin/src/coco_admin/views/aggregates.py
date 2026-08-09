@@ -82,8 +82,27 @@ async def load_user_aggregate(session: AsyncSession, user_id: uuid.UUID) -> dict
         )
     ).all()
 
+    # 聚合表用展示名，避免详情里再铺一长串 UUID
+    related_user_ids = {user_id}
+    for fam in families:
+        related_user_ids.add(fam.parent_user_id)
+        if fam.child_user_id is not None:
+            related_user_ids.add(fam.child_user_id)
+    for care in care_shares:
+        related_user_ids.add(care.parent_id)
+        related_user_ids.add(care.child_id)
+    for msg in messages:
+        related_user_ids.add(msg.from_user_id)
+        related_user_ids.add(msg.to_user_id)
+
+    related_users = (
+        await session.scalars(select(User).where(User.id.in_(related_user_ids)))
+    ).all()
+    users_by_id = {u.id: u for u in related_users}
+
     return {
         "user": user,
+        "users_by_id": users_by_id,
         "families": families,
         "reminders": reminders,
         "memories": memories,

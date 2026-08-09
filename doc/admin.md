@@ -4,6 +4,15 @@
 
 ## 启动
 
+推荐与用户 API 一并拉起：
+
+```bash
+./scripts/dev_ios.sh --backend-only
+# 或完整一键（含模拟器）：./scripts/dev_ios.sh
+```
+
+也可单独启动：
+
 ```bash
 cd admin
 cp .env.example .env   # 首次

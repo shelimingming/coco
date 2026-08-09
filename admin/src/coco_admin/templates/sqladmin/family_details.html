@@ -12,7 +12,6 @@
           父母：
           {% if aggregate.parent %}
             {{ aggregate.parent.display_name }}（{{ aggregate.parent.phone_masked }}）
-            <code>{{ aggregate.parent.id }}</code>
           {% else %}
             缺失
           {% endif %}
@@ -21,7 +20,6 @@
           子女：
           {% if aggregate.child %}
             {{ aggregate.child.display_name }}（{{ aggregate.child.phone_masked }}）
-            <code>{{ aggregate.child.id }}</code>
           {% else %}
             尚未加入
           {% endif %}

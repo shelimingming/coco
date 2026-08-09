@@ -9,17 +9,18 @@
       <h4>家庭关系（{{ aggregate.families|length }}）</h4>
       <div class="table-responsive mb-3">
         <table class="table table-sm table-vcenter">
-          <thead><tr><th>ID</th><th>父母</th><th>子女</th><th>状态</th></tr></thead>
+          <thead><tr><th>父母</th><th>子女</th><th>状态</th></tr></thead>
           <tbody>
           {% for f in aggregate.families %}
+            {% set parent = aggregate.users_by_id.get(f.parent_user_id) %}
+            {% set child = aggregate.users_by_id.get(f.child_user_id) if f.child_user_id else none %}
             <tr>
-              <td><code>{{ f.id }}</code></td>
-              <td><code>{{ f.parent_user_id }}</code></td>
-              <td><code>{{ f.child_user_id }}</code></td>
+              <td>{{ parent.display_name if parent else "未知" }}</td>
+              <td>{{ child.display_name if child else "尚未加入" }}</td>
               <td>{{ f.status }}</td>
             </tr>
           {% else %}
-            <tr><td colspan="4" class="text-secondary">无</td></tr>
+            <tr><td colspan="3" class="text-secondary">无</td></tr>
           {% endfor %}
           </tbody>
         </table>
