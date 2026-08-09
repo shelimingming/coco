@@ -64,8 +64,9 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # 陪伴形象与品牌图标（来自 back 小狗素材）
+  # 陪伴形象（coco 分姿态静帧，后续可换同名动图）与品牌图标
   assets:
+    - assets/images/coco/
     - assets/images/coco_companion_dog.png
     - assets/images/coco_app_icon.png
 

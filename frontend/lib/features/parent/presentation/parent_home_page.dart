@@ -6,11 +6,10 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../../auth/application/auth_controller.dart';
+import '../application/coco_companion_controller.dart';
+import 'widgets/coco_companion_view.dart';
 
-/// 默认陪伴形象：与 App 图标同源的小狗图。
-const String kCompanionDogAsset = 'assets/images/coco_companion_dog.png';
-
-/// 父母端占位首页：问候 + 功能入口 + 小狗形象 + 大号「和我说话」按钮。
+/// 父母端占位首页：问候 + 功能入口 + Coco 形象 + 大号「和我说话」按钮。
 class ParentHomePage extends ConsumerWidget {
   const ParentHomePage({super.key});
 
@@ -19,6 +18,8 @@ class ParentHomePage extends ConsumerWidget {
     final user = ref.watch(authControllerProvider).user;
     final name = user?.displayName ?? '家人';
     final theme = Theme.of(context);
+    // 形象随姿态切换；语音接通后由业务侧更新 cocoCompanionPoseProvider
+    final companionPose = ref.watch(cocoCompanionPoseProvider);
 
     return CocoScaffold(
       body: Column(
@@ -47,21 +48,7 @@ class ParentHomePage extends ConsumerWidget {
           const Spacer(),
           // 老人端首页主视觉：一屏一事，突出陪伴形象
           Center(
-            child: Semantics(
-              label: '可可，陪伴小狗',
-              image: true,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(CocoRadius.xl),
-                child: Image.asset(
-                  kCompanionDogAsset,
-                  width: 280,
-                  height: 280,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  excludeFromSemantics: true,
-                ),
-              ),
-            ),
+            child: CocoCompanionView(pose: companionPose),
           ),
           const Spacer(),
           CocoPrimaryButton(
