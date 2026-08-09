@@ -1,0 +1,131 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">运营总览</h3>
+      <div class="card-actions">
+        <span class="text-secondary">生成于 {{ stats.generated_at }}（UTC）</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row row-cards mb-3">
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">用户总数</div>
+              <div class="h1 mb-0">{{ stats.users.total }}</div>
+              <div class="text-secondary mt-1">
+                父母 {{ stats.users.parent }} / 子女 {{ stats.users.child }}
+              </div>
+              <div class="text-secondary">
+                正常 {{ stats.users.active }} / 禁用 {{ stats.users.disabled }}
+              </div>
+              <div class="text-secondary">今日 +{{ stats.users.today }} · 近7日 +{{ stats.users.last_7_days }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">家庭</div>
+              <div class="h1 mb-0">{{ stats.families.total }}</div>
+              <div class="text-secondary mt-1">
+                已绑定 {{ stats.families.active }} / 待加入 {{ stats.families.pending }}
+              </div>
+              <div class="text-secondary">
+                子女绑定率 {{ (stats.families.bound_ratio * 100)|round(1) }}%
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">提醒</div>
+              <div class="h1 mb-0">{{ stats.reminders.total }}</div>
+              <div class="text-secondary mt-1">
+                ACTIVE {{ stats.reminders.by_status.ACTIVE }} /
+                PAUSED {{ stats.reminders.by_status.PAUSED }} /
+                DONE {{ stats.reminders.by_status.DONE }}
+              </div>
+              <div class="text-secondary">
+                今日触发 {{ stats.reminders.today.first_notified }} /
+                确认 {{ stats.reminders.today.confirmed }} /
+                升级 {{ stats.reminders.today.escalated }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">关怀 / 消息 / 未读通知</div>
+              <div class="h1 mb-0">{{ stats.care_shares.total }} / {{ stats.messages.total }}</div>
+              <div class="text-secondary mt-1">
+                关怀未读 {{ stats.care_shares.unread }} · ATTENTION {{ stats.care_shares.attention }}
+              </div>
+              <div class="text-secondary">通知未读 {{ stats.notifications.unread }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-lg-6">
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">记忆（按分类）</h3></div>
+            <div class="card-body">
+              <ul class="list-unstyled mb-0">
+                {% for key, value in stats.memories.by_category.items() %}
+                <li class="mb-1"><strong>{{ key }}</strong>：{{ value }}</li>
+                {% endfor %}
+                <li class="mt-2 text-secondary">合计 {{ stats.memories.total }}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">家庭消息拆分</h3></div>
+            <div class="card-body">
+              <ul class="list-unstyled mb-0">
+                <li>子女报平安：{{ stats.messages.child_status }}</li>
+                <li>父母回复：{{ stats.messages.parent_reply }}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">近 7 日趋势</h3></div>
+        <div class="card-body">
+          <canvas id="trendChart" height="100"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const trend = {{ stats.trend_7d | tojson }};
+  const labels = trend.map((d) => d.date);
+  new Chart(document.getElementById("trendChart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label: "新用户", data: trend.map((d) => d.users), tension: 0.25 },
+        { label: "新提醒", data: trend.map((d) => d.reminders), tension: 0.25 },
+        { label: "新关怀", data: trend.map((d) => d.care_shares), tension: 0.25 },
+        { label: "新消息", data: trend.map((d) => d.messages), tension: 0.25 },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+</script>
+{% endblock %}

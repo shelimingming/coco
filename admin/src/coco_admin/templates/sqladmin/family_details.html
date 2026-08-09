@@ -1,0 +1,91 @@
+{% extends "sqladmin/details.html" %}
+{% block content %}
+{{ super() }}
+{% if aggregate and aggregate.family %}
+<div class="col-12 mt-3">
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">家庭聚合视图</h3></div>
+    <div class="card-body">
+      <h4>成员</h4>
+      <ul class="mb-3">
+        <li>
+          父母：
+          {% if aggregate.parent %}
+            {{ aggregate.parent.display_name }}（{{ aggregate.parent.phone_masked }}）
+            <code>{{ aggregate.parent.id }}</code>
+          {% else %}
+            缺失
+          {% endif %}
+        </li>
+        <li>
+          子女：
+          {% if aggregate.child %}
+            {{ aggregate.child.display_name }}（{{ aggregate.child.phone_masked }}）
+            <code>{{ aggregate.child.id }}</code>
+          {% else %}
+            尚未加入
+          {% endif %}
+        </li>
+      </ul>
+
+      <h4>邀请码（最近 {{ aggregate.invites|length }}）</h4>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>邀请码</th><th>过期</th><th>已使用</th><th>创建</th></tr></thead>
+          <tbody>
+          {% for inv in aggregate.invites %}
+            <tr>
+              <td><strong>{{ inv.code }}</strong></td>
+              <td>{{ inv.expires_at }}</td>
+              <td>{{ inv.consumed_at or "未使用" }}</td>
+              <td>{{ inv.created_at }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>家庭消息（最近 {{ aggregate.messages|length }}）</h4>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>类型</th><th>原文</th><th>送达</th><th>确认</th></tr></thead>
+          <tbody>
+          {% for msg in aggregate.messages %}
+            <tr>
+              <td>{{ msg.kind }}</td>
+              <td>{{ msg.original_text }}</td>
+              <td>{{ msg.delivered_text }}</td>
+              <td>{{ msg.acknowledged_at or "-" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>关怀摘要（最近 {{ aggregate.care_shares|length }}）</h4>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr><th>紧急度</th><th>摘要</th><th>父母确认</th><th>已读</th></tr></thead>
+          <tbody>
+          {% for c in aggregate.care_shares %}
+            <tr>
+              <td>{{ c.urgency }}</td>
+              <td>{{ c.summary }}</td>
+              <td>{{ c.parent_confirmed }}</td>
+              <td>{{ c.read_at or "未读" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

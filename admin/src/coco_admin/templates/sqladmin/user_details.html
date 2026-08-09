@@ -1,0 +1,140 @@
+{% extends "sqladmin/details.html" %}
+{% block content %}
+{{ super() }}
+{% if aggregate and aggregate.user %}
+<div class="col-12 mt-3">
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">用户聚合视图</h3></div>
+    <div class="card-body">
+      <h4>家庭关系（{{ aggregate.families|length }}）</h4>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm table-vcenter">
+          <thead><tr><th>ID</th><th>父母</th><th>子女</th><th>状态</th></tr></thead>
+          <tbody>
+          {% for f in aggregate.families %}
+            <tr>
+              <td><code>{{ f.id }}</code></td>
+              <td><code>{{ f.parent_user_id }}</code></td>
+              <td><code>{{ f.child_user_id }}</code></td>
+              <td>{{ f.status }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>提醒（最近 {{ aggregate.reminders|length }}）</h4>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>标题</th><th>状态</th><th>类型</th><th>下次触发</th></tr></thead>
+          <tbody>
+          {% for r in aggregate.reminders %}
+            <tr>
+              <td>{{ r.title }}</td>
+              <td>{{ r.status }}</td>
+              <td>{{ r.schedule_type }}</td>
+              <td>{{ r.next_trigger_at }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>记忆（最近 {{ aggregate.memories|length }}）</h4>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>分类</th><th>内容</th><th>来源</th></tr></thead>
+          <tbody>
+          {% for m in aggregate.memories %}
+            <tr>
+              <td>{{ m.category }}</td>
+              <td>{{ m.content }}</td>
+              <td>{{ m.source }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>关怀摘要（最近 {{ aggregate.care_shares|length }}）</h4>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>紧急度</th><th>摘要</th><th>已读</th></tr></thead>
+          <tbody>
+          {% for c in aggregate.care_shares %}
+            <tr>
+              <td>{{ c.urgency }}</td>
+              <td>{{ c.summary }}</td>
+              <td>{{ c.read_at or "未读" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>家庭消息（最近 {{ aggregate.messages|length }}）</h4>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>类型</th><th>原文</th><th>送达文案</th></tr></thead>
+          <tbody>
+          {% for msg in aggregate.messages %}
+            <tr>
+              <td>{{ msg.kind }}</td>
+              <td>{{ msg.original_text }}</td>
+              <td>{{ msg.delivered_text }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>通知（最近 {{ aggregate.notifications|length }}）</h4>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>类型</th><th>标题</th><th>已读</th></tr></thead>
+          <tbody>
+          {% for n in aggregate.notifications %}
+            <tr>
+              <td>{{ n.type }}</td>
+              <td>{{ n.title }}</td>
+              <td>{{ n.read_at or "未读" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>登录会话（最近 {{ aggregate.sessions|length }}）</h4>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr><th>设备</th><th>过期</th><th>吊销</th></tr></thead>
+          <tbody>
+          {% for s in aggregate.sessions %}
+            <tr>
+              <td>{{ s.device_id }}</td>
+              <td>{{ s.expires_at }}</td>
+              <td>{{ s.revoked_at or "有效" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3" class="text-secondary">无</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

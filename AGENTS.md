@@ -38,6 +38,8 @@ MVP 核心：语音陪伴、日常提醒、关怀摘要同步、子女今日状�
 
 前端：`features/<name>/{data,domain,application,presentation}`，公共能力在 `core/`。
 
+运营后台：独立目录 `admin/`（`coco_admin`），分进程部署，复用 `backend` ORM；说明见 `doc/admin.md`。
+
 禁止：
 
 - 一个 Repository 实现全部业务接口

@@ -1,0 +1,50 @@
+[project]
+name = "coco-admin"
+version = "0.1.0"
+description = "Coco operations admin (read-mostly data browser + stats)"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "coco-backend",
+  "fastapi>=0.128,<1",
+  "pydantic-settings>=2.12,<3",
+  "sqladmin[full]>=0.21,<1",
+  "sqlalchemy[asyncio]>=2.0.46,<3",
+  "asyncpg>=0.31,<1",
+  "uvicorn[standard]>=0.40,<1",
+  "structlog>=25.5,<26",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/coco_admin"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/coco_admin" = "coco_admin"
+
+# 打包 Jinja 模板（SQLAdmin 自定义页）
+[tool.hatch.build.targets.wheel.force-include]
+"src/coco_admin/templates" = "coco_admin/templates"
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28.1",
+  "ruff>=0.16.2",
+]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+# 复用 backend 的 ORM / schema，不复制表定义
+coco-backend = { path = "../backend", editable = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

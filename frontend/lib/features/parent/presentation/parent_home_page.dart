@@ -12,6 +12,7 @@ import '../../reminders/application/reminders_providers.dart';
 import '../application/coco_companion_controller.dart';
 import '../application/voice_call_controller.dart';
 import '../domain/voice_call_state.dart';
+import 'widgets/child_status_card.dart';
 import 'widgets/coco_companion_view.dart';
 import 'widgets/reminder_confirm_card.dart';
 import 'widgets/voice_call_panel.dart';
@@ -40,7 +41,13 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     // 确保轮询器在首页被挂载
     final pollerState = ref.watch(notificationPollerProvider);
     final nextReminder = ref.watch(nextReminderProvider);
-    final pending = pollerState.pendingReminder;
+    // 一屏一事：到点提醒优先于报平安
+    final pendingReminder = pollerState.pendingReminder;
+    final pendingChildStatus = pendingReminder == null
+        ? pollerState.pendingChildStatus
+        : null;
+    final hasPendingCard =
+        pendingReminder != null || pendingChildStatus != null;
 
     return CocoScaffold(
       body: Column(
@@ -62,17 +69,17 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
             ],
           ),
           const SizedBox(height: CocoSpace.s3),
-          if (!inCall && pending == null)
+          if (!inCall && !hasPendingCard)
             Text(
               '点我，我们说说话',
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: CocoColors.neutral700,
               ),
             ),
-          if (!inCall && pending != null) ...[
+          if (!inCall && pendingReminder != null) ...[
             const SizedBox(height: CocoSpace.s3),
             ReminderConfirmCard(
-              notification: pending,
+              notification: pendingReminder,
               busy: _actionBusy,
               onConfirm: () => _runAction(() {
                 return ref
@@ -86,26 +93,45 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
               }),
             ),
             const SizedBox(height: CocoSpace.s4),
+          ] else if (!inCall && pendingChildStatus != null) ...[
+            const SizedBox(height: CocoSpace.s3),
+            ChildStatusCard(
+              notification: pendingChildStatus,
+              busy: _actionBusy,
+              onAcknowledge: () => _runAction(() {
+                return ref
+                    .read(notificationPollerProvider.notifier)
+                    .acknowledgePendingChildStatus();
+              }),
+            ),
+            const SizedBox(height: CocoSpace.s4),
           ],
-          const Spacer(),
-          // 整只小狗可点：未通话=开始；说话中=打断
-          Center(
-            child: Semantics(
-              button: true,
-              label: callState.canInterrupt ? '打断可可说话' : '和可可说话',
-              child: GestureDetector(
-                onTap: () {
-                  if (callState.canInterrupt) {
-                    callController.interrupt();
-                  } else if (!inCall) {
-                    callController.start();
-                  }
-                },
-                child: CocoCompanionView(pose: companionPose),
-              ),
+          // 有待办卡时高度变紧：小狗随剩余空间缩放，避免底部溢出
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final side = constraints.biggest.shortestSide
+                    .clamp(160.0, 280.0)
+                    .toDouble();
+                return Center(
+                  child: Semantics(
+                    button: true,
+                    label: callState.canInterrupt ? '打断可可说话' : '和可可说话',
+                    child: GestureDetector(
+                      onTap: () {
+                        if (callState.canInterrupt) {
+                          callController.interrupt();
+                        } else if (!inCall) {
+                          callController.start();
+                        }
+                      },
+                      child: CocoCompanionView(pose: companionPose, size: side),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-          const Spacer(),
           if (inCall)
             VoiceCallPanel(
               state: callState,
@@ -164,9 +190,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            error is ApiException
-                ? error.message
-                : '刚才没办成。您可以再试一次，数据没有错误写入。',
+            error is ApiException ? error.message : '刚才没办成。您可以再试一次，数据没有错误写入。',
           ),
         ),
       );

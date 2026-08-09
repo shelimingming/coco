@@ -5,6 +5,7 @@
 - 产品需求：[`doc/需求.md`](doc/需求.md)
 - 架构约定：[`doc/架构.md`](doc/架构.md)
 - 设计规范：[`doc/DESIGN.md`](doc/DESIGN.md)
+- 运营后台：[`doc/admin.md`](doc/admin.md) / [`admin/`](admin/)
 - 旧实现（只读）：[`back/`](back/)
 
 ## 环境要求
@@ -62,6 +63,21 @@ uv run uvicorn coco.main:app --reload --host 127.0.0.1 --port 8000
 
 - 文档：http://127.0.0.1:8000/docs
 - 开发验证码固定为 `246810`（见 `COCO_DEV_SMS_CODE`）
+
+## 运营管理后台
+
+独立进程，与用户 API 分离，共用同一数据库：
+
+```bash
+cd admin
+cp .env.example .env   # 首次
+uv sync
+uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
+```
+
+- 后台：http://127.0.0.1:8001/admin
+- 默认开发账号见 `admin/.env.example`
+- 说明：[`doc/admin.md`](doc/admin.md)
 
 ## 前端（iOS 模拟器）
 
