@@ -39,6 +39,10 @@ dependencies:
   dio: ^5.11.0
   flutter_secure_storage: ^11.0.0
   uuid: ^4.6.0
+  # 实时语音：16k PCM 采麦 + WS + 24k PCM 流式播放
+  record: ^7.1.1
+  web_socket_channel: ^3.0.2
+  flutter_pcm_sound: ^3.1.1
   flutter_localizations:
     sdk: flutter
 

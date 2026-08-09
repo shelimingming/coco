@@ -8,6 +8,7 @@
 #   ./scripts/dev_ios.sh --lan                 # 真机调试：后端监听 0.0.0.0，App 用局域网 IP
 #   ./scripts/dev_ios.sh --backend-only        # 只起后端
 #   ./scripts/dev_ios.sh --app-only            # 只起 App（后端已在别处运行）
+#   ./scripts/dev_ios.sh --reuse-backend       # 端口上已有健康后端时复用，不重启
 #   ./scripts/dev_ios.sh --list                # 列出候选模拟器后退出
 
 set -Eeuo pipefail
@@ -28,7 +29,8 @@ BACKEND_PORT="8000"
 FLUTTER_MODE="debug"
 RUN_BACKEND=1
 RUN_APP=1
-RESTART_BACKEND=0
+# 默认停掉已占用端口的后端再拉起，避免代码更新后仍复用旧进程。
+REUSE_BACKEND=0
 KEEP_BACKEND=0
 USE_LAN=0
 LIST_ONLY=0
@@ -77,7 +79,9 @@ parse_args() {
       --profile) FLUTTER_MODE="profile"; shift ;;
       --backend-only) RUN_APP=0; KEEP_BACKEND=1; shift ;;
       --app-only) RUN_BACKEND=0; shift ;;
-      --restart-backend) RESTART_BACKEND=1; shift ;;
+      # --restart-backend：历史兼容；重启已是默认行为
+      --restart-backend) REUSE_BACKEND=0; shift ;;
+      --reuse-backend) REUSE_BACKEND=1; shift ;;
       --keep-backend) KEEP_BACKEND=1; shift ;;
       --list) LIST_ONLY=1; shift ;;
       -h|--help) usage; exit 0 ;;
@@ -169,14 +173,22 @@ start_backend() {
   ensure_env_file
   check_database
 
-  if (( RESTART_BACKEND )); then
-    stop_existing_backend
-  elif [[ -n "$(port_listener_pid)" ]]; then
+  if (( REUSE_BACKEND )) && [[ -n "$(port_listener_pid)" ]]; then
     if backend_health_ok; then
-      ok "后端已在 http://127.0.0.1:${BACKEND_PORT} 运行，复用它（要重启加 --restart-backend）"
+      ok "后端已在 http://127.0.0.1:${BACKEND_PORT} 运行，按 --reuse-backend 复用"
       return 0
     fi
     die "端口 ${BACKEND_PORT} 被别的进程占用，且不是 Coco 后端。" "换端口：--port 8001，或先停掉占用进程。"
+  fi
+
+  # 默认：有进程占着就先停，再按当前代码重新启动。
+  if [[ -n "$(port_listener_pid)" ]]; then
+    if backend_health_ok; then
+      info "检测到已有后端，将停掉并按当前代码重启"
+    else
+      warn "端口 ${BACKEND_PORT} 已被占用且健康检查失败，将尝试停掉后重启"
+    fi
+    stop_existing_backend
   fi
 
   info "同步后端依赖（uv sync）"

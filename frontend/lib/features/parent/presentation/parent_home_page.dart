@@ -7,9 +7,12 @@ import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../../auth/application/auth_controller.dart';
 import '../application/coco_companion_controller.dart';
+import '../application/voice_call_controller.dart';
+import '../domain/voice_call_state.dart';
 import 'widgets/coco_companion_view.dart';
+import 'widgets/voice_call_panel.dart';
 
-/// 父母端占位首页：问候 + 功能入口 + Coco 形象 + 大号「和我说话」按钮。
+/// 父母端首页：点小狗或「和我说话」进入实时陪伴，通话原地切换不跳页。
 class ParentHomePage extends ConsumerWidget {
   const ParentHomePage({super.key});
 
@@ -18,8 +21,11 @@ class ParentHomePage extends ConsumerWidget {
     final user = ref.watch(authControllerProvider).user;
     final name = user?.displayName ?? '家人';
     final theme = Theme.of(context);
-    // 形象随姿态切换；语音接通后由业务侧更新 cocoCompanionPoseProvider
     final companionPose = ref.watch(cocoCompanionPoseProvider);
+    final callState = ref.watch(voiceCallControllerProvider);
+    final callController = ref.read(voiceCallControllerProvider.notifier);
+    final inCall =
+        callState.isActive || callState.phase == VoiceCallPhase.error;
 
     return CocoScaffold(
       body: Column(
@@ -34,37 +40,55 @@ class ParentHomePage extends ConsumerWidget {
               const SizedBox(width: CocoSpace.s3),
               ParentChipButton(
                 label: '功能',
-                onPressed: () => context.push('/parent/functions'),
+                onPressed: inCall
+                    ? null
+                    : () => context.push('/parent/functions'),
               ),
             ],
           ),
           const SizedBox(height: CocoSpace.s3),
-          Text(
-            '上午好，我在呢，想聊什么？',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: CocoColors.neutral700,
+          if (!inCall)
+            Text(
+              '点我，我们说说话',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: CocoColors.neutral700,
+              ),
+            ),
+          const Spacer(),
+          // 整只小狗可点：未通话=开始；说话中=打断
+          Center(
+            child: Semantics(
+              button: true,
+              label: callState.canInterrupt ? '打断可可说话' : '和可可说话',
+              child: GestureDetector(
+                onTap: () {
+                  if (callState.canInterrupt) {
+                    callController.interrupt();
+                  } else if (!inCall) {
+                    callController.start();
+                  }
+                },
+                child: CocoCompanionView(pose: companionPose),
+              ),
             ),
           ),
           const Spacer(),
-          // 老人端首页主视觉：一屏一事，突出陪伴形象
-          Center(
-            child: CocoCompanionView(pose: companionPose),
-          ),
-          const Spacer(),
-          CocoPrimaryButton(
-            label: '和我说话',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('语音对话即将到来，先完成登录框架。')),
-              );
-            },
-          ),
-          const SizedBox(height: CocoSpace.s4),
-          Text(
-            '今天还没有提醒',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium,
-          ),
+          if (inCall)
+            VoiceCallPanel(
+              state: callState,
+              onEnd: callController.stop,
+              onInterrupt: callController.interrupt,
+              onRetry: callController.retry,
+            )
+          else ...[
+            CocoPrimaryButton(label: '和我说话', onPressed: callController.start),
+            const SizedBox(height: CocoSpace.s4),
+            Text(
+              '今天还没有提醒',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
         ],
       ),
     );

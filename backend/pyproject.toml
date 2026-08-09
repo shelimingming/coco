@@ -7,12 +7,14 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
   "alembic>=1.18,<2",
   "asyncpg>=0.31,<1",
+  "certifi>=2024.0.0",
   "fastapi>=0.128,<1",
   "pydantic-settings>=2.12,<3",
   "pyjwt[crypto]>=2.10,<3",
   "sqlalchemy[asyncio]>=2.0.46,<3",
   "structlog>=25.5,<26",
   "uvicorn[standard]>=0.40,<1",
+  "websockets>=14,<18",
 ]
 
 [build-system]
@@ -25,8 +27,19 @@ packages = ["src/coco"]
 [tool.hatch.build.targets.wheel.sources]
 "src/coco" = "coco"
 
+[dependency-groups]
+dev = [
+  "pytest>=8,<9",
+  "pytest-asyncio>=0.25,<1",
+]
+
 [tool.uv]
 package = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

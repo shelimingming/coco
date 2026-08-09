@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +13,8 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        # 允许构造参数用字段名；env 仍认 AliasChoices 中的完整变量名
+        populate_by_name=True,
     )
 
     environment: Literal["development", "staging", "production", "test"] = "development"
@@ -39,6 +41,15 @@ class Settings(BaseSettings):
 
     cors_allowed_origins: str = "*"
 
+    # 百炼实时语音：密钥只留服务端；无 Key 时应用照常启动，能力关闭
+    aliyun_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("COCO_ALIYUN_API_KEY", "DASHSCOPE_API_KEY"),
+    )
+    aliyun_region: Literal["cn-beijing", "ap-southeast-1"] = "cn-beijing"
+    realtime_model: str = "qwen-audio-3.0-realtime-plus"
+    realtime_voice: str = "longanqian"
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def _strip_origins(cls, value: object) -> object:
@@ -52,6 +63,21 @@ class Settings(BaseSettings):
         if raw == "*":
             return ["*"]
         return [item.strip() for item in raw.split(",") if item.strip()]
+
+    @property
+    def realtime_websocket_url(self) -> str:
+        """Qwen-Audio Realtime WebSocket 基址（不含 model 查询参数）。"""
+        if self.aliyun_region == "ap-southeast-1":
+            return "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime"
+        return "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
+
+    @property
+    def realtime_available(self) -> bool:
+        """有可用阿里云 Key 时才对客户端声明实时能力。"""
+        key = self.aliyun_api_key
+        if key is None:
+            return False
+        return bool(key.get_secret_value().strip())
 
     def validate_runtime_safety(self) -> None:
         """非开发环境禁止使用开发短信与默认密钥。"""

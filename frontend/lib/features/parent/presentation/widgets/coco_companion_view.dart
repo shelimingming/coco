@@ -5,11 +5,7 @@ import '../../domain/coco_companion_pose.dart';
 
 /// 父母端主视觉：按姿态展示 Coco 形象，后续可无感换成同路径动图。
 class CocoCompanionView extends StatelessWidget {
-  const CocoCompanionView({
-    super.key,
-    required this.pose,
-    this.size = 280,
-  });
+  const CocoCompanionView({super.key, required this.pose, this.size = 280});
 
   final CocoCompanionPose pose;
   final double size;

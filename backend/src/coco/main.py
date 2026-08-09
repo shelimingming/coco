@@ -18,6 +18,7 @@ from coco.errors import register_exception_handlers
 from coco.logging import configure_logging
 from coco.modules.auth.router import me_router, router as auth_router
 from coco.modules.health.router import router as health_router
+from coco.modules.voice.router import router as voice_router
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -68,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(me_router)
+    app.include_router(voice_router)
     return app
 
 
