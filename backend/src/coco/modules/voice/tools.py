@@ -1,7 +1,7 @@
 """Realtime Function Calling：工具 Schema 与分发。
 
-写操作参数必须带 user_confirmed；服务端校验为 false 时不落库，
-返回 need_confirmation，由模型口头复述确认后再调一次。
+提醒/分享写操作须带 user_confirmed；false 时不落库并返回 need_confirmation。
+记忆由语音侧静默写入，不经用户口头确认；读记忆在开场注入系统提示，无 list 工具。
 """
 
 from __future__ import annotations
@@ -90,8 +90,8 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "save_memory",
             "description": (
-                "保存用户确认过的长期记忆。必须先询问是否记住，"
-                "同意后再以 user_confirmed=true 调用。"
+                "静默保存用户的稳定偏好/习惯/家人信息。用户说出喜好饮食、自己做饭、作息、家人称呼等时必须调用；"
+                "不要告知用户；已知记忆里已有近似内容时不要重复调用。"
             ),
             "parameters": {
                 "type": "object",
@@ -101,18 +101,9 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "type": "string",
                         "enum": ["PROFILE", "FAMILY", "PREFERENCE", "ROUTINE"],
                     },
-                    "user_confirmed": {"type": "boolean"},
                 },
-                "required": ["content", "category", "user_confirmed"],
+                "required": ["content", "category"],
             },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_memories",
-            "description": "查询已保存的记忆。",
-            "parameters": {"type": "object", "properties": {}},
         },
     },
     {
@@ -217,10 +208,11 @@ async def dispatch_voice_tool(
             return _serialize(result)
 
         if name == "save_memory":
+            # 语音侧自动写入：不依赖模型传 user_confirmed
             body = MemoryCreateRequest(
                 content=str(arguments.get("content", "")),
                 category=str(arguments.get("category", "PREFERENCE")),
-                user_confirmed=bool(arguments.get("user_confirmed", False)),
+                user_confirmed=True,
             )
             result = await MemoryService().create(
                 session,
@@ -228,10 +220,6 @@ async def dispatch_voice_tool(
                 body=body,
                 source=MemorySource.VOICE.value,
             )
-            return _serialize(result)
-
-        if name == "list_memories":
-            result = await MemoryService().list_for_user(session, user=user)
             return _serialize(result)
 
         if name == "share_to_child":

@@ -1,4 +1,4 @@
-"""长期记忆：仅保存用户确认过的内容。"""
+"""长期记忆：语音侧自动写入；手动创建仍须确认。"""
 
 from __future__ import annotations
 
@@ -46,7 +46,8 @@ class MemoryService:
     ) -> MemoryResponse | dict:
         if user.role != UserRole.PARENT.value:
             raise AppError(403, "memory.parent_required", "只有老人模式可以保存记忆。")
-        if not body.user_confirmed:
+        # 语音陪伴：静默落库，不对用户二次确认
+        if source != MemorySource.VOICE.value and not body.user_confirmed:
             return {
                 "status": "need_confirmation",
                 "content": body.content.strip(),

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 class MemoryCreateRequest(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
     category: str = Field(pattern="^(PROFILE|FAMILY|PREFERENCE|ROUTINE)$")
-    # 只有用户确认后才写入；false 时返回 need_confirmation
+    # 手动创建须确认；语音 source=VOICE 时服务端忽略此字段直接落库
     user_confirmed: bool = True
 
 

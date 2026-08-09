@@ -1,8 +1,8 @@
 """鉴权 WebSocket：把 Flutter 精简协议桥接到 Qwen-Audio Realtime。
 
 密钥只留在服务端；下行事件脱敏后不含供应商原始音频原文日志。
-写操作经 Function Calling 进入业务 service，user_confirmed 由代码兜底。
-通话过程落库最终转写与工具调用（父母私有，失败不打断通话）。
+提醒/分享经 Function Calling 且 user_confirmed 由代码兜底；记忆开场注入并静默写入。
+通话过程落库最终转写与（非记忆）工具调用（父母私有，失败不打断通话）。
 """
 
 from __future__ import annotations
@@ -34,7 +34,11 @@ from coco.modules.conversations.service import (
     end_conversation,
     start_conversation,
 )
-from coco.modules.voice.prompts import COCO_REALTIME_COMPANION_PROMPT
+from coco.modules.memories.service import MemoryService
+from coco.modules.voice.prompts import (
+    COCO_REALTIME_COMPANION_PROMPT,
+    build_companion_instructions,
+)
 from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
 from coco.providers.qwen_realtime import (
     QwenAudioRealtimeClient,
@@ -118,7 +122,30 @@ async def resolve_ws_user(
     return user
 
 
-async def create_default_realtime_client(settings: Settings) -> QwenAudioRealtimeClient:
+async def _load_companion_instructions(user_id: UUID) -> str:
+    """建连前加载姓名与已确认记忆，拼进系统提示。"""
+    factory = get_session_factory()
+    async with factory() as session:
+        user = await session.get(User, user_id)
+        if user is None:
+            return build_companion_instructions([])
+        name = user.display_name
+        try:
+            memories = await MemoryService().list_for_user(session, user=user)
+        except AppError:
+            logger.warning("load_memories_for_voice_failed user_id=%s", user_id)
+            return build_companion_instructions([], user_name=name)
+        return build_companion_instructions(
+            [m.content for m in memories],
+            user_name=name,
+        )
+
+
+async def create_default_realtime_client(
+    settings: Settings,
+    *,
+    instructions: str | None = None,
+) -> QwenAudioRealtimeClient:
     if settings.aliyun_api_key is None:
         raise AppError(503, "realtime.unavailable", "实时语音暂时不可用，请稍后再试。")
     client = QwenAudioRealtimeClient(
@@ -128,7 +155,7 @@ async def create_default_realtime_client(settings: Settings) -> QwenAudioRealtim
         session=RealtimeSessionConfig(
             modalities=("text", "audio"),
             voice=settings.realtime_voice,
-            instructions=COCO_REALTIME_COMPANION_PROMPT,
+            instructions=instructions or COCO_REALTIME_COMPANION_PROMPT,
             turn_detection_mode=TurnDetectionMode.SERVER_VAD,
             tools=VOICE_TOOL_DEFINITIONS,
         ),
@@ -237,12 +264,18 @@ async def run_realtime_bridge(
         conversation_id = await start_conversation(user_id)
         seq = _SeqCounter()
 
-        factory = client_factory or create_default_realtime_client
-        maybe_client = factory(settings)
-        active_vendor = cast(
-            QwenAudioRealtimeClient,
-            await maybe_client if asyncio.iscoroutine(maybe_client) else maybe_client,
-        )
+        if client_factory is None:
+            # 默认路径：注入记忆后再连百炼
+            instructions = await _load_companion_instructions(user_id)
+            active_vendor = await create_default_realtime_client(
+                settings, instructions=instructions
+            )
+        else:
+            maybe_client = client_factory(settings)
+            active_vendor = cast(
+                QwenAudioRealtimeClient,
+                await maybe_client if asyncio.iscoroutine(maybe_client) else maybe_client,
+            )
         vendor = active_vendor
         await _send_json(websocket, _client_event("session.ready"))
 
@@ -397,7 +430,8 @@ async def _handle_function_call(
                 arguments=arguments,
             )
 
-    if conversation_id is not None:
+    # 记忆静默写入：不进通话历史，父母只在「可可记得的我」里看
+    if conversation_id is not None and name != "save_memory":
         await append_tool_call(
             conversation_id,
             seq=seq.next(),

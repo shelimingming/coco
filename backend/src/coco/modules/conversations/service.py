@@ -43,10 +43,9 @@ def tool_display_summary(tool_name: str, arguments: dict[str, Any], result: dict
     status = str(result.get("status") or "")
     need_confirm = status == "need_confirmation"
 
+    # 新通话不再落库记忆工具；保留分支以便兼容历史数据
     if tool_name == "save_memory":
         content = str(arguments.get("content") or result.get("content") or "").strip()
-        if need_confirm:
-            return f"还在问你要不要记住：{content}" if content else "还在问你要不要记住一件事"
         return f"帮你记住：{content}" if content else "帮你记住了一件事"
 
     if tool_name == "create_reminder":
@@ -64,6 +63,7 @@ def tool_display_summary(tool_name: str, arguments: dict[str, Any], result: dict
         return "可可查看了你的提醒"
 
     if tool_name == "list_memories":
+        # 旧通话可能仍有读记忆工具记录
         return "可可查看了你记住的事"
 
     if tool_name == "share_to_child":

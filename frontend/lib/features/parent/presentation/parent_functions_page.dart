@@ -5,7 +5,7 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 
-/// 老人端功能菜单：2×2 大入口，色板仅用父母端 token。
+/// 老人端功能菜单：大入口网格；说话回首页即可，不单独放「找可可」。
 class ParentFunctionsPage extends StatelessWidget {
   const ParentFunctionsPage({super.key});
 
@@ -31,13 +31,6 @@ class ParentFunctionsPage extends StatelessWidget {
         // 两行标题（如「我记住的事」）需要更高格子，避免底部溢出
         childAspectRatio: 0.85,
         children: [
-          _FunctionTile(
-            label: '找可可',
-            background: CocoColors.parentPrimarySoft,
-            icon: Icons.pets_outlined,
-            // 回首页，由用户点「和我说话」开始通话
-            onTap: () => context.go('/parent'),
-          ),
           _FunctionTile(
             label: '今天',
             // 软绿底：success 叠中性底，不用子女端青绿

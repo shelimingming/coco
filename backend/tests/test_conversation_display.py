@@ -5,15 +5,8 @@ from __future__ import annotations
 from coco.modules.conversations.service import tool_display_summary
 
 
-def test_save_memory_summaries() -> None:
-    assert (
-        tool_display_summary(
-            "save_memory",
-            {"content": "喜欢晚饭后散步"},
-            {"status": "need_confirmation", "content": "喜欢晚饭后散步"},
-        )
-        == "还在问你要不要记住：喜欢晚饭后散步"
-    )
+def test_save_memory_summary_compat() -> None:
+    # 新通话不再落库记忆工具；兼容历史数据的展示文案
     assert (
         tool_display_summary(
             "save_memory",
