@@ -78,7 +78,7 @@ class CocoSecondaryButton extends StatelessWidget {
   }
 }
 
-/// 老人端顶栏次入口（功能 / 返回）：白底胶囊 + success 字色，轻暖灰阴影。
+/// 老人端顶栏次入口（功能 / 返回）：白底胶囊 + 暖褐字色，轻暖灰阴影。
 class ParentChipButton extends StatelessWidget {
   const ParentChipButton({
     super.key,
@@ -109,7 +109,8 @@ class ParentChipButton extends StatelessWidget {
           child: Text(
             label,
             style: theme.textTheme.titleMedium?.copyWith(
-              color: CocoColors.success,
+              // 次操作用 elder.secondary，不用 success（完成语义）或子女青绿
+              color: CocoColors.parentSecondary,
               fontWeight: FontWeight.w600,
             ),
           ),
