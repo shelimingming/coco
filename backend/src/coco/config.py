@@ -39,7 +39,8 @@ class Settings(BaseSettings):
 
     cors_allowed_origins: str = "*"
 
-    # 百炼实时语音：密钥只留服务端；无 Key 时应用照常启动，能力关闭
+    # 百炼：密钥只留服务端；无 Key 时应用照常启动，实时/文本/识图能力关闭或降级
+    # 模型名均可在 .env 用 COCO_REALTIME_MODEL / COCO_TEXT_MODEL / COCO_VISION_MODEL 覆盖
     aliyun_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("COCO_ALIYUN_API_KEY", "DASHSCOPE_API_KEY"),
@@ -47,8 +48,10 @@ class Settings(BaseSettings):
     aliyun_region: Literal["cn-beijing", "ap-southeast-1"] = "cn-beijing"
     realtime_model: str = "qwen-audio-3.0-realtime-plus"
     realtime_voice: str = "longanqian"
-    # 文本模型：子女报平安转译等无状态请求
+    # 文本模型：报平安转译、会话标题等无状态请求
     text_model: str = "qwen-plus"
+    # 识图模型：须支持 Image 输入；qwen-plus 纯文本不可用
+    vision_model: str = "qwen3.7-plus"
 
     # 提醒调度：第二次提醒 / 升级通知子女的间隔（分钟）
     reminder_second_delay_minutes: int = 30

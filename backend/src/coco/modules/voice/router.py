@@ -48,4 +48,19 @@ async def voice_realtime(
                 await websocket.close(code=1008 if exc.status_code in {401, 403} else 1011)
             return
 
-    await run_realtime_bridge(websocket, settings=settings, user_id=user_id)
+    await run_realtime_bridge(
+        websocket,
+        settings=settings,
+        user_id=user_id,
+        # 识图页「还想问」经 query 传入结论摘要（限长，避免撑爆 URL）
+        look_context=_clip_look_context(websocket.query_params.get("look_context")),
+    )
+
+
+def _clip_look_context(raw: str | None) -> str | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if len(text) > 400:
+        return text[:400]
+    return text

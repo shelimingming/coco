@@ -32,6 +32,12 @@ class ParentFunctionsPage extends StatelessWidget {
         childAspectRatio: 0.85,
         children: [
           _FunctionTile(
+            label: '帮我看看',
+            background: CocoColors.parentPrimarySoft,
+            icon: Icons.visibility_outlined,
+            onTap: () => context.push('/parent/look'),
+          ),
+          _FunctionTile(
             label: '今天',
             // 软绿底：success 叠中性底，不用子女端青绿
             background: Color.alphaBlend(

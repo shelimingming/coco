@@ -72,6 +72,13 @@ def tool_display_summary(tool_name: str, arguments: dict[str, Any], result: dict
             return f"还在问你要不要告诉家人：{summary}" if summary else "还在问你要不要告诉家人"
         return f"准备告诉家人：{summary}" if summary else "准备告诉家人一件事"
 
+    if tool_name == "look_image":
+        headline = str(result.get("headline") or "").strip()
+        confidence = str(result.get("confidence") or "").strip().lower()
+        if confidence == "low" or not headline:
+            return "看了一张图：看不太清"
+        return f"看了一张图：{headline}"
+
     if status == "error":
         return "刚才想帮你办事，但没办成"
     return f"可可调用了：{tool_name}"

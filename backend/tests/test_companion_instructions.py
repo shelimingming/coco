@@ -39,6 +39,17 @@ def test_injects_memories() -> None:
     assert "已知用户记忆" in text
 
 
+def test_injects_look_context() -> None:
+    text = build_companion_instructions(
+        [],
+        user_name="王奶奶",
+        look_context="保质期到 2026年8月18日。今天还没有过期。",
+    )
+    assert "刚才帮用户看过一张图" in text
+    assert "保质期到 2026年8月18日" in text
+    assert "不要调用 save_memory 保存图中内容" in text
+
+
 def test_truncates_by_count_and_chars() -> None:
     many = [f"记忆条目{i:04d}" + ("x" * 80) for i in range(50)]
     text = build_companion_instructions(many, user_name="测试")

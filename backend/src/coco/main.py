@@ -27,6 +27,7 @@ from coco.modules.memories.router import router as memories_router
 from coco.modules.messages.router import router as messages_router
 from coco.modules.notifications.router import router as notifications_router
 from coco.modules.reminders.router import router as reminders_router
+from coco.modules.vision.router import router as vision_router
 from coco.modules.voice.router import router as voice_router
 from coco.scheduler import scheduler_loop
 
@@ -93,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(me_router)
     app.include_router(voice_router)
+    app.include_router(vision_router)
     app.include_router(family_router)
     app.include_router(reminders_router)
     app.include_router(memories_router)

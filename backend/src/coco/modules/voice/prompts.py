@@ -41,8 +41,9 @@ def build_companion_instructions(
     memories: list[str],
     *,
     user_name: str | None = None,
+    look_context: str | None = None,
 ) -> str:
-    """把老人姓名与已确认记忆拼进陪伴系统提示，供 Realtime session.instructions 使用。"""
+    """把老人姓名、已确认记忆、可选识图结论拼进陪伴系统提示。"""
     name = (user_name or "").strip()
     if name:
         profile_block = f"当前用户：姓名「{name}」（父母端）。"
@@ -69,4 +70,20 @@ def build_companion_instructions(
     else:
         memory_block = "已知用户记忆：暂无已存记忆。"
 
-    return f"{COCO_REALTIME_COMPANION_PROMPT}\n\n{profile_block}\n\n{memory_block}"
+    look = (look_context or "").strip()
+    if look:
+        if len(look) > 400:
+            look = look[:400] + "…"
+        # 识图结论仅作本轮语境；禁止写入记忆
+        look_block = (
+            "刚才帮用户看过一张图，结论如下（可据此回答追问；"
+            "不要调用 save_memory 保存图中内容；不要假装还能看到原图）：\n"
+            f"{look}"
+        )
+    else:
+        look_block = ""
+
+    parts = [COCO_REALTIME_COMPANION_PROMPT, profile_block, memory_block]
+    if look_block:
+        parts.append(look_block)
+    return "\n\n".join(parts)

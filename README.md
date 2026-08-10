@@ -5,6 +5,7 @@
 - 产品需求：[`doc/需求.md`](doc/需求.md)
 - 架构约定：[`doc/架构.md`](doc/架构.md)
 - 设计规范：[`doc/DESIGN.md`](doc/DESIGN.md)
+- 帮我看看（父母端识图）：[`doc/帮我看看.md`](doc/帮我看看.md)
 - 运营后台：[`doc/admin.md`](doc/admin.md) / [`admin/`](admin/)
 - 旧实现（只读）：[`back/`](back/)
 

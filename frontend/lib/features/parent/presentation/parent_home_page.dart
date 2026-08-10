@@ -9,6 +9,7 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../look/application/look_providers.dart';
 import '../../notifications/application/notification_poller.dart';
 import '../../reminders/application/reminders_providers.dart';
 import '../application/coco_companion_controller.dart';
@@ -30,6 +31,27 @@ class ParentHomePage extends ConsumerStatefulWidget {
 
 class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   bool _actionBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 识图结果页「还想问」回首页后自动开语音
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeStartLookFollowUp();
+    });
+  }
+
+  void _maybeStartLookFollowUp() {
+    if (!mounted) return;
+    final pending = ref.read(pendingLookContextProvider);
+    if (pending == null) return;
+    ref.read(pendingLookContextProvider.notifier).state = null;
+    unawaited(
+      ref
+          .read(voiceCallControllerProvider.notifier)
+          .start(lookContext: pending.voiceContext),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

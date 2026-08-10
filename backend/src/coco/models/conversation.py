@@ -22,6 +22,8 @@ class ConversationStatus(enum.StrEnum):
 
 class ConversationChannel(enum.StrEnum):
     VOICE_REALTIME = "VOICE_REALTIME"
+    # 帮我看看：单次识图，仅文本摘要，不含图片
+    LOOK = "LOOK"
 
 
 class ConversationItemKind(enum.StrEnum):

@@ -49,19 +49,25 @@ class RealtimeVoiceSocket {
 
   bool get isConnected => _channel != null;
 
-  /// 由 Dio baseUrl 推导 ws/wss，并附带 JWT。
+  /// 由 Dio baseUrl 推导 ws/wss，并附带 JWT；可选注入识图语境。
   static Uri buildUri({
     required String httpBaseUrl,
     required String accessToken,
+    String? lookContext,
   }) {
     final base = Uri.parse(httpBaseUrl);
     final scheme = base.scheme == 'https' ? 'wss' : 'ws';
+    final query = <String, String>{'access_token': accessToken};
+    final look = lookContext?.trim();
+    if (look != null && look.isNotEmpty) {
+      query['look_context'] = look.length > 400 ? look.substring(0, 400) : look;
+    }
     return Uri(
       scheme: scheme,
       host: base.host,
       port: base.hasPort ? base.port : null,
       path: '/v1/voice/realtime',
-      queryParameters: {'access_token': accessToken},
+      queryParameters: query,
     );
   }
 
