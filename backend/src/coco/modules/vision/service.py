@@ -1,4 +1,4 @@
-"""帮我看看业务：识图一次，落文本摘要到对话历史；图片不落库。"""
+"""帮我看看业务：识图 + 同图多轮追问；图片仅内存缓存，不落库。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from coco.config import Settings
@@ -19,7 +20,8 @@ from coco.models.conversation import (
     ConversationStatus,
 )
 from coco.models.user import User, UserRole
-from coco.modules.vision.schemas import LookResponse
+from coco.modules.vision.image_cache import look_image_cache
+from coco.modules.vision.schemas import LookFollowUpResponse, LookResponse
 from coco.providers.qwen_vision import (
     LookResult,
     QwenVisionClient,
@@ -86,6 +88,13 @@ class VisionService:
             result=result,
             question=question,
         )
+        # 追问需要原图：只进进程内存，带 TTL
+        if conversation_id is not None:
+            look_image_cache.put(
+                conversation_id,
+                image_bytes=image_bytes,
+                mime=mime,
+            )
         return LookResponse(
             confidence=result.confidence,
             headline=result.headline,
@@ -93,6 +102,69 @@ class VisionService:
             safety_note=result.safety_note,
             conversation_id=conversation_id,
         )
+
+    async def follow_up(
+        self,
+        session: AsyncSession,
+        *,
+        user: User,
+        conversation_id: UUID,
+        text: str,
+    ) -> LookFollowUpResponse:
+        if user.role != UserRole.PARENT.value:
+            raise AppError(403, "auth.role_required", "只有老人模式可以使用帮我看看。")
+
+        cleaned = text.strip()
+        if not cleaned:
+            raise AppError(400, "vision.empty_question", "请先说想问什么。")
+
+        conversation = await session.get(Conversation, conversation_id)
+        if (
+            conversation is None
+            or conversation.user_id != user.id
+            or conversation.channel != ConversationChannel.LOOK.value
+        ):
+            raise AppError(
+                404,
+                "vision.conversation_not_found",
+                "找不到这次看图记录。请重新拍一张。",
+            )
+
+        cached = look_image_cache.get(conversation_id)
+        if cached is None:
+            raise AppError(
+                410,
+                "vision.image_expired",
+                "这张图过期了。请重新拍一张，再继续问。",
+            )
+
+        history = await self._load_text_history(session, conversation_id=conversation_id)
+        reply = await self._call_follow_up(
+            image_bytes=cached.image_bytes,
+            mime=cached.mime,
+            history=history,
+            user_text=cleaned,
+        )
+
+        next_seq = await self._next_seq(session, conversation_id=conversation_id)
+        session.add(
+            ConversationItem(
+                conversation_id=conversation_id,
+                seq=next_seq,
+                kind=ConversationItemKind.USER.value,
+                text=cleaned,
+            )
+        )
+        session.add(
+            ConversationItem(
+                conversation_id=conversation_id,
+                seq=next_seq + 1,
+                kind=ConversationItemKind.ASSISTANT.value,
+                text=reply,
+            )
+        )
+        await session.commit()
+        return LookFollowUpResponse(reply_text=reply, conversation_id=conversation_id)
 
     async def _call_model(
         self,
@@ -106,7 +178,6 @@ class VisionService:
             return unclear_look_result()
 
         ext = _ALLOWED_MIME[mime]
-        # data URL 仅在本次请求内存中使用，不写文件、不入库
         data_url = f"data:image/{ext};base64,{base64.b64encode(image_bytes).decode('ascii')}"
         try:
             client = QwenVisionClient(
@@ -118,6 +189,43 @@ class VisionService:
             logger.warning("vision_look_failed", exc_info=True)
             return unclear_look_result()
 
+    async def _call_follow_up(
+        self,
+        *,
+        image_bytes: bytes,
+        mime: str,
+        history: list[tuple[str, str]],
+        user_text: str,
+    ) -> str:
+        key = self._settings.aliyun_api_key
+        if key is None or not key.get_secret_value().strip():
+            raise AppError(
+                503,
+                "vision.unavailable",
+                "识图服务暂时不可用。您可以稍后再试，刚才的问题没有保存。",
+            )
+        ext = _ALLOWED_MIME.get(mime, "jpeg")
+        data_url = f"data:image/{ext};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+        try:
+            client = QwenVisionClient(
+                api_key=key,
+                model=self._settings.vision_model,
+            )
+            return await client.follow_up(
+                image_data_url=data_url,
+                history=history,
+                user_text=user_text,
+            )
+        except AppError:
+            raise
+        except Exception:
+            logger.warning("vision_follow_up_failed", exc_info=True)
+            raise AppError(
+                502,
+                "vision.follow_up_failed",
+                "刚才没想好怎么说。请再说一次，数据没有出错写入。",
+            ) from None
+
     async def _record_look(
         self,
         session: AsyncSession,
@@ -126,7 +234,7 @@ class VisionService:
         result: LookResult,
         question: str | None,
     ) -> UUID | None:
-        """写一条 LOOK 会话 + TOOL 摘要；失败不影响识图结果返回。"""
+        """写 LOOK 会话：TOOL 摘要 + 首轮可朗读回复，便于追问历史。"""
         try:
             if result.confidence == "high" and result.headline:
                 title = result.headline[:64]
@@ -137,9 +245,11 @@ class VisionService:
             if len(summary) > 120:
                 summary = summary[:120] + "…"
 
+            spoken = _spoken_from_look(result)
             now = datetime.now(UTC)
             conversation = Conversation(
                 user_id=user.id,
+                # 追问仍可追加条目；列表侧按 LOOK 展示
                 status=ConversationStatus.CLOSED.value,
                 channel=ConversationChannel.LOOK.value,
                 started_at=now,
@@ -149,10 +259,11 @@ class VisionService:
             session.add(conversation)
             await session.flush()
 
+            seq = 1
             session.add(
                 ConversationItem(
                     conversation_id=conversation.id,
-                    seq=1,
+                    seq=seq,
                     kind=ConversationItemKind.TOOL.value,
                     tool_name="look_image",
                     arguments_json={
@@ -167,9 +278,80 @@ class VisionService:
                     display_summary=summary,
                 )
             )
+            seq += 1
+            opener = (question or "").strip() or "请帮我看看这张图。"
+            session.add(
+                ConversationItem(
+                    conversation_id=conversation.id,
+                    seq=seq,
+                    kind=ConversationItemKind.USER.value,
+                    text=opener,
+                )
+            )
+            seq += 1
+            session.add(
+                ConversationItem(
+                    conversation_id=conversation.id,
+                    seq=seq,
+                    kind=ConversationItemKind.ASSISTANT.value,
+                    text=spoken,
+                )
+            )
             await session.commit()
             return conversation.id
         except Exception:
             logger.exception("vision_record_look_failed")
             await session.rollback()
             return None
+
+    async def _load_text_history(
+        self,
+        session: AsyncSession,
+        *,
+        conversation_id: UUID,
+    ) -> list[tuple[str, str]]:
+        result = await session.execute(
+            select(ConversationItem)
+            .where(
+                ConversationItem.conversation_id == conversation_id,
+                ConversationItem.kind.in_(
+                    [
+                        ConversationItemKind.USER.value,
+                        ConversationItemKind.ASSISTANT.value,
+                    ]
+                ),
+            )
+            .order_by(ConversationItem.seq.asc())
+        )
+        items = list(result.scalars().all())
+        history: list[tuple[str, str]] = []
+        for item in items:
+            text = (item.text or "").strip()
+            if not text:
+                continue
+            role = "user" if item.kind == ConversationItemKind.USER.value else "assistant"
+            history.append((role, text))
+        return history
+
+    async def _next_seq(self, session: AsyncSession, *, conversation_id: UUID) -> int:
+        result = await session.execute(
+            select(func.coalesce(func.max(ConversationItem.seq), 0)).where(
+                ConversationItem.conversation_id == conversation_id
+            )
+        )
+        current = int(result.scalar_one())
+        return current + 1
+
+
+def _spoken_from_look(result: LookResult) -> str:
+    """把结构化识图结果拼成可朗读短句。"""
+    parts: list[str] = []
+    if result.headline.strip():
+        parts.append(result.headline.strip())
+    if result.detail.strip():
+        parts.append(result.detail.strip())
+    if result.safety_note.strip():
+        parts.append(result.safety_note.strip())
+    if not parts:
+        return "我看不太清这上面的字。您可以重新拍一张。"
+    return " ".join(parts)

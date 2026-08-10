@@ -7,18 +7,18 @@ import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../../parent/domain/coco_companion_pose.dart';
 import '../../parent/presentation/widgets/coco_companion_view.dart';
-import '../application/look_providers.dart';
 import '../domain/models.dart';
 
 /// 识图结果：结论 / 看不清 同一页两种状态。
 class LookResultPage extends ConsumerWidget {
-  const LookResultPage({super.key, required this.result});
+  const LookResultPage({super.key, required this.session});
 
-  final LookResult result;
+  final LookSession session;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final result = session.result;
     final clear = result.isClear;
 
     return CocoScaffold(
@@ -112,9 +112,23 @@ class LookResultPage extends ConsumerWidget {
             CocoPrimaryButton(
               label: '还想问',
               onPressed: () {
-                // 回首页启动语音，开场带上本次识图结论
-                ref.read(pendingLookContextProvider.notifier).state = result;
-                context.go('/parent');
+                final conversationId = result.conversationId;
+                if (conversationId == null || conversationId.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('这次没法继续问。请重新拍一张。')),
+                  );
+                  return;
+                }
+                // 同会话追问：留在识图链路，不跳回实时语音
+                context.push(
+                  '/parent/look/ask',
+                  extra: LookAskArgs(
+                    conversationId: conversationId,
+                    imagePath: session.imagePath,
+                    headline: result.headline,
+                    spokenSummary: result.spokenSummary,
+                  ),
+                );
               },
             ),
             const SizedBox(height: CocoSpace.s3),
@@ -130,7 +144,6 @@ class LookResultPage extends ConsumerWidget {
             CocoSecondaryButton(
               label: '让家人帮忙看',
               onPressed: () {
-                // 不代拨号；引导回首页，由老人自行联系家人
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('可以给家人打电话或发消息，请他们帮忙看。')),
                 );

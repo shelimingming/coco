@@ -143,31 +143,22 @@ async def resolve_ws_user(
     return user
 
 
-async def _load_companion_instructions(
-    user_id: UUID,
-    *,
-    look_context: str | None = None,
-) -> str:
-    """建连前加载姓名与已确认记忆，拼进系统提示；可附带识图结论。"""
+async def _load_companion_instructions(user_id: UUID) -> str:
+    """建连前加载姓名与已确认记忆，拼进系统提示。"""
     factory = get_session_factory()
     async with factory() as session:
         user = await session.get(User, user_id)
         if user is None:
-            return build_companion_instructions([], look_context=look_context)
+            return build_companion_instructions([])
         name = user.display_name
         try:
             memories = await MemoryService().list_for_user(session, user=user)
         except AppError:
             logger.warning("load_memories_for_voice_failed user_id=%s", user_id)
-            return build_companion_instructions(
-                [],
-                user_name=name,
-                look_context=look_context,
-            )
+            return build_companion_instructions([], user_name=name)
         return build_companion_instructions(
             [m.content for m in memories],
             user_name=name,
-            look_context=look_context,
         )
 
 
@@ -298,12 +289,10 @@ async def run_realtime_bridge(
     settings: Settings,
     user_id: UUID,
     client_factory: RealtimeClientFactory | None = None,
-    look_context: str | None = None,
 ) -> None:
     """桥接供应商 Realtime，直到任一侧关闭。
 
     调用前须已 accept，并完成父母端鉴权；长连接期间用短生命周期 session 执行工具与落库。
-    look_context：识图结果页「还想问」传入的结论摘要，注入开场 instructions。
     """
     vendor: QwenAudioRealtimeClient | None = None
     conversation_id: UUID | None = None
@@ -325,11 +314,8 @@ async def run_realtime_bridge(
         seq = _SeqCounter()
 
         if client_factory is None:
-            # 默认路径：注入记忆（及可选识图语境）后再连百炼
-            instructions = await _load_companion_instructions(
-                user_id,
-                look_context=look_context,
-            )
+            # 默认路径：注入记忆后再连百炼
+            instructions = await _load_companion_instructions(user_id)
             active_vendor = await create_default_realtime_client(
                 settings, instructions=instructions
             )

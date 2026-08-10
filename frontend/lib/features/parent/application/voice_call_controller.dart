@@ -44,7 +44,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
   bool _sessionReady = false;
   String _assistantAccum = '';
 
-  Future<void> start({String? lookContext}) async {
+  Future<void> start() async {
     if (_started || state.isActive) return;
     _started = true;
     _sessionReady = false;
@@ -64,7 +64,6 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
       final uri = RealtimeVoiceSocket.buildUri(
         httpBaseUrl: _httpBaseUrl,
         accessToken: token,
-        lookContext: lookContext,
       );
       await _socket.connect(uri);
       _socketSub = _socket.events.listen(_onSocketEvent);

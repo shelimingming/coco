@@ -1,7 +1,10 @@
-"""识图结果解析与看不清兜底。"""
+"""识图结果解析、看不清兜底与图片缓存。"""
 
 from __future__ import annotations
 
+from uuid import uuid4
+
+from coco.modules.vision.image_cache import LookImageCache
 from coco.providers.qwen_vision import parse_look_content, unclear_look_result
 
 
@@ -39,3 +42,14 @@ def test_unclear_look_result() -> None:
     assert result.confidence == "low"
     assert result.headline == ""
     assert "看不太清" in result.detail
+
+
+def test_look_image_cache_ttl() -> None:
+    cache = LookImageCache(ttl_seconds=60)
+    cid = uuid4()
+    cache.put(cid, image_bytes=b"abc", mime="image/jpeg")
+    hit = cache.get(cid)
+    assert hit is not None
+    assert hit.image_bytes == b"abc"
+    cache.discard(cid)
+    assert cache.get(cid) is None

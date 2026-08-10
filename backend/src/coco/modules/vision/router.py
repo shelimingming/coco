@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from coco.deps import CurrentUserDep, SessionDep, SettingsDep
 from coco.errors import AppError
-from coco.modules.vision.schemas import LookResponse
+from coco.modules.vision.schemas import (
+    LookFollowUpRequest,
+    LookFollowUpResponse,
+    LookResponse,
+)
 from coco.modules.vision.service import VisionService
 
 router = APIRouter(prefix="/v1/vision", tags=["vision"])
@@ -24,7 +28,7 @@ async def look_image(
     image: UploadFile = File(..., description="要看的照片"),
     question: str | None = Form(default=None),
 ) -> LookResponse:
-    """父母端识图：只转发内存中的图片字节，请求结束即丢弃。"""
+    """父母端识图：只转发内存中的图片字节，请求结束即丢弃（追问用进程内缓存）。"""
     try:
         image_bytes = await image.read()
     except Exception as exc:
@@ -48,4 +52,20 @@ async def look_image(
         image_bytes=image_bytes,
         content_type=image.content_type,
         question=cleaned_question,
+    )
+
+
+@router.post("/follow-up", response_model=LookFollowUpResponse)
+async def look_follow_up(
+    body: LookFollowUpRequest,
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: VisionService = Depends(get_vision_service),
+) -> LookFollowUpResponse:
+    """同图多轮追问：继续用识图模型，不切实时语音。"""
+    return await service.follow_up(
+        session,
+        user=user,
+        conversation_id=body.conversation_id,
+        text=body.text,
     )

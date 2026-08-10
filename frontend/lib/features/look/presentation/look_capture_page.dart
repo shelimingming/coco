@@ -12,6 +12,7 @@ import '../../../core/widgets/coco_scaffold.dart';
 import '../../parent/domain/coco_companion_pose.dart';
 import '../../parent/presentation/widgets/coco_companion_view.dart';
 import '../data/look_api.dart';
+import '../domain/models.dart';
 
 /// 帮我看看取图：拍一张或从相册选，上传后进结果页。
 class LookCapturePage extends ConsumerStatefulWidget {
@@ -61,7 +62,10 @@ class _LookCapturePageState extends ConsumerState<LookCapturePage> {
     try {
       final result = await ref.read(lookApiProvider).look(imageFile: file);
       if (!mounted) return;
-      context.push('/parent/look/result', extra: result);
+      context.push(
+        '/parent/look/result',
+        extra: LookSession(result: result, imagePath: file.path),
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {

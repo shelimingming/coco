@@ -19,6 +19,7 @@ from coco.errors import register_exception_handlers
 from coco.logging import configure_logging
 from coco.modules.auth.router import me_router
 from coco.modules.auth.router import router as auth_router
+from coco.modules.audio.router import router as audio_router
 from coco.modules.care.router import router as care_router
 from coco.modules.conversations.router import router as conversations_router
 from coco.modules.family.router import router as family_router
@@ -95,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(me_router)
     app.include_router(voice_router)
     app.include_router(vision_router)
+    app.include_router(audio_router)
     app.include_router(family_router)
     app.include_router(reminders_router)
     app.include_router(memories_router)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LookResponse(BaseModel):
@@ -15,3 +15,13 @@ class LookResponse(BaseModel):
     safety_note: str = ""
     # 历史会话 id；仅文本摘要入历史，不含图片
     conversation_id: UUID | None = None
+
+
+class LookFollowUpRequest(BaseModel):
+    conversation_id: UUID
+    text: str = Field(..., min_length=1, max_length=500)
+
+
+class LookFollowUpResponse(BaseModel):
+    reply_text: str
+    conversation_id: UUID

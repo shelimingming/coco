@@ -15,6 +15,7 @@ import '../features/family/presentation/parent_family_page.dart';
 import '../features/history/presentation/history_detail_page.dart';
 import '../features/history/presentation/history_page.dart';
 import '../features/look/domain/models.dart';
+import '../features/look/presentation/look_ask_page.dart';
 import '../features/look/presentation/look_capture_page.dart';
 import '../features/look/presentation/look_result_page.dart';
 import '../features/memories/presentation/memories_page.dart';
@@ -107,11 +108,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 path: 'result',
                 builder: (context, state) {
                   final extra = state.extra;
-                  if (extra is! LookResult) {
-                    // 无结果时退回取图，避免空页
+                  if (extra is! LookSession) {
                     return const LookCapturePage();
                   }
-                  return LookResultPage(result: extra);
+                  return LookResultPage(session: extra);
+                },
+              ),
+              GoRoute(
+                path: 'ask',
+                builder: (context, state) {
+                  final extra = state.extra;
+                  if (extra is! LookAskArgs) {
+                    return const LookCapturePage();
+                  }
+                  return LookAskPage(args: extra);
                 },
               ),
             ],

@@ -33,6 +33,17 @@ _LOOK_SYSTEM = """
    - safety_note: 必要安全提示，没有则空字符串
 """.strip()
 
+_FOLLOW_UP_SYSTEM = """
+你是 Coco，正在根据同一张照片继续回答老人的追问。
+必须遵守：
+1. 结合图片与已有对话回答；看不清就诚实说看不清，不要编造。
+2. 不做医疗诊断，不建议剂量或停药；可读出图上的文字。
+3. 不把未知链接判定为绝对安全。
+4. 不要写入记忆、创建提醒或联系家人；本轮只口头解释。
+5. 语气亲切、简短、口语化，一两句话即可，适合直接朗读。
+6. 只输出回答正文，不要引号、不要 markdown、不要解释规则。
+""".strip()
+
 
 @dataclass(slots=True)
 class LookResult:
@@ -100,6 +111,80 @@ class QwenVisionClient:
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("识图模型返回空内容")
         return parse_look_content(content)
+
+    async def follow_up(
+        self,
+        *,
+        image_data_url: str,
+        history: list[tuple[str, str]],
+        user_text: str,
+    ) -> str:
+        """同图多轮追问；history 为 (role, text)，role 仅 user/assistant。"""
+        cleaned = user_text.strip()
+        if not cleaned:
+            raise RuntimeError("没有听到问题")
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": _FOLLOW_UP_SYSTEM},
+        ]
+        # 首轮用户消息带图，后续历史纯文本
+        first_user_done = False
+        for role, text in history:
+            piece = text.strip()
+            if not piece or role not in {"user", "assistant"}:
+                continue
+            if role == "user" and not first_user_done:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": image_data_url}},
+                            {"type": "text", "text": piece},
+                        ],
+                    }
+                )
+                first_user_done = True
+            else:
+                messages.append({"role": role, "content": piece})
+
+        if not first_user_done:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": image_data_url}},
+                        {"type": "text", "text": cleaned},
+                    ],
+                }
+            )
+        else:
+            messages.append({"role": "user", "content": cleaned})
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.4,
+            "enable_thinking": False,
+        }
+        headers = {
+            "Authorization": f"Bearer {self._api_key.get_secret_value()}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError("追问模型返回格式异常") from exc
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("追问模型返回空内容")
+        return content.strip()
 
 
 def parse_look_content(raw: str) -> LookResult:

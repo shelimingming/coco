@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     text_model: str = "qwen-plus"
     # 识图模型：须支持 Image 输入；qwen-plus 纯文本不可用
     vision_model: str = "qwen3.7-plus"
+    # 识图追问外壳：独立 ASR / TTS（非 Realtime）
+    asr_model: str = "qwen-audio-3.0-asr-flash"
+    tts_model: str = "qwen-audio-3.0-tts-flash"
+    tts_voice: str = "longanhuan"
 
     # 提醒调度：第二次提醒 / 升级通知子女的间隔（分钟）
     reminder_second_delay_minutes: int = 30
@@ -83,6 +87,13 @@ class Settings(BaseSettings):
         if self.aliyun_region == "ap-southeast-1":
             return "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime"
         return "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
+
+    @property
+    def aliyun_http_base_url(self) -> str:
+        """百炼 HTTP API 基址（ASR/TTS 等非 compatible-mode 接口）。"""
+        if self.aliyun_region == "ap-southeast-1":
+            return "https://dashscope-intl.aliyuncs.com"
+        return "https://dashscope.aliyuncs.com"
 
     @property
     def realtime_available(self) -> bool:
