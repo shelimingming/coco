@@ -7,19 +7,18 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../../../core/widgets/coco_text_field.dart';
-import '../../care/application/care_providers.dart';
 import '../application/family_providers.dart';
 import '../data/family_api.dart';
 
-/// 子女端：输入 6 位邀请码加入家庭。
-class ChildJoinPage extends ConsumerStatefulWidget {
-  const ChildJoinPage({super.key});
+/// 父母端：输入子女发来的 6 位邀请码加入家庭。
+class ParentJoinPage extends ConsumerStatefulWidget {
+  const ParentJoinPage({super.key});
 
   @override
-  ConsumerState<ChildJoinPage> createState() => _ChildJoinPageState();
+  ConsumerState<ParentJoinPage> createState() => _ParentJoinPageState();
 }
 
-class _ChildJoinPageState extends ConsumerState<ChildJoinPage> {
+class _ParentJoinPageState extends ConsumerState<ParentJoinPage> {
   final _controller = TextEditingController();
   bool _busy = false;
   String? _error;
@@ -33,7 +32,7 @@ class _ChildJoinPageState extends ConsumerState<ChildJoinPage> {
   Future<void> _join() async {
     final code = _controller.text.trim();
     if (code.length < 6) {
-      setState(() => _error = '请输入家人告诉您的 6 位邀请码。');
+      setState(() => _error = '请输入子女告诉您的 6 位邀请码。');
       return;
     }
     setState(() {
@@ -45,7 +44,6 @@ class _ChildJoinPageState extends ConsumerState<ChildJoinPage> {
       await _goHomeAfterJoin(message: '已加入家庭。');
     } catch (error) {
       if (!mounted) return;
-      // 上次其实已绑定成功、只是首页没刷新时，按成功处理并拉最新状态
       if (error is ApiException && error.code == 'family.already_joined') {
         await _goHomeAfterJoin(message: '您已经加入家庭。');
         return;
@@ -60,14 +58,12 @@ class _ChildJoinPageState extends ConsumerState<ChildJoinPage> {
   }
 
   Future<void> _goHomeAfterJoin({required String message}) async {
-    // /child 嵌套路由下首页仍挂载，必须刷新今日状态，否则会继续展示「未绑定」缓存
     ref.invalidate(familyInfoProvider);
-    ref.invalidate(childTodayProvider);
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
-    context.go('/child');
+    context.go('/parent');
   }
 
   @override
@@ -75,11 +71,22 @@ class _ChildJoinPageState extends ConsumerState<ChildJoinPage> {
     final theme = Theme.of(context);
     return CocoScaffold(
       title: '加入家庭',
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: CocoSpace.s3),
+          child: Center(
+            child: ParentChipButton(
+              label: '返回',
+              onPressed: () => context.pop(),
+            ),
+          ),
+        ),
+      ],
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '请输入父母念给您的 6 位邀请码。绑定后才能看到今日状态。也可以在家庭页生成邀请码请父母加入。',
+            '请输入子女告诉您的 6 位邀请码。',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: CocoColors.neutral700,
             ),
@@ -97,7 +104,7 @@ class _ChildJoinPageState extends ConsumerState<ChildJoinPage> {
             const SizedBox(height: CocoSpace.s3),
             Text(
               _error!,
-              style: theme.textTheme.bodyMedium?.copyWith(
+              style: theme.textTheme.bodyLarge?.copyWith(
                 color: CocoColors.danger,
               ),
             ),
@@ -109,8 +116,6 @@ class _ChildJoinPageState extends ConsumerState<ChildJoinPage> {
             loadingLabel: '正在加入…',
             onPressed: _join,
           ),
-          const SizedBox(height: CocoSpace.s3),
-          CocoSecondaryButton(label: '返回', onPressed: () => context.pop()),
         ],
       ),
     );

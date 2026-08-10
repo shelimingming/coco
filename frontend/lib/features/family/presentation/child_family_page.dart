@@ -64,13 +64,18 @@ class ChildFamilyPage extends ConsumerWidget {
                         Text('还没有绑定父母。', style: theme.textTheme.bodyLarge),
                         const SizedBox(height: CocoSpace.s2),
                         Text(
-                          '长辈决定分享什么；这里看不到完整聊天。',
+                          '您可以生成邀请码请父母加入，或输入父母给您的邀请码。长辈决定分享什么；这里看不到完整聊天。',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: CocoColors.neutral700,
                           ),
                         ),
                         const SizedBox(height: CocoSpace.s4),
                         CocoPrimaryButton(
+                          label: '生成邀请码邀请父母',
+                          onPressed: () => context.push('/child/family/invite'),
+                        ),
+                        const SizedBox(height: CocoSpace.s3),
+                        CocoSecondaryButton(
                           label: '输入邀请码加入',
                           onPressed: () => context.push('/child/join'),
                         ),

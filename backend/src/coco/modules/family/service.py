@@ -1,11 +1,11 @@
-"""家庭绑定业务：邀请码 + 1 父母 / 1 子女。"""
+"""家庭绑定业务：双向邀请码 + 1 父母 / 1 子女。"""
 
 from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from coco.config import Settings
@@ -45,25 +45,40 @@ class FamilyService:
     async def create_invite(
         self, session: AsyncSession, *, user: User
     ) -> FamilyInviteCreateResponse:
-        # 服务端鉴权是最终判断：只有父母可发起邀请
-        if user.role != UserRole.PARENT.value:
-            raise AppError(403, "family.parent_required", "只有老人模式可以生成邀请码。")
-
-        family = await session.scalar(select(Family).where(Family.parent_user_id == user.id))
-        if family is None:
-            family = Family(
-                parent_user_id=user.id,
-                child_user_id=None,
-                status=FamilyStatus.PENDING.value,
-            )
-            session.add(family)
-            await session.flush()
-        elif family.child_user_id is not None:
-            raise AppError(
-                409,
-                "family.already_bound",
-                "已经绑定了子女，不能再生成邀请码。如需更换请先解除绑定（MVP 暂不支持）。",
-            )
+        if user.role == UserRole.PARENT.value:
+            family = await session.scalar(select(Family).where(Family.parent_user_id == user.id))
+            if family is None:
+                family = Family(
+                    parent_user_id=user.id,
+                    child_user_id=None,
+                    status=FamilyStatus.PENDING.value,
+                )
+                session.add(family)
+                await session.flush()
+            elif family.child_user_id is not None:
+                raise AppError(
+                    409,
+                    "family.already_bound",
+                    "已经绑定了子女，不能再生成邀请码。如需更换请先解除绑定（MVP 暂不支持）。",
+                )
+        elif user.role == UserRole.CHILD.value:
+            family = await session.scalar(select(Family).where(Family.child_user_id == user.id))
+            if family is None:
+                family = Family(
+                    parent_user_id=None,
+                    child_user_id=user.id,
+                    status=FamilyStatus.PENDING.value,
+                )
+                session.add(family)
+                await session.flush()
+            elif family.parent_user_id is not None:
+                raise AppError(
+                    409,
+                    "family.already_bound",
+                    "已经绑定了父母，不能再生成邀请码。如需更换请先解除绑定（MVP 暂不支持）。",
+                )
+        else:
+            raise AppError(403, "family.role_required", "当前角色无法生成邀请码。")
 
         now = datetime.now(UTC)
         code = f"{secrets.randbelow(1_000_000):06d}"
@@ -83,13 +98,21 @@ class FamilyService:
             family_id=family.id,
         )
 
-    async def join_family(self, session: AsyncSession, *, user: User, code: str) -> FamilyResponse:
-        if user.role != UserRole.CHILD.value:
-            raise AppError(403, "family.child_required", "只有子女模式可以用邀请码加入家庭。")
+    async def _abandon_pending_family(self, session: AsyncSession, family: Family) -> None:
+        """加入对方家庭前，放弃自己未完成的 pending 家庭及未消费邀请。"""
+        await session.execute(delete(FamilyInvite).where(FamilyInvite.family_id == family.id))
+        await session.delete(family)
+        await session.flush()
 
+    async def join_family(self, session: AsyncSession, *, user: User, code: str) -> FamilyResponse:
         existing = await get_family(session, user)
         if existing is not None:
-            raise AppError(409, "family.already_joined", "您已经加入了一个家庭，不能重复绑定。")
+            # 已 active：禁止重复绑定；仅 pending 时可放弃后加入对方
+            if existing.status == FamilyStatus.ACTIVE.value or (
+                existing.parent_user_id is not None and existing.child_user_id is not None
+            ):
+                raise AppError(409, "family.already_joined", "您已经加入了一个家庭，不能重复绑定。")
+            await self._abandon_pending_family(session, existing)
 
         normalized = code.strip()
         now = datetime.now(UTC)
@@ -108,21 +131,46 @@ class FamilyService:
             raise AppError(
                 400,
                 "family.invalid_invite",
-                "邀请码无效或已过期。请向父母重新索取，刚才没有建立任何家庭关系。",
+                "邀请码无效或已过期。请向家人重新索取，刚才没有建立任何家庭关系。",
             )
         invite, family = row
-        if family.child_user_id is not None:
-            raise AppError(409, "family.already_bound", "该家庭已经绑定了子女。")
+
+        # 不能加入自己发出的邀请
+        if invite.inviter_user_id == user.id:
+            raise AppError(400, "family.invalid_invite", "不能使用自己生成的邀请码。")
+
+        # 按空位填入对侧角色
+        if family.child_user_id is None and family.parent_user_id is not None:
+            if user.role != UserRole.CHILD.value:
+                raise AppError(
+                    403,
+                    "family.child_required",
+                    "这份邀请是给子女的，请用子女模式加入。",
+                )
+            family.child_user_id = user.id
+        elif family.parent_user_id is None and family.child_user_id is not None:
+            if user.role != UserRole.PARENT.value:
+                raise AppError(
+                    403,
+                    "family.parent_required",
+                    "这份邀请是给父母的，请用老人模式加入。",
+                )
+            family.parent_user_id = user.id
+        else:
+            raise AppError(409, "family.already_bound", "该家庭已经完成绑定。")
 
         invite.consumed_at = now
-        family.child_user_id = user.id
         family.status = FamilyStatus.ACTIVE.value
         await session.commit()
         return await self.get_family_view(session, user)
 
     async def get_family_view(self, session: AsyncSession, user: User) -> FamilyResponse:
         family = await require_family(session, user)
-        parent = await session.get(User, family.parent_user_id)
+        parent = (
+            await session.get(User, family.parent_user_id)
+            if family.parent_user_id is not None
+            else None
+        )
         child = (
             await session.get(User, family.child_user_id)
             if family.child_user_id is not None

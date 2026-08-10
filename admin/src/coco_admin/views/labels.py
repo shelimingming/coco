@@ -78,7 +78,8 @@ async def warm_admin_labels(
                 await session.scalars(select(Family).where(Family.id.in_(family_ids)))
             ).all()
             for fam in families:
-                user_ids.add(fam.parent_user_id)
+                if fam.parent_user_id is not None:
+                    user_ids.add(fam.parent_user_id)
                 if fam.child_user_id is not None:
                     user_ids.add(fam.child_user_id)
 
@@ -91,7 +92,11 @@ async def warm_admin_labels(
                 await session.scalars(select(Family).where(Family.id.in_(family_ids)))
             ).all()
             for fam in families:
-                parent = maps.users.get(fam.parent_user_id, "未知父母")
+                parent = (
+                    maps.users.get(fam.parent_user_id, "未知父母")
+                    if fam.parent_user_id is not None
+                    else "待加入父母"
+                )
                 if fam.child_user_id is None:
                     maps.families[fam.id] = f"{parent} · 待加入"
                 else:

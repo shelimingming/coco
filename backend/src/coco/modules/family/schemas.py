@@ -20,7 +20,8 @@ class FamilyJoinRequest(BaseModel):
 
 class FamilyResponse(BaseModel):
     id: UUID
-    parent_user_id: UUID
+    # pending 时可能只有一侧
+    parent_user_id: UUID | None
     child_user_id: UUID | None
     status: str
     parent_display_name: str | None = None

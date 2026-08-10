@@ -94,7 +94,8 @@ async def load_user_aggregate(session: AsyncSession, user_id: uuid.UUID) -> dict
     # 聚合表用展示名，避免详情里再铺一长串 UUID
     related_user_ids = {user_id}
     for fam in families:
-        related_user_ids.add(fam.parent_user_id)
+        if fam.parent_user_id is not None:
+            related_user_ids.add(fam.parent_user_id)
         if fam.child_user_id is not None:
             related_user_ids.add(fam.child_user_id)
     for care in care_shares:
@@ -149,7 +150,11 @@ async def load_family_aggregate(session: AsyncSession, family_id: uuid.UUID) -> 
     if family is None:
         return {"family": None}
 
-    parent = await session.get(User, family.parent_user_id)
+    parent = (
+        await session.get(User, family.parent_user_id)
+        if family.parent_user_id is not None
+        else None
+    )
     child = (
         await session.get(User, family.child_user_id) if family.child_user_id is not None else None
     )
@@ -171,7 +176,7 @@ async def load_family_aggregate(session: AsyncSession, family_id: uuid.UUID) -> 
     ).all()
 
     care_shares: list[CareShare] = []
-    if family.child_user_id is not None:
+    if family.parent_user_id is not None and family.child_user_id is not None:
         care_shares = list(
             (
                 await session.scalars(

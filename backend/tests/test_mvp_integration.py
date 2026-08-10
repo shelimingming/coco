@@ -131,3 +131,91 @@ async def test_family_bind_reminder_and_care_share(client: AsyncClient) -> None:
     )
     assert notes.status_code == 200
     assert any(n["type"] == "CHILD_STATUS" for n in notes.json())
+
+
+@pytest.mark.asyncio
+async def test_child_invites_parent(client: AsyncClient) -> None:
+    """子女发码，父母加入。"""
+    parent_token = await _login(client, _unique_phone(), "parent", "测试妈")
+    child_token = await _login(client, _unique_phone(), "child", "测试女")
+
+    invite = await client.post(
+        "/v1/family/invite",
+        headers={"Authorization": f"Bearer {child_token}"},
+    )
+    assert invite.status_code == 200, invite.text
+    code = invite.json()["code"]
+
+    join = await client.post(
+        "/v1/family/join",
+        headers={"Authorization": f"Bearer {parent_token}"},
+        json={"code": code},
+    )
+    assert join.status_code == 200, join.text
+    body = join.json()
+    assert body["status"] == "active"
+    assert body["parent_user_id"] is not None
+    assert body["child_user_id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_join_abandons_own_pending_invite(client: AsyncClient) -> None:
+    """双方都生成邀请码后，一方用对方码仍可绑定。"""
+    parent_token = await _login(client, _unique_phone(), "parent", "测试爸2")
+    child_token = await _login(client, _unique_phone(), "child", "测试子2")
+
+    parent_invite = await client.post(
+        "/v1/family/invite",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    assert parent_invite.status_code == 200, parent_invite.text
+
+    child_invite = await client.post(
+        "/v1/family/invite",
+        headers={"Authorization": f"Bearer {child_token}"},
+    )
+    assert child_invite.status_code == 200, child_invite.text
+    child_code = child_invite.json()["code"]
+
+    join = await client.post(
+        "/v1/family/join",
+        headers={"Authorization": f"Bearer {parent_token}"},
+        json={"code": child_code},
+    )
+    assert join.status_code == 200, join.text
+    assert join.json()["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_join_rejects_same_role(client: AsyncClient) -> None:
+    """同角色不能用对方发的码加入。"""
+    parent_a = await _login(client, _unique_phone(), "parent", "爸A")
+    parent_b = await _login(client, _unique_phone(), "parent", "爸B")
+    child_a = await _login(client, _unique_phone(), "child", "子A")
+    child_b = await _login(client, _unique_phone(), "child", "子B")
+
+    parent_invite = await client.post(
+        "/v1/family/invite",
+        headers={"Authorization": f"Bearer {parent_a}"},
+    )
+    assert parent_invite.status_code == 200
+    wrong_parent = await client.post(
+        "/v1/family/join",
+        headers={"Authorization": f"Bearer {parent_b}"},
+        json={"code": parent_invite.json()["code"]},
+    )
+    assert wrong_parent.status_code == 403
+    assert wrong_parent.json()["error"]["code"] == "family.child_required"
+
+    child_invite = await client.post(
+        "/v1/family/invite",
+        headers={"Authorization": f"Bearer {child_a}"},
+    )
+    assert child_invite.status_code == 200
+    wrong_child = await client.post(
+        "/v1/family/join",
+        headers={"Authorization": f"Bearer {child_b}"},
+        json={"code": child_invite.json()["code"]},
+    )
+    assert wrong_child.status_code == 403
+    assert wrong_child.json()["error"]["code"] == "family.parent_required"

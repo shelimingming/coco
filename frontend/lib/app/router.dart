@@ -10,8 +10,10 @@ import '../features/child/presentation/child_attention_page.dart';
 import '../features/child/presentation/child_home_page.dart';
 import '../features/child/presentation/child_shell.dart';
 import '../features/family/presentation/child_family_page.dart';
+import '../features/family/presentation/child_invite_page.dart';
 import '../features/family/presentation/child_join_page.dart';
 import '../features/family/presentation/parent_family_page.dart';
+import '../features/family/presentation/parent_join_page.dart';
 import '../features/history/presentation/history_detail_page.dart';
 import '../features/history/presentation/history_page.dart';
 import '../features/look/domain/models.dart';
@@ -85,6 +87,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'family',
             builder: (context, state) => const ParentFamilyPage(),
+          ),
+          GoRoute(
+            path: 'join',
+            builder: (context, state) => const ParentJoinPage(),
           ),
           GoRoute(
             path: 'reminders',
@@ -187,6 +193,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/child/family',
                 builder: (context, state) => const ChildFamilyPage(),
+                routes: [
+                  GoRoute(
+                    path: 'invite',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const ChildInvitePage(),
+                  ),
+                ],
               ),
             ],
           ),

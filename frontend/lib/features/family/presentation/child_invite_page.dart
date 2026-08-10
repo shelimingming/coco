@@ -12,15 +12,15 @@ import '../application/family_providers.dart';
 import '../data/family_api.dart';
 import '../domain/models.dart';
 
-/// 父母端：大字邀请码，便于老人念给子女。
-class ParentFamilyPage extends ConsumerStatefulWidget {
-  const ParentFamilyPage({super.key});
+/// 子女端：生成邀请码，请父母在老人模式输入。
+class ChildInvitePage extends ConsumerStatefulWidget {
+  const ChildInvitePage({super.key});
 
   @override
-  ConsumerState<ParentFamilyPage> createState() => _ParentFamilyPageState();
+  ConsumerState<ChildInvitePage> createState() => _ChildInvitePageState();
 }
 
-class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
+class _ChildInvitePageState extends ConsumerState<ChildInvitePage> {
   FamilyInvite? _invite;
   bool _busy = false;
   String? _error;
@@ -55,43 +55,35 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
     final familyAsync = ref.watch(familyInfoProvider);
 
     return CocoScaffold(
-      title: '邀请子女',
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: CocoSpace.s3),
-          child: Center(
-            child: ParentChipButton(
-              label: '返回',
-              onPressed: () => context.pop(),
-            ),
-          ),
-        ),
-      ],
+      title: '邀请父母',
       body: familyAsync.when(
         loading: () => const CocoPageLoading(),
-        error: (error, _) => _ErrorBody(
-          message: error is ApiException
-              ? error.message
-              : '家庭信息加载失败。您可以返回重试，数据没有丢失。',
-          onRetry: () => ref.invalidate(familyInfoProvider),
+        error: (error, _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              error is ApiException
+                  ? error.message
+                  : '家庭信息加载失败。您可以返回重试，数据没有丢失。',
+              style: theme.textTheme.bodyLarge,
+            ),
+            const Spacer(),
+            CocoPrimaryButton(
+              label: '再试一次',
+              onPressed: () => ref.invalidate(familyInfoProvider),
+            ),
+          ],
         ),
         data: (family) {
           if (family != null && family.isActive) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('已经绑定子女', style: theme.textTheme.titleLarge),
+                Text('已经绑定父母', style: theme.textTheme.titleLarge),
                 const SizedBox(height: CocoSpace.s3),
                 Text(
-                  '子女：${family.childDisplayName ?? '家人'}',
+                  '父母：${family.parentDisplayName ?? '家人'}',
                   style: theme.textTheme.bodyLarge,
-                ),
-                const SizedBox(height: CocoSpace.s2),
-                Text(
-                  '目前每位老人只能绑定一位主要子女。',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: CocoColors.neutral700,
-                  ),
                 ),
                 const Spacer(),
                 CocoSecondaryButton(
@@ -107,7 +99,7 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '把下面的邀请码告诉子女，让对方在「子女模式」里输入；也可以让子女生成码，您在设置里输入。',
+                '把下面的邀请码告诉父母，让对方在「老人模式」里输入。',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: CocoColors.neutral700,
                 ),
@@ -117,7 +109,7 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
                 Container(
                   padding: const EdgeInsets.all(CocoSpace.s6),
                   decoration: BoxDecoration(
-                    color: CocoColors.parentPrimarySoft,
+                    color: CocoColors.childPrimarySoft,
                     borderRadius: BorderRadius.circular(CocoRadius.xl),
                   ),
                   child: Column(
@@ -170,6 +162,8 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
                 loadingLabel: '正在生成…',
                 onPressed: _generate,
               ),
+              const SizedBox(height: CocoSpace.s3),
+              CocoSecondaryButton(label: '返回', onPressed: () => context.pop()),
             ],
           );
         },
@@ -182,24 +176,5 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
     final h = local.hour.toString().padLeft(2, '0');
     final m = local.minute.toString().padLeft(2, '0');
     return '$h:$m';
-  }
-}
-
-class _ErrorBody extends StatelessWidget {
-  const _ErrorBody({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(message, style: Theme.of(context).textTheme.bodyLarge),
-        const Spacer(),
-        CocoPrimaryButton(label: '再试一次', onPressed: onRetry),
-      ],
-    );
   }
 }

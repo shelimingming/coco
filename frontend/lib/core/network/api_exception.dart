@@ -31,7 +31,7 @@ class ApiException implements Exception {
       case 'family.not_found':
         return '还没有绑定家庭。请先完成父母与子女的绑定。';
       case 'family.invalid_invite':
-        return '邀请码无效或已过期。请向父母重新索取。';
+        return '邀请码无效或已过期。请向家人重新索取。';
       case 'family.already_bound':
       case 'family.already_joined':
         return '家庭已经绑定过了，不能重复操作。';

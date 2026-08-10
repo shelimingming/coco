@@ -22,26 +22,28 @@ class FamilyInvite {
 class FamilyInfo {
   const FamilyInfo({
     required this.id,
-    required this.parentUserId,
     required this.status,
+    this.parentUserId,
     this.childUserId,
     this.parentDisplayName,
     this.childDisplayName,
   });
 
   final String id;
-  final String parentUserId;
+  // pending 时可能只有一侧
+  final String? parentUserId;
   final String? childUserId;
   final String status;
   final String? parentDisplayName;
   final String? childDisplayName;
 
-  bool get isActive => status == 'active' && childUserId != null;
+  bool get isActive =>
+      status == 'active' && parentUserId != null && childUserId != null;
 
   factory FamilyInfo.fromJson(Map<String, dynamic> json) {
     return FamilyInfo(
       id: json['id'] as String,
-      parentUserId: json['parent_user_id'] as String,
+      parentUserId: json['parent_user_id'] as String?,
       childUserId: json['child_user_id'] as String?,
       status: json['status'] as String,
       parentDisplayName: json['parent_display_name'] as String?,

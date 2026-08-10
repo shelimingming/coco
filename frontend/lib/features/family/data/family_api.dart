@@ -11,7 +11,9 @@ class FamilyApi {
 
   Future<FamilyInvite> createInvite() async {
     try {
-      final response = await _dio.post<Map<String, dynamic>>('/v1/family/invite');
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/v1/family/invite',
+      );
       return FamilyInvite.fromJson(asJsonMap(response.data));
     } on DioException catch (error) {
       throwApiException(error);

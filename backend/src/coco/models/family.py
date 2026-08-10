@@ -15,20 +15,20 @@ from coco.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 class FamilyStatus(enum.StrEnum):
     ACTIVE = "active"
-    # 父母已创建家庭但子女尚未加入
+    # 任一方已创建家庭，对侧尚未加入
     PENDING = "pending"
 
 
 class Family(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "families"
 
-    parent_user_id: Mapped[uuid.UUID] = mapped_column(
+    # 双向邀请：pending 时父母/子女可仅填一侧
+    parent_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("coco.users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         unique=True,
     )
-    # 子女加入前可为空
     child_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("coco.users.id", ondelete="SET NULL"),
@@ -45,7 +45,7 @@ class Family(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class FamilyInvite(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "family_invites"
 
-    # 6 位数字邀请码，非敏感，明文存储便于父母口述
+    # 6 位数字邀请码，非敏感，明文存储便于口述
     code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     inviter_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

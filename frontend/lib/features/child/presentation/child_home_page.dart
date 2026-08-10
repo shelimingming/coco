@@ -140,7 +140,7 @@ class _JoinFamilyGuide extends StatelessWidget {
           Text('你好，$name', style: theme.textTheme.titleLarge),
           const SizedBox(height: CocoSpace.s3),
           Text(
-            '还没有绑定父母。请向父母索取邀请码，完成绑定后这里会显示近况。',
+            '还没有绑定父母。您可以输入父母的邀请码，或自己生成邀请码请父母加入。',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: CocoColors.neutral700,
             ),
@@ -149,6 +149,11 @@ class _JoinFamilyGuide extends StatelessWidget {
           CocoPrimaryButton(
             label: '输入邀请码加入',
             onPressed: () => context.push('/child/join'),
+          ),
+          const SizedBox(height: CocoSpace.s3),
+          CocoSecondaryButton(
+            label: '生成邀请码邀请父母',
+            onPressed: () => context.push('/child/family/invite'),
           ),
         ],
       ),
