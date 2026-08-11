@@ -6,110 +6,101 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_loading.dart';
-import '../../../core/widgets/coco_scaffold.dart';
 import '../application/reminders_providers.dart';
 import '../data/reminders_api.dart';
 import '../domain/models.dart';
 
-/// 父母端今日提醒列表（DESIGN 9.3 E03）。
+/// 父母端提醒列表：低密度暖橙卡片，对齐交付稿气质。
 class RemindersPage extends ConsumerWidget {
   const RemindersPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final async = ref.watch(remindersListProvider);
 
-    return CocoScaffold(
-      title: '今天',
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: CocoSpace.s3),
-          child: Center(
-            child: ParentChipButton(
-              label: '新建',
-              onPressed: () => context.push('/parent/reminders/new'),
-            ),
-          ),
-        ),
-      ],
-      body: async.when(
-        loading: () => const CocoPageLoading(),
-        error: (error, _) => Column(
+    return Scaffold(
+      backgroundColor: CocoColors.parentBackground,
+      body: SafeArea(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              error is ApiException
-                  ? error.message
-                  : '提醒列表加载失败。您可以再试一次，数据没有丢失。',
-              style: theme.textTheme.bodyLarge,
+            _RemindersAppBar(
+              onBack: () => context.pop(),
+              onCreate: () => context.push('/parent/reminders/new'),
             ),
-            const Spacer(),
-            CocoPrimaryButton(
-              label: '再试一次',
-              onPressed: () => ref.invalidate(remindersListProvider),
+            Expanded(
+              child: async.when(
+                loading: () => const CocoPageLoading(),
+                error: (error, _) => _ErrorBody(
+                  message: error is ApiException
+                      ? error.message
+                      : '提醒列表加载失败。您可以再试一次，数据没有丢失。',
+                  onRetry: () => ref.invalidate(remindersListProvider),
+                ),
+                data: (items) {
+                  if (items.isEmpty) {
+                    return _EmptyBody(
+                      onCreate: () => context.push('/parent/reminders/new'),
+                      onTalk: () => context.go('/parent'),
+                    );
+                  }
+
+                  final active = items.where((r) => r.isActive).toList();
+                  final done = items.where((r) => !r.isActive).toList();
+
+                  return RefreshIndicator(
+                    color: CocoColors.parentPrimary,
+                    onRefresh: () async =>
+                        ref.invalidate(remindersListProvider),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(
+                        CocoSpace.s6,
+                        CocoSpace.s2,
+                        CocoSpace.s6,
+                        CocoSpace.s8,
+                      ),
+                      children: [
+                        if (active.isNotEmpty) ...[
+                          const _SectionTitle('待办'),
+                          const SizedBox(height: CocoSpace.s3),
+                          ...active.map(
+                            (r) => Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: CocoSpace.s3,
+                              ),
+                              child: _ReminderCard(
+                                reminder: r,
+                                onDelete: () => _delete(context, ref, r),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (done.isNotEmpty) ...[
+                          if (active.isNotEmpty)
+                            const SizedBox(height: CocoSpace.s5),
+                          const _SectionTitle('已结束'),
+                          const SizedBox(height: CocoSpace.s3),
+                          ...done.map(
+                            (r) => Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: CocoSpace.s3,
+                              ),
+                              child: _ReminderCard(
+                                reminder: r,
+                                muted: true,
+                                onDelete: () => _delete(context, ref, r),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),
-        data: (items) {
-          if (items.isEmpty) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('今天还没有提醒', style: theme.textTheme.titleLarge),
-                const SizedBox(height: CocoSpace.s3),
-                Text(
-                  '可以点「和我说话」让可可帮您记，也可以在这里手动新建。',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: CocoColors.neutral700,
-                  ),
-                ),
-                const Spacer(),
-                CocoPrimaryButton(
-                  label: '新建提醒',
-                  onPressed: () => context.push('/parent/reminders/new'),
-                ),
-                const SizedBox(height: CocoSpace.s3),
-                CocoSecondaryButton(
-                  label: '回去找可可说话',
-                  onPressed: () => context.go('/parent'),
-                ),
-              ],
-            );
-          }
-
-          final active = items.where((r) => r.isActive).toList();
-          final done = items.where((r) => !r.isActive).toList();
-
-          return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(remindersListProvider),
-            child: ListView(
-              children: [
-                if (active.isNotEmpty) ...[
-                  Text('待办', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: CocoSpace.s3),
-                  ...active.map(
-                    (r) => _ReminderCard(
-                      reminder: r,
-                      onDelete: () => _delete(context, ref, r),
-                    ),
-                  ),
-                ],
-                if (done.isNotEmpty) ...[
-                  const SizedBox(height: CocoSpace.s6),
-                  Text('已结束', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: CocoSpace.s3),
-                  ...done.map(
-                    (r) => _ReminderCard(
-                      reminder: r,
-                      onDelete: () => _delete(context, ref, r),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          );
-        },
       ),
     );
   }
@@ -123,16 +114,55 @@ class RemindersPage extends ConsumerWidget {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('删除这个提醒？'),
-          content: Text('将删除「${reminder.title}」。删除后不可恢复，但不会影响其他提醒。'),
+          backgroundColor: CocoColors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(CocoRadius.xl),
+          ),
+          title: const Text(
+            '删除这个提醒？',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: CocoColors.neutral950,
+            ),
+          ),
+          content: Text(
+            '将删除「${reminder.title}」。删除后不可恢复，但不会影响其他提醒。',
+            style: const TextStyle(
+              fontSize: 22,
+              height: 1.4,
+              color: CocoColors.neutral700,
+            ),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(
+            CocoSpace.s5,
+            0,
+            CocoSpace.s5,
+            CocoSpace.s5,
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
+              style: TextButton.styleFrom(
+                foregroundColor: CocoColors.neutral700,
+                textStyle: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                ),
+                minimumSize: const Size(64, 48),
+              ),
               child: const Text('取消'),
             ),
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: TextButton.styleFrom(foregroundColor: CocoColors.danger),
+              style: TextButton.styleFrom(
+                foregroundColor: CocoColors.danger,
+                textStyle: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
+                minimumSize: const Size(64, 48),
+              ),
               child: const Text('删除'),
             ),
           ],
@@ -156,41 +186,226 @@ class RemindersPage extends ConsumerWidget {
   }
 }
 
-class _ReminderCard extends StatelessWidget {
-  const _ReminderCard({required this.reminder, required this.onDelete});
+class _RemindersAppBar extends StatelessWidget {
+  const _RemindersAppBar({required this.onBack, required this.onCreate});
 
-  final Reminder reminder;
-  final VoidCallback onDelete;
+  final VoidCallback onBack;
+  final VoidCallback onCreate;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.only(bottom: CocoSpace.s3),
+    return SizedBox(
+      height: 56,
       child: Padding(
-        padding: const EdgeInsets.all(CocoSpace.s5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.symmetric(horizontal: CocoSpace.s3),
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            Text(reminder.title, style: theme.textTheme.titleLarge),
-            const SizedBox(height: CocoSpace.s2),
-            Text(
-              '${reminder.isDaily ? '每天' : '一次'} ${reminder.timeLabel}',
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: CocoColors.neutral700,
+            Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                onPressed: onBack,
+                icon: const Icon(Icons.chevron_left_rounded, size: 32),
+                color: CocoColors.neutral950,
+                // 老人端返回区不小于 48
+                style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
               ),
             ),
-            const SizedBox(height: CocoSpace.s4),
+            const Text(
+              '提醒',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+                color: CocoColors.neutral950,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: CocoSpace.s2),
+                child: ParentChipButton(label: '新建', onPressed: onCreate),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        fontSize: 22,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+        color: CocoColors.neutral950,
+      ),
+    );
+  }
+}
+
+class _ReminderCard extends StatelessWidget {
+  const _ReminderCard({
+    required this.reminder,
+    required this.onDelete,
+    this.muted = false,
+  });
+
+  final Reminder reminder;
+  final VoidCallback onDelete;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = '${reminder.isDaily ? '每天' : '一次'} ${reminder.timeLabel}';
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: muted ? CocoColors.neutral100 : CocoColors.parentPrimarySoft,
+        borderRadius: BorderRadius.circular(CocoRadius.xl),
+        boxShadow: const [
+          BoxShadow(
+            color: CocoColors.onboardingShadow,
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          CocoSpace.s5,
+          CocoSpace.s5,
+          CocoSpace.s4,
+          CocoSpace.s3,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              reminder.title,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+                color: muted ? CocoColors.neutral700 : CocoColors.neutral950,
+              ),
+            ),
+            const SizedBox(height: CocoSpace.s2),
+            Text(
+              meta,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w500,
+                height: 1.3,
+                color: CocoColors.neutral500,
+              ),
+            ),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
                 onPressed: onDelete,
-                style: TextButton.styleFrom(foregroundColor: CocoColors.danger),
+                style: TextButton.styleFrom(
+                  foregroundColor: CocoColors.danger,
+                  textStyle: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  minimumSize: const Size(64, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: CocoSpace.s3),
+                ),
                 child: const Text('删除'),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _EmptyBody extends StatelessWidget {
+  const _EmptyBody({required this.onCreate, required this.onTalk});
+
+  final VoidCallback onCreate;
+  final VoidCallback onTalk;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CocoSpace.s6,
+        CocoSpace.s4,
+        CocoSpace.s6,
+        CocoSpace.s6,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            '还没有提醒',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: CocoColors.neutral950,
+            ),
+          ),
+          const SizedBox(height: CocoSpace.s3),
+          const Text(
+            '可以回去找可可说话，让它帮您记；也可以在这里手动新建。',
+            style: TextStyle(
+              fontSize: 22,
+              height: 1.4,
+              color: CocoColors.neutral700,
+            ),
+          ),
+          const Spacer(),
+          CocoPrimaryButton(label: '新建提醒', onPressed: onCreate),
+          const SizedBox(height: CocoSpace.s3),
+          CocoSecondaryButton(label: '回去找可可说话', onPressed: onTalk),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorBody extends StatelessWidget {
+  const _ErrorBody({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CocoSpace.s6,
+        CocoSpace.s4,
+        CocoSpace.s6,
+        CocoSpace.s6,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            message,
+            style: const TextStyle(
+              fontSize: 22,
+              height: 1.4,
+              color: CocoColors.neutral950,
+            ),
+          ),
+          const Spacer(),
+          CocoPrimaryButton(label: '再试一次', onPressed: onRetry),
+        ],
       ),
     );
   }

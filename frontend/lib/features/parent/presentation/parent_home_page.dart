@@ -298,34 +298,21 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     }
 
     if (voicePending) {
+      // 对话状态已由底栏「对话中」表达，卡片下不再重复状态文案
       return SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ParentPendingActionCard(
-              action: callState.pendingAction!,
-              busy: callState.pendingActionBusy,
-              onConfirm: () {
-                unawaited(() async {
-                  await callController.confirmPendingAction();
-                  ref.invalidate(remindersListProvider);
-                }());
-              },
-              onCancel: () {
-                unawaited(callController.cancelPendingAction());
-              },
-            ),
-            const SizedBox(height: CocoSpace.s4),
-            Text(
-              callState.statusLabel,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-                color: palette.link,
-              ),
-            ),
-          ],
+        padding: const EdgeInsets.only(top: CocoSpace.s4),
+        child: ParentPendingActionCard(
+          action: callState.pendingAction!,
+          busy: callState.pendingActionBusy,
+          onConfirm: () {
+            unawaited(() async {
+              await callController.confirmPendingAction();
+              ref.invalidate(remindersListProvider);
+            }());
+          },
+          onCancel: () {
+            unawaited(callController.cancelPendingAction());
+          },
         ),
       );
     }
