@@ -84,8 +84,10 @@ flutter:
     - assets/images/coco_app_icon.png
     - assets/images/onboarding/
     - assets/images/parent/home/
+    - assets/images/child/
     - assets/icons/onboarding/
     - assets/icons/parent/
+    - assets/icons/child/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

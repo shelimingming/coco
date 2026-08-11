@@ -337,15 +337,19 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     }
 
     if (!inCall && pendingChildStatus != null) {
-      return SingleChildScrollView(
-        child: ChildStatusCard(
-          notification: pendingChildStatus,
-          busy: _actionBusy,
-          onAcknowledge: () => _runAction(() {
-            return ref
-                .read(notificationPollerProvider.notifier)
-                .acknowledgePendingChildStatus();
-          }),
+      return Align(
+        alignment: Alignment.topCenter,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(top: CocoSpace.s4),
+          child: ChildStatusCard(
+            notification: pendingChildStatus,
+            busy: _actionBusy,
+            onAcknowledge: () => _runAction(() {
+              return ref
+                  .read(notificationPollerProvider.notifier)
+                  .acknowledgePendingChildStatus();
+            }),
+          ),
         ),
       );
     }

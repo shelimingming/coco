@@ -23,13 +23,23 @@ abstract final class CocoTheme {
       textTheme: _parentTextTheme,
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(96),
+          // 胶囊主按钮：对齐 DESIGN ElderPrimaryAction
+          minimumSize: const Size.fromHeight(56),
           backgroundColor: CocoColors.parentPrimary,
           foregroundColor: CocoColors.white,
+          disabledBackgroundColor: CocoColors.parentPrimary,
+          disabledForegroundColor: CocoColors.white,
           textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(CocoRadius.xl),
-          ),
+          shape: const StadiumBorder(),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(56),
+          foregroundColor: CocoColors.parentPrimary,
+          textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+          side: const BorderSide(color: CocoColors.parentPrimary, width: 1.5),
+          shape: const StadiumBorder(),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(

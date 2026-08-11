@@ -146,7 +146,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      // 子女端：底部三栏（近况 / 留言 / 家庭）
+      // 子女端：底部三栏（近况 / 报平安 / 家庭）
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return ChildShell(navigationShell: navigationShell);

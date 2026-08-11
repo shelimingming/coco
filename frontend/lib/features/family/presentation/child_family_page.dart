@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
-import '../../../core/widgets/coco_scaffold.dart';
 import '../../auth/application/auth_controller.dart';
 import '../application/family_providers.dart';
 
-/// 子女端家庭 Tab：绑定关系 + 账号与退出（合并原设置页）。
+/// 子女端家庭 Tab：绑定关系、授权说明、账号与退出。
 class ChildFamilyPage extends ConsumerWidget {
   const ChildFamilyPage({super.key});
 
@@ -18,21 +18,38 @@ class ChildFamilyPage extends ConsumerWidget {
     final user = ref.watch(authControllerProvider).user;
     final theme = Theme.of(context);
     final familyAsync = ref.watch(familyInfoProvider);
+    final top = MediaQuery.paddingOf(context).top;
 
-    return CocoScaffold(
-      title: '家庭',
+    return Scaffold(
+      backgroundColor: CocoColors.childBackground,
       body: ListView(
+        padding: EdgeInsets.fromLTRB(
+          CocoSpace.s5,
+          top + CocoSpace.s4,
+          CocoSpace.s5,
+          CocoSpace.s8,
+        ),
         children: [
-          Text('家庭绑定', style: theme.textTheme.titleMedium),
-          const SizedBox(height: CocoSpace.s3),
+          Text(
+            '家庭',
+            style: theme.textTheme.displayLarge?.copyWith(fontSize: 28),
+          ),
+          const SizedBox(height: CocoSpace.s2),
+          Text(
+            '管理家庭关系与共享范围',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: CocoColors.neutral700,
+            ),
+          ),
+          const SizedBox(height: CocoSpace.s6),
           familyAsync.when(
-            loading: () => const Card(
+            loading: () => const _CardShell(
               child: Padding(
                 padding: EdgeInsets.all(CocoSpace.s5),
                 child: LinearProgressIndicator(),
               ),
             ),
-            error: (error, _) => Card(
+            error: (error, _) => _CardShell(
               child: Padding(
                 padding: const EdgeInsets.all(CocoSpace.s5),
                 child: Column(
@@ -55,16 +72,16 @@ class ChildFamilyPage extends ConsumerWidget {
             ),
             data: (family) {
               if (family == null || !family.isActive) {
-                return Card(
+                return _CardShell(
                   child: Padding(
                     padding: const EdgeInsets.all(CocoSpace.s5),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('还没有绑定父母。', style: theme.textTheme.bodyLarge),
+                        Text('还没有绑定父母。', style: theme.textTheme.titleMedium),
                         const SizedBox(height: CocoSpace.s2),
                         Text(
-                          '您可以生成邀请码请父母加入，或输入父母给您的邀请码。长辈决定分享什么；这里看不到完整聊天。',
+                          '您可以生成邀请码请父母加入，或输入父母给您的邀请码。',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: CocoColors.neutral700,
                           ),
@@ -85,56 +102,70 @@ class ChildFamilyPage extends ConsumerWidget {
                 );
               }
               final parentName = family.parentDisplayName ?? '父母';
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(CocoSpace.s5),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '已与「$parentName」绑定',
-                        style: theme.textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: CocoSpace.s2),
-                      Text(
-                        '摘要由长辈授权后才会出现。长辈决定分享什么；这里看不到完整聊天。',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: CocoColors.neutral700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
+              return _BoundParentCard(parentName: parentName);
             },
           ),
-          const SizedBox(height: CocoSpace.s8),
-          Text('账号', style: theme.textTheme.titleMedium),
+          const SizedBox(height: CocoSpace.s6),
+          Text('我的账号', style: theme.textTheme.titleMedium),
           const SizedBox(height: CocoSpace.s3),
-          Card(
+          _CardShell(
             child: ListTile(
-              title: Text(user?.displayName ?? '家人'),
-              subtitle: const Text('当前登录昵称'),
-            ),
-          ),
-          const SizedBox(height: CocoSpace.s8),
-          Text('其他', style: theme.textTheme.titleMedium),
-          const SizedBox(height: CocoSpace.s3),
-          Card(
-            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: CocoSpace.s4,
+                vertical: CocoSpace.s1,
+              ),
+              leading: SvgPicture.asset(
+                'assets/icons/child/icon-user.svg',
+                width: 22,
+                height: 22,
+                colorFilter: const ColorFilter.mode(
+                  CocoColors.childPrimary,
+                  BlendMode.srcIn,
+                ),
+              ),
               title: Text(
-                '退出登录',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: CocoColors.danger,
+                user?.displayName ?? '家人',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               subtitle: Text(
-                '退出后需重新验证手机号',
+                '当前登录昵称',
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: CocoColors.neutral700,
+                  color: CocoColors.neutral500,
                 ),
               ),
-              trailing: Icon(Icons.logout, color: CocoColors.danger),
+            ),
+          ),
+          const SizedBox(height: CocoSpace.s6),
+          Text('其他', style: theme.textTheme.titleMedium),
+          const SizedBox(height: CocoSpace.s3),
+          _CardShell(
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: CocoSpace.s4,
+                vertical: CocoSpace.s1,
+              ),
+              leading: SvgPicture.asset(
+                'assets/icons/child/icon-logout.svg',
+                width: 22,
+                height: 22,
+                colorFilter: const ColorFilter.mode(
+                  CocoColors.danger,
+                  BlendMode.srcIn,
+                ),
+              ),
+              title: Text(
+                '退出登录',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: CocoColors.danger,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              trailing: Icon(
+                Icons.chevron_right_rounded,
+                color: CocoColors.danger.withValues(alpha: 0.7),
+              ),
               onTap: () => _confirmLogout(context, ref),
             ),
           ),
@@ -167,5 +198,149 @@ class ChildFamilyPage extends ConsumerWidget {
     if (confirmed == true && context.mounted) {
       await ref.read(authControllerProvider.notifier).logout();
     }
+  }
+}
+
+class _BoundParentCard extends StatelessWidget {
+  const _BoundParentCard({required this.parentName});
+
+  final String parentName;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _CardShell(
+      child: Padding(
+        padding: const EdgeInsets.all(CocoSpace.s5),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: CocoColors.childPrimarySoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    parentName.isNotEmpty ? parentName.substring(0, 1) : '亲',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: CocoColors.childPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: CocoSpace.s3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(parentName, style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 2),
+                      Text(
+                        '家长',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: CocoColors.neutral500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: CocoSpace.s3,
+                    vertical: CocoSpace.s1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: CocoColors.childPrimarySoft,
+                    borderRadius: BorderRadius.circular(CocoRadius.pill),
+                  ),
+                  child: Text(
+                    '● 已绑定',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: CocoColors.success,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: CocoSpace.s4),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(CocoSpace.s4),
+              decoration: BoxDecoration(
+                color: CocoColors.childBackground,
+                borderRadius: BorderRadius.circular(CocoRadius.md),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SvgPicture.asset(
+                    'assets/icons/child/icon-shield.svg',
+                    width: 20,
+                    height: 20,
+                    colorFilter: const ColorFilter.mode(
+                      CocoColors.childPrimary,
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                  const SizedBox(width: CocoSpace.s3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '由长辈决定分享范围',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: CocoSpace.s1),
+                        Text(
+                          '仅展示长辈授权后的摘要，看不到完整聊天，保护彼此隐私。',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: CocoColors.neutral700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CardShell extends StatelessWidget {
+  const _CardShell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: CocoColors.childSurface,
+        borderRadius: BorderRadius.circular(CocoRadius.lg),
+        border: Border.all(color: CocoColors.childBorder),
+        boxShadow: [
+          BoxShadow(
+            color: CocoColors.neutral950.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: child,
+    );
   }
 }
