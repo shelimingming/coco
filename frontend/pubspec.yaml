@@ -53,6 +53,7 @@ dependencies:
   just_audio: ^0.10.4
   # multipart 音频 content-type
   http_parser: ^4.1.2
+  flutter_svg: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -76,11 +77,13 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # 陪伴形象（coco 分姿态静帧，后续可换同名动图）与品牌图标
+  # 陪伴形象、首次身份选择场景与图标、品牌图标
   assets:
     - assets/images/coco/
     - assets/images/coco_companion_dog.png
     - assets/images/coco_app_icon.png
+    - assets/images/onboarding/
+    - assets/icons/onboarding/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

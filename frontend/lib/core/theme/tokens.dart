@@ -28,6 +28,27 @@ abstract final class CocoColors {
   static const Color childPrimarySoft = Color(0xFFDDEFEA);
   static const Color childAccent = Color(0xFFD97745);
   static const Color childBorder = Color(0xFFDEE5E2);
+
+  /// 首次身份选择等老人端白天操作色（可可_UI完整交付_v1，#276D62）。
+  /// 与 DESIGN 暖橙主色并存：本页按交付稿走墨绿，不混用父母暖色按钮。
+  static const Color onboardingBackground = Color(0xFFF9F8F3);
+  static const Color onboardingAccent = Color(0xFF276D62);
+  static const Color onboardingAccentSoft = Color(0xFFE6F2F0);
+
+  /// 介绍气泡约 72% 白，更透、不抢场景。
+  static const Color onboardingBubble = Color(0xB8FFFFFF);
+  static const Color onboardingShadow = Color(0x14000000);
+
+  /// 场景到底部奶油底的渐变停靠色。
+  static const Color onboardingFadeStart = Color(0x00F9F8F3);
+  static const Color onboardingFadeMid = Color(0x66F9F8F3);
+  static const Color onboardingFadeStrong = Color(0xCCF9F8F3);
+
+  /// 登录页：背景图上的浅罩，保证标题与白卡可读。
+  static const Color loginScrim = Color(0x66F9F8F3);
+
+  /// 登录卡输入框描边（交付稿暖米色边）。
+  static const Color loginFieldBorder = Color(0xFFE8D5C8);
 }
 
 abstract final class CocoSpace {

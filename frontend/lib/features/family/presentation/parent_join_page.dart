@@ -41,11 +41,11 @@ class _ParentJoinPageState extends ConsumerState<ParentJoinPage> {
     });
     try {
       await ref.read(familyApiProvider).joinFamily(code);
-      await _goHomeAfterJoin(message: '已加入家庭。');
+      await _finishAfterJoin(message: '已加入家庭。');
     } catch (error) {
       if (!mounted) return;
       if (error is ApiException && error.code == 'family.already_joined') {
-        await _goHomeAfterJoin(message: '您已经加入家庭。');
+        await _finishAfterJoin(message: '您已经加入家庭。');
         return;
       }
       setState(() {
@@ -57,13 +57,23 @@ class _ParentJoinPageState extends ConsumerState<ParentJoinPage> {
     }
   }
 
-  Future<void> _goHomeAfterJoin({required String message}) async {
+  Future<void> _finishAfterJoin({required String message}) async {
+    // 先拉新家庭状态，设置页返回后即可展示「已绑定」
     ref.invalidate(familyInfoProvider);
+    try {
+      await ref.read(familyInfoProvider.future);
+    } catch (_) {
+      // 刷新失败不挡返回；下次进入设置会再请求
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
-    context.go('/parent');
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/parent/settings');
+    }
   }
 
   @override

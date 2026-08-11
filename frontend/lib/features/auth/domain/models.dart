@@ -9,7 +9,8 @@ enum UserRole {
     );
   }
 
-  String get label => this == UserRole.parent ? '父母' : '子女';
+  /// 对外展示文案与 UI 交付「家长 / 子女」对齐。
+  String get label => this == UserRole.parent ? '家长' : '子女';
 }
 
 class AppUser {
@@ -84,11 +85,7 @@ class AuthSession {
   }
 }
 
-enum LoginStep {
-  role,
-  phone,
-  code,
-}
+enum LoginStep { role, phone, code }
 
 class AuthState {
   const AuthState({
