@@ -77,13 +77,15 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # 陪伴形象、首次身份选择场景与图标、品牌图标
+  # 陪伴形象、首次身份选择场景与图标、品牌图标、老人端首页
   assets:
     - assets/images/coco/
     - assets/images/coco_companion_dog.png
     - assets/images/coco_app_icon.png
     - assets/images/onboarding/
+    - assets/images/parent/home/
     - assets/icons/onboarding/
+    - assets/icons/parent/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

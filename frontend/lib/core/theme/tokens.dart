@@ -21,6 +21,10 @@ abstract final class CocoColors {
   static const Color parentSecondary = Color(0xFF7C6848);
   static const Color parentFocus = Color(0xFF784128);
 
+  /// 老人端首页：闲置工具圆底、字幕气泡；底栏用纯色 parentBackground，不再透底图。
+  static const Color parentHomeToolIdle = Color(0xFFFFFFFF);
+  static const Color parentHomeCaptionBubble = Color(0xF2FFFFFF);
+
   static const Color childBackground = Color(0xFFF6F8F7);
   static const Color childSurface = Color(0xFFFFFFFF);
   static const Color childPrimary = Color(0xFF28786B);
