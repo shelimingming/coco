@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/network/api_exception.dart';
+import '../../../core/notifications/local_notifications.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_loading.dart';
@@ -172,6 +173,10 @@ class RemindersPage extends ConsumerWidget {
     if (confirmed != true || !context.mounted) return;
     try {
       await ref.read(remindersApiProvider).delete(reminder.id);
+      // 删掉对应本地定时，避免已删除提醒仍弹系统通知
+      await ref
+          .read(localNotificationServiceProvider)
+          .cancelReminder(reminder.id);
       ref.invalidate(remindersListProvider);
     } catch (error) {
       if (!context.mounted) return;

@@ -23,7 +23,9 @@ abstract final class CocoColors {
 
   /// 老人端首页：闲置工具圆底、字幕气泡；底栏用纯色 parentBackground，不再透底图。
   static const Color parentHomeToolIdle = Color(0xFFFFFFFF);
-  static const Color parentHomeCaptionBubble = Color(0xF2FFFFFF);
+
+  /// 对话气泡约 72% 白，半透明贴合场景，与身份选择介绍气泡一致。
+  static const Color parentHomeCaptionBubble = Color(0xB8FFFFFF);
 
   static const Color childBackground = Color(0xFFF6F8F7);
   static const Color childSurface = Color(0xFFFFFFFF);

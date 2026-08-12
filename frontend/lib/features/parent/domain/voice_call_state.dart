@@ -1,4 +1,5 @@
 import 'pending_voice_action.dart';
+import 'voice_call_transcript.dart';
 
 /// 父母端实时通话阶段；驱动形象姿态与文案。
 enum VoiceCallPhase {
@@ -21,12 +22,13 @@ enum VoiceCallPhase {
   error,
 }
 
-/// 通话 UI 状态：阶段 + 字幕 + 可展示错误 + 待确认大卡。
+/// 通话 UI 状态：阶段 + 字幕 + 本通聊天记录 + 可展示错误 + 待确认大卡。
 class VoiceCallState {
   const VoiceCallState({
     this.phase = VoiceCallPhase.idle,
     this.userCaption = '',
     this.assistantCaption = '',
+    this.transcript = const [],
     this.errorTitle,
     this.errorMessage,
     this.pendingAction,
@@ -36,6 +38,9 @@ class VoiceCallState {
   final VoiceCallPhase phase;
   final String userCaption;
   final String assistantCaption;
+
+  /// 本次通话已落定的对话（结束通话后清空）。
+  final List<VoiceCallTranscriptEntry> transcript;
   final String? errorTitle;
   final String? errorMessage;
   final PendingVoiceAction? pendingAction;
@@ -58,10 +63,55 @@ class VoiceCallState {
     VoiceCallPhase.error => errorTitle ?? '出了点问题',
   };
 
+  /// 「字」面板展示用：已落定记录 + 当前正在说的半句。
+  /// 注意：userCaption / assistantCaption 在下一轮 speech.started 前会残留，
+  /// 不能在末条已是对方时再追加，否则会出现「您」重复一条。
+  List<VoiceCallTranscriptEntry> get displayTranscript {
+    final out = List<VoiceCallTranscriptEntry>.from(transcript);
+
+    final user = userCaption.trim();
+    if (user.isNotEmpty) {
+      final last = out.isEmpty ? null : out.last;
+      if (last?.role == VoiceCallTranscriptRole.user) {
+        if (last!.text != user) {
+          out[out.length - 1] = last.copyWith(text: user);
+        }
+      } else if (phase == VoiceCallPhase.listening) {
+        // 仅倾听中合并半句；thinking/speaking 时 caption 只是上一轮残留
+        out.add(
+          VoiceCallTranscriptEntry(
+            role: VoiceCallTranscriptRole.user,
+            text: user,
+          ),
+        );
+      }
+    }
+
+    final asst = assistantCaption.trim();
+    if (asst.isNotEmpty) {
+      final last = out.isEmpty ? null : out.last;
+      if (last?.role == VoiceCallTranscriptRole.assistant) {
+        if (last!.text != asst) {
+          out[out.length - 1] = last.copyWith(text: asst);
+        }
+      } else if (phase == VoiceCallPhase.speaking) {
+        out.add(
+          VoiceCallTranscriptEntry(
+            role: VoiceCallTranscriptRole.assistant,
+            text: asst,
+          ),
+        );
+      }
+    }
+
+    return out;
+  }
+
   VoiceCallState copyWith({
     VoiceCallPhase? phase,
     String? userCaption,
     String? assistantCaption,
+    List<VoiceCallTranscriptEntry>? transcript,
     String? errorTitle,
     String? errorMessage,
     bool clearError = false,
@@ -73,6 +123,7 @@ class VoiceCallState {
       phase: phase ?? this.phase,
       userCaption: userCaption ?? this.userCaption,
       assistantCaption: assistantCaption ?? this.assistantCaption,
+      transcript: transcript ?? this.transcript,
       errorTitle: clearError ? null : (errorTitle ?? this.errorTitle),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       pendingAction: clearPendingAction

@@ -20,7 +20,7 @@ class CocoApp extends ConsumerWidget {
         (state) => state.user?.role ?? state.selectedRole,
       ),
     );
-    // 全局挂载通知轮询：登录后前台每 20s 拉未读
+    // 全局挂载通知轮询：登录后前台拉未读并弹本地系统通知
     ref.watch(notificationPollerProvider);
 
     return MaterialApp.router(

@@ -104,10 +104,7 @@ void main() {
         'type': 'REMINDER',
         'title': '日常提醒',
         'body': '到吃药时间了',
-        'payload': {
-          'reminder_id': 'r1',
-          'occurrence_id': 'o1',
-        },
+        'payload': {'reminder_id': 'r1', 'occurrence_id': 'o1'},
         'read_at': null,
         'created_at': '2026-08-09T03:00:00Z',
       });
@@ -124,6 +121,35 @@ void main() {
         seenIds: {'b'},
       );
       expect(unseen, {'a', 'c'});
+    });
+  });
+
+  group('shouldSkipReminderBanner', () {
+    final bg = DateTime.utc(2026, 8, 12, 12, 0);
+    test('skips when scheduled while backgrounded', () {
+      expect(
+        shouldSkipReminderBanner(
+          skipIfScheduled: true,
+          reminderId: 'r1',
+          scheduledReminderIds: {'r1'},
+          backgroundedAt: bg,
+          createdAt: bg.add(const Duration(minutes: 1)),
+        ),
+        isTrue,
+      );
+    });
+
+    test('does not skip older notifications', () {
+      expect(
+        shouldSkipReminderBanner(
+          skipIfScheduled: true,
+          reminderId: 'r1',
+          scheduledReminderIds: {'r1'},
+          backgroundedAt: bg,
+          createdAt: bg.subtract(const Duration(minutes: 1)),
+        ),
+        isFalse,
+      );
     });
   });
 }

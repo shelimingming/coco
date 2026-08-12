@@ -18,13 +18,14 @@ import '../domain/coco_companion_pose.dart';
 import '../domain/voice_call_state.dart';
 import 'widgets/child_status_card.dart';
 import 'widgets/coco_companion_view.dart';
+import 'widgets/parent_call_transcript_panel.dart';
 import 'widgets/parent_caption_bubble.dart';
 import 'widgets/parent_home_palette.dart';
 import 'widgets/parent_home_tool_bar.dart';
 import 'widgets/parent_pending_action_card.dart';
 import 'widgets/reminder_confirm_card.dart';
 
-/// 父母端首页：全屏白天场景，说话原地进对话；字幕默认关。
+/// 父母端首页：全屏白天场景，说话原地进对话；可可说话时自动出半透明气泡。
 class ParentHomePage extends ConsumerStatefulWidget {
   const ParentHomePage({super.key});
 
@@ -35,7 +36,7 @@ class ParentHomePage extends ConsumerStatefulWidget {
 class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   bool _actionBusy = false;
 
-  /// 对话文字默认关闭，避免干扰不希望看转译的老人。
+  /// 「字」开关：开时持续显示字幕（含用户转写）；关时仅可可说话时出气泡。
   bool _captionVisible = false;
 
   /// 出场播完切待机；进语音时会被取消，避免盖住倾听/说话
@@ -92,8 +93,16 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     final caption = callState.assistantCaption.isNotEmpty
         ? callState.assistantCaption
         : callState.userCaption;
-    // 字幕开时虚化背景，主角色尺寸位置保持不变
-    final blurBackground = inCall && _captionVisible;
+    // 「字」关：可可说话时单气泡；「字」开：模糊 + 本通全部记录
+    final showCaptionBubble =
+        inCall && !_captionVisible && callState.assistantCaption.isNotEmpty;
+    final showTranscript = inCall && _captionVisible;
+    // 「字」开、或确认大卡（提醒 / 报平安 / 语音待确认）时虚化场景
+    final blurBackground =
+        showTranscript ||
+        voicePending ||
+        (!inCall && pendingReminder != null) ||
+        (!inCall && pendingChildStatus != null);
 
     return Scaffold(
       backgroundColor: CocoColors.parentBackground,
@@ -115,9 +124,10 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                   Positioned.fill(
                     child: ClipRect(
                       child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        // 「字」面板需要更明显虚化，方便读聊天记录
+                        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                         child: ColoredBox(
-                          color: CocoColors.neutral950.withValues(alpha: 0.12),
+                          color: CocoColors.neutral950.withValues(alpha: 0.18),
                         ),
                       ),
                     ),
@@ -211,6 +221,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                             companionPose: companionPose,
                             palette: palette,
                             caption: caption,
+                            showCaptionBubble: showCaptionBubble,
+                            showTranscript: showTranscript,
                             voicePending: voicePending,
                             pendingReminder: pendingReminder,
                             pendingChildStatus: pendingChildStatus,
@@ -249,6 +261,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                         pendingChildStatus: pendingChildStatus,
                         callState: callState,
                         palette: palette,
+                        hideStatusCopy: showCaptionBubble || showTranscript,
                       ),
                     ),
                   ),
@@ -287,6 +300,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required AppNotification? pendingChildStatus,
     required VoiceCallState callState,
     required ParentHomePalette palette,
+    required bool hideStatusCopy,
   }) {
     if (!inCall &&
         !voicePending &&
@@ -320,8 +334,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
       );
     }
 
+    // 气泡 / 聊天记录已展示时底栏不再重复状态
     if (inCall &&
-        !_captionVisible &&
+        !hideStatusCopy &&
         callState.phase != VoiceCallPhase.error &&
         !voicePending) {
       return Center(
@@ -346,6 +361,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required CocoCompanionPose companionPose,
     required ParentHomePalette palette,
     required String caption,
+    required bool showCaptionBubble,
+    required bool showTranscript,
     required bool voicePending,
     required AppNotification? pendingReminder,
     required AppNotification? pendingChildStatus,
@@ -424,13 +441,27 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
             .toDouble();
         return Stack(
           children: [
-            Center(
+            // 各姿态统一略下移；开「字」时再略下，给聊天列表留空
+            Align(
+              alignment: Alignment(0, showTranscript ? 0.62 : 0.42),
               child: Semantics(
                 label: inCall ? callState.statusLabel : '和可可说话',
                 child: CocoCompanionView(pose: companionPose, size: side),
               ),
             ),
-            if (inCall && _captionVisible)
+            if (showTranscript)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                // 列表盖住上半区，底部露出小狗脸
+                bottom: side * 0.55,
+                child: ParentCallTranscriptPanel(
+                  palette: palette,
+                  entries: callState.displayTranscript,
+                ),
+              )
+            else if (showCaptionBubble)
               Positioned(
                 top: 0,
                 left: 0,

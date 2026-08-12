@@ -11,6 +11,7 @@ import '../data/realtime_voice_socket.dart';
 import '../domain/coco_companion_pose.dart';
 import '../domain/pending_voice_action.dart';
 import '../domain/voice_call_state.dart';
+import '../domain/voice_call_transcript.dart';
 import 'coco_companion_controller.dart';
 
 /// 父母端实时通话状态机：连接 → 听 → 想 → 说；小狗姿态仅倾听 / 说话。
@@ -106,6 +107,11 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
     } catch (_) {}
     await _player.clear();
     _mic.suppress = false;
+    // 已说出的半句仍记入本通记录，方便「字」面板回看
+    final spoken = _assistantAccum.trim();
+    if (spoken.isNotEmpty) {
+      _appendTranscript(VoiceCallTranscriptRole.assistant, spoken);
+    }
     _assistantAccum = '';
     state = state.copyWith(
       phase: VoiceCallPhase.listening,
@@ -176,6 +182,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
       case 'user.final':
         final text = event.text;
         if (text != null && text.isNotEmpty) {
+          _appendTranscript(VoiceCallTranscriptRole.user, text);
           state = state.copyWith(
             phase: VoiceCallPhase.thinking,
             userCaption: text,
@@ -186,8 +193,10 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
         final text = event.text;
         if (text != null && text.isNotEmpty) {
           _assistantAccum += text;
+          // 清空残留 userCaption，避免「字」面板在可可说话时再拼出上一句「您」
           state = state.copyWith(
             phase: VoiceCallPhase.speaking,
+            userCaption: '',
             assistantCaption: _assistantAccum,
           );
           _syncPose(VoiceCallPhase.speaking);
@@ -208,6 +217,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
         final text = event.text;
         if (text != null && text.isNotEmpty) {
           _assistantAccum = text;
+          _appendTranscript(VoiceCallTranscriptRole.assistant, text);
           state = state.copyWith(
             phase: VoiceCallPhase.speaking,
             assistantCaption: text,
@@ -316,6 +326,22 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
       VoiceCallPhase.error => CocoCompanionPose.idle,
     };
     ref.read(cocoCompanionPoseProvider.notifier).state = pose;
+  }
+
+  /// 写入本通记录；同角色连续定稿则替换末条，避免 partial→final 重复。
+  void _appendTranscript(VoiceCallTranscriptRole role, String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    final current = List<VoiceCallTranscriptEntry>.from(state.transcript);
+    if (current.isNotEmpty && current.last.role == role) {
+      current[current.length - 1] = VoiceCallTranscriptEntry(
+        role: role,
+        text: trimmed,
+      );
+    } else {
+      current.add(VoiceCallTranscriptEntry(role: role, text: trimmed));
+    }
+    state = state.copyWith(transcript: current);
   }
 
   @override

@@ -11,7 +11,7 @@ import '../../reminders/data/reminders_api.dart';
 import '../data/notifications_api.dart';
 import '../domain/models.dart';
 
-/// 前台轮询未读通知；退到后台停止，避免无谓耗电。
+/// 前台轮询未读通知；退到后台改为本地定时提醒，避免无谓耗电。
 class NotificationPollerState {
   const NotificationPollerState({
     this.pendingReminder,
@@ -53,6 +53,7 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
         _startIfNeeded();
       } else {
         _stop();
+        unawaited(_ref.read(localNotificationServiceProvider).cancelAll());
         state = const NotificationPollerState();
       }
     });
@@ -62,17 +63,56 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
   Timer? _timer;
   // 报平安依赖前台轮询落卡；过长会感觉「没收到」
   static const _interval = Duration(seconds: 8);
+  // 退后台期间为哪些提醒排过本地定时；回前台时 REMINDER 横幅去重
+  Set<String> _scheduledWhileBackground = {};
+  DateTime? _backgroundedAt;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _startIfNeeded();
-      unawaited(pollOnce());
-    } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
+      unawaited(_onResumed());
+    } else if (state == AppLifecycleState.paused) {
+      unawaited(_onPaused());
+    } else if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
       _stop();
     }
+  }
+
+  Future<void> _onPaused() async {
+    _stop();
+    final auth = _ref.read(authControllerProvider);
+    if (!auth.isAuthenticated || auth.user?.role != UserRole.parent) {
+      return;
+    }
+    _backgroundedAt = DateTime.now();
+    try {
+      final reminders = await _ref.read(remindersApiProvider).list();
+      final schedules = reminders
+          .where((r) => r.isActive && r.nextTriggerAt != null)
+          .map(
+            (r) => LocalReminderSchedule(
+              id: r.id,
+              title: r.title,
+              nextTriggerAt: r.nextTriggerAt!,
+            ),
+          );
+      final local = _ref.read(localNotificationServiceProvider);
+      _scheduledWhileBackground = await local.scheduleReminders(schedules);
+    } catch (_) {
+      // 排程失败不阻断退后台；回前台仍靠轮询
+      _scheduledWhileBackground = {};
+    }
+  }
+
+  Future<void> _onResumed() async {
+    final local = _ref.read(localNotificationServiceProvider);
+    // 回前台取消本地定时，改由轮询 + 首页卡片承接
+    await local.cancelAll();
+    _startIfNeeded();
+    await pollOnce(skipReminderBannerIfScheduled: true);
+    _scheduledWhileBackground = {};
+    _backgroundedAt = null;
   }
 
   void _startIfNeeded() {
@@ -88,7 +128,7 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
     _timer = null;
   }
 
-  Future<void> pollOnce() async {
+  Future<void> pollOnce({bool skipReminderBannerIfScheduled = false}) async {
     final auth = _ref.read(authControllerProvider);
     if (!auth.isAuthenticated) return;
     try {
@@ -101,6 +141,7 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
       AppNotification? latestChildStatus;
       final local = _ref.read(localNotificationServiceProvider);
       final role = auth.user?.role;
+      final bgAt = _backgroundedAt;
 
       for (final item in items) {
         final isNew = !seen.contains(item.id);
@@ -110,25 +151,43 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
           if (item.isReminder) {
             latestReminder = _newer(latestReminder, item);
             if (isNew) {
-              await local.show(
-                id: item.id.hashCode,
-                title: item.title,
-                body: item.body,
+              final skipBanner = shouldSkipReminderBanner(
+                skipIfScheduled: skipReminderBannerIfScheduled,
+                reminderId: item.reminderId,
+                scheduledReminderIds: _scheduledWhileBackground,
+                backgroundedAt: bgAt,
+                createdAt: item.createdAt,
               );
+              // 后台本地定时已弹过的首次到点，回前台只落卡、不再弹横幅
+              if (!skipBanner) {
+                await local.show(
+                  id: item.id.hashCode & 0x7fffffff,
+                  title: item.title,
+                  body: item.body,
+                  payload: 'notification:${item.id}',
+                );
+              }
             }
           } else if (item.isChildStatus) {
             latestChildStatus = _newer(latestChildStatus, item);
             if (isNew) {
               await local.show(
-                id: item.id.hashCode,
+                id: item.id.hashCode & 0x7fffffff,
                 title: item.title,
                 body: item.body,
+                payload: 'notification:${item.id}',
               );
             }
           }
-        } else if (item.isCareMessage && role == UserRole.child) {
-          if (isNew) {
+        } else if (role == UserRole.child) {
+          if (item.isCareMessage && isNew) {
             _ref.invalidate(childTodayProvider);
+            await local.show(
+              id: item.id.hashCode & 0x7fffffff,
+              title: item.title,
+              body: item.body,
+              payload: 'notification:${item.id}',
+            );
           }
         }
       }
@@ -155,6 +214,9 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
     await _ref
         .read(remindersApiProvider)
         .confirm(reminderId: reminderId, occurrenceId: occurrenceId);
+    await _ref
+        .read(localNotificationServiceProvider)
+        .cancelReminder(reminderId);
     await dismissPendingReminder(markRead: true);
   }
 
@@ -174,6 +236,9 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
           occurrenceId: occurrenceId,
           minutes: minutes,
         );
+    await _ref
+        .read(localNotificationServiceProvider)
+        .cancelReminder(reminderId);
     await dismissPendingReminder(markRead: true);
   }
 
@@ -225,4 +290,19 @@ Set<String> filterUnseenNotificationIds({
   required Set<String> seenIds,
 }) {
   return incomingIds.where((id) => !seenIds.contains(id)).toSet();
+}
+
+/// 回前台时：若后台已为该提醒排过本地定时且通知在退后台后产生，则跳过横幅。
+bool shouldSkipReminderBanner({
+  required bool skipIfScheduled,
+  required String? reminderId,
+  required Set<String> scheduledReminderIds,
+  required DateTime? backgroundedAt,
+  required DateTime createdAt,
+}) {
+  if (!skipIfScheduled || reminderId == null || backgroundedAt == null) {
+    return false;
+  }
+  if (!scheduledReminderIds.contains(reminderId)) return false;
+  return !createdAt.isBefore(backgroundedAt);
 }
