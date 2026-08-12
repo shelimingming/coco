@@ -23,8 +23,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
     MicPcmStream? mic,
     PcmStreamPlayer? player,
     RealtimeVoiceSocket? socket,
-  }) : _mic = mic ?? MicPcmStream(),
-       _player = player ?? FlutterPcmSoundPlayer(),
+  }) : _mic = mic ?? createMicPcmStream(),
+       _player = player ?? createPcmStreamPlayer(),
        _socket = socket ?? RealtimeVoiceSocket(),
        super(const VoiceCallState()) {
     // 构造期注入播放结束回调，用于恢复麦克风上行。

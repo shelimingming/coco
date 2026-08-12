@@ -26,7 +26,7 @@ import 'widgets/parent_pending_action_card.dart';
 import 'widgets/reminder_confirm_card.dart';
 import 'widgets/reminder_suggestion_card.dart';
 
-/// 父母端首页：全屏白天场景，说话原地进对话；可可说话时自动出半透明气泡。
+/// 父母端首页：全屏白天场景，说话原地进对话；默认只语音，开「字」才看本通文字。
 class ParentHomePage extends ConsumerStatefulWidget {
   const ParentHomePage({super.key});
 
@@ -37,7 +37,7 @@ class ParentHomePage extends ConsumerStatefulWidget {
 class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   bool _actionBusy = false;
 
-  /// 「字」开关：开时持续显示字幕（含用户转写）；关时仅可可说话时出气泡。
+  /// 「字」开关：开时显示本通全部对话；关时不叠气泡，专心听说。
   bool _captionVisible = false;
 
   /// 出场播完切待机；进语音时会被取消，避免盖住倾听/说话
@@ -45,6 +45,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
 
   /// 底栏「我在呢」两行文案所需高度（含底 padding），进对话后文案变短也占同一槽位
   static const double _bottomCopySlotHeight = 96;
+
+  /// 「字」开时底栏几乎不占文案槽，把高度让给聊天列表
+  static const double _bottomCopySlotWhenTranscript = CocoSpace.s3;
 
   @override
   void initState() {
@@ -94,12 +97,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     final voicePending = inCall && callState.pendingAction != null;
     final palette = ParentHomePalette.standard;
     final greeting = parentHomeGreeting(name);
-    final caption = callState.assistantCaption.isNotEmpty
-        ? callState.assistantCaption
-        : callState.userCaption;
-    // 「字」关：可可说话时单气泡；「字」开：模糊 + 本通全部记录
-    final showCaptionBubble =
-        inCall && !_captionVisible && callState.assistantCaption.isNotEmpty;
+    // 默认对话不叠气泡；仅「字」开时展示本通记录
     final showTranscript = inCall && _captionVisible;
     // 「字」开、或确认大卡（建议 / 到点 / 报平安 / 语音待确认）时虚化场景
     final blurBackground =
@@ -108,6 +106,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         (!inCall && pendingSuggestion != null) ||
         (!inCall && pendingReminder != null) ||
         (!inCall && pendingChildStatus != null);
+    final bottomCopyHeight = showTranscript
+        ? _bottomCopySlotWhenTranscript
+        : _bottomCopySlotHeight;
 
     return Scaffold(
       backgroundColor: CocoColors.parentBackground,
@@ -225,8 +226,6 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                             callController: callController,
                             companionPose: companionPose,
                             palette: palette,
-                            caption: caption,
-                            showCaptionBubble: showCaptionBubble,
                             showTranscript: showTranscript,
                             voicePending: voicePending,
                             pendingSuggestion: pendingSuggestion,
@@ -250,9 +249,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 文案区固定高度：进对话时文案变短也不能让上半 Expanded 变高，否则场景背景会「跳一下」
+                  // 闲置/通话状态文案槽；开「字」时压矮，把垂直空间还给聊天列表
                   SizedBox(
-                    height: _bottomCopySlotHeight,
+                    height: bottomCopyHeight,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(
                         CocoSpace.s6,
@@ -268,7 +267,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                         pendingChildStatus: pendingChildStatus,
                         callState: callState,
                         palette: palette,
-                        hideStatusCopy: showCaptionBubble || showTranscript,
+                        hideStatusCopy: showTranscript,
                       ),
                     ),
                   ),
@@ -343,7 +342,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
       );
     }
 
-    // 气泡 / 聊天记录已展示时底栏不再重复状态
+    // 聊天记录已展示时底栏不再重复状态
     if (inCall &&
         !hideStatusCopy &&
         callState.phase != VoiceCallPhase.error &&
@@ -369,8 +368,6 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required VoiceCallController callController,
     required CocoCompanionPose companionPose,
     required ParentHomePalette palette,
-    required String caption,
-    required bool showCaptionBubble,
     required bool showTranscript,
     required bool voicePending,
     required AppNotification? pendingSuggestion,
@@ -465,9 +462,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 字幕开/关不改变主角色尺寸：按整区算，气泡叠在上方
-        final side = constraints.biggest.shortestSide
-            .clamp(200.0, 320.0)
+        // 主角色尽量占满中间区，老人端更易看见可可
+        final side = (constraints.biggest.shortestSide * 0.95)
+            .clamp(240.0, 420.0)
             .toDouble();
         // 「字」开时小狗与背景同虚化，避免抢文字可读性
         Widget companion = CocoCompanionView(pose: companionPose, size: side);
@@ -480,9 +477,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
 
         return Stack(
           children: [
-            // 各姿态统一略下移；开「字」时再略下，给聊天列表留空
+            // 开「字」时小狗再下沉，列表几乎铺满到工具栏上方
             Align(
-              alignment: Alignment(0, showTranscript ? 0.62 : 0.42),
+              alignment: Alignment(0, showTranscript ? 0.78 : 0.48),
               child: Semantics(
                 label: inCall ? callState.statusLabel : '和可可说话',
                 child: companion,
@@ -493,19 +490,12 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                 top: 0,
                 left: 0,
                 right: 0,
-                // 列表再往下占一点，气泡更高、小狗更少抢眼
-                bottom: side * 0.38,
+                // 只留一小段给虚化小狗露头，减少列表下方空白
+                bottom: side * 0.12,
                 child: ParentCallTranscriptPanel(
                   palette: palette,
                   entries: callState.displayTranscript,
                 ),
-              )
-            else if (showCaptionBubble)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: ParentCaptionBubble(palette: palette, text: caption),
               ),
           ],
         );

@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -266,8 +264,8 @@ class _ImagePinBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final path = state.imagePath;
-    if (path == null) return const SizedBox.shrink();
+    final bytes = state.imageBytes;
+    if (bytes == null || bytes.isEmpty) return const SizedBox.shrink();
 
     return Container(
       padding: const EdgeInsets.all(CocoSpace.s3),
@@ -279,8 +277,8 @@ class _ImagePinBar extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(CocoRadius.md),
-            child: Image.file(
-              File(path),
+            child: Image.memory(
+              bytes,
               width: 64,
               height: 64,
               fit: BoxFit.cover,

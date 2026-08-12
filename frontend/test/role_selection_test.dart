@@ -15,16 +15,16 @@ void main() {
       ),
     );
 
-    expect(find.text('您好，我是AI陪伴宠物可可'), findsOneWidget);
-    expect(find.text('您是家长，还是子女？'), findsOneWidget);
-    expect(find.text('我是家长'), findsOneWidget);
+    expect(find.text('您好，我是AI关怀助手可可'), findsOneWidget);
+    expect(find.text('您是长辈，还是子女？'), findsOneWidget);
+    expect(find.text('我是长辈'), findsOneWidget);
     expect(find.text('我是子女'), findsOneWidget);
 
     await tester.tap(find.text('我是子女'));
     await tester.pump();
     expect(selected, UserRole.child);
 
-    await tester.tap(find.text('我是家长'));
+    await tester.tap(find.text('我是长辈'));
     await tester.pump();
     expect(selected, UserRole.parent);
   });

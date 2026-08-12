@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/theme.dart';
+import '../core/widgets/web_iphone_shell.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/domain/models.dart';
 import '../features/notifications/application/notification_poller.dart';
@@ -35,6 +37,12 @@ class CocoApp extends ConsumerWidget {
       ],
       theme: role == UserRole.child ? CocoTheme.child() : CocoTheme.parent(),
       routerConfig: router,
+      builder: (context, child) {
+        final content = child ?? const SizedBox.shrink();
+        if (!kIsWeb) return content;
+        // 桌面浏览器用 iPhone 外壳包裹，便于对照真机比例预览
+        return WebIphoneShell(child: content);
+      },
     );
   }
 }

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -14,14 +13,17 @@ class LookApi {
   final Dio _dio;
 
   /// 上传照片识图；图片仅本次请求传输，服务端不落盘。
-  Future<LookResult> look({required File imageFile, String? question}) async {
+  Future<LookResult> look({
+    required Uint8List imageBytes,
+    String filename = 'look.jpg',
+    String? question,
+  }) async {
     try {
       final form = FormData.fromMap({
-        'image': await MultipartFile.fromFile(
-          imageFile.path,
-          filename: imageFile.uri.pathSegments.isNotEmpty
-              ? imageFile.uri.pathSegments.last
-              : 'look.jpg',
+        'image': MultipartFile.fromBytes(
+          imageBytes,
+          filename: filename,
+          contentType: MediaType('image', 'jpeg'),
         ),
         if (question != null && question.trim().isNotEmpty)
           'question': question.trim(),

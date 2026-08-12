@@ -240,7 +240,7 @@ class _BoundParentCard extends StatelessWidget {
                       Text(parentName, style: theme.textTheme.titleMedium),
                       const SizedBox(height: 2),
                       Text(
-                        '家长',
+                        '长辈',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: CocoColors.neutral500,
                         ),

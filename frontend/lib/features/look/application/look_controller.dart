@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:record/record.dart';
 
+import '../../../core/audio/mic_pcm_stream.dart';
 import '../../../core/audio/pcm_wav.dart';
 import '../../../core/audio/speech_end_detector.dart';
 import '../../../core/network/api_exception.dart';
@@ -18,13 +17,14 @@ import '../domain/look_state.dart';
 class LookController extends StateNotifier<LookState> {
   LookController(this._ref) : super(const LookState()) {
     _speechDetector = SpeechEndDetector();
+    _mic = createMicPcmStream();
   }
 
   final Ref _ref;
   final ImagePicker _picker = ImagePicker();
-  final ScreenshotPicker _screenshotPicker = ScreenshotPicker();
-  final AudioRecorder _recorder = AudioRecorder();
+  final ScreenshotPicker _screenshotPicker = createScreenshotPicker();
   final AudioPlayer _player = AudioPlayer();
+  late final MicPcmStream _mic;
 
   late SpeechEndDetector _speechDetector;
   StreamSubscription<Uint8List>? _micSub;
@@ -43,21 +43,27 @@ class LookController extends StateNotifier<LookState> {
     state = state.copyWith(clearError: true, clearNotice: true, source: source);
 
     try {
-      final file = await _pickFile(source);
-      if (file == null) return;
+      final picked = await _pickBytes(source);
+      if (picked == null) return;
 
       state = state.copyWith(
-        imagePath: file.path,
+        imageBytes: picked.bytes,
         phase: LookPhase.analyzing,
         clearError: true,
       );
-      await _analyze(source: source, file: file);
+      await _analyze(
+        source: source,
+        bytes: picked.bytes,
+        filename: picked.filename,
+      );
     } catch (_) {
-      _fail(title: '打不开相机或相册', message: '请到系统设置里允许可可使用相机和相册，然后再试一次。');
+      _fail(title: '打不开相机或相册', message: '请允许可可使用相机和相册，然后再试一次。');
     }
   }
 
-  Future<File?> _pickFile(LookSource source) async {
+  Future<({Uint8List bytes, String filename})?> _pickBytes(
+    LookSource source,
+  ) async {
     switch (source) {
       case LookSource.camera:
         final picked = await _picker.pickImage(
@@ -67,7 +73,10 @@ class LookController extends StateNotifier<LookState> {
           imageQuality: 85,
         );
         if (picked == null) return null;
-        return File(picked.path);
+        return (
+          bytes: await picked.readAsBytes(),
+          filename: picked.name.isNotEmpty ? picked.name : 'camera.jpg',
+        );
       case LookSource.album:
         final picked = await _picker.pickImage(
           source: ImageSource.gallery,
@@ -76,15 +85,22 @@ class LookController extends StateNotifier<LookState> {
           imageQuality: 85,
         );
         if (picked == null) return null;
-        return File(picked.path);
+        return (
+          bytes: await picked.readAsBytes(),
+          filename: picked.name.isNotEmpty ? picked.name : 'album.jpg',
+        );
       case LookSource.screenshot:
         final result = await _screenshotPicker.pickLatestOrFallback();
         switch (result) {
-          case ScreenshotPickSuccess(:final file, :final notice):
+          case ScreenshotPickSuccess(
+            :final bytes,
+            :final filename,
+            :final notice,
+          ):
             if (notice != null) {
               state = state.copyWith(notice: notice);
             }
-            return file;
+            return (bytes: bytes, filename: filename);
           case ScreenshotPickFallback(:final reason):
             _fail(title: '读不到截屏', message: reason);
             return null;
@@ -96,12 +112,14 @@ class LookController extends StateNotifier<LookState> {
 
   Future<void> _analyze({
     required LookSource source,
-    required File file,
+    required Uint8List bytes,
+    required String filename,
   }) async {
     final gen = ++_opGen;
     try {
       final result = await _lookApi.look(
-        imageFile: file,
+        imageBytes: bytes,
+        filename: filename,
         question: source.defaultQuestion,
       );
       if (!_alive(gen)) return;
@@ -214,27 +232,22 @@ class LookController extends StateNotifier<LookState> {
     );
 
     try {
-      final ok = await _recorder.hasPermission();
+      final ok = await _mic.hasPermission();
       if (!ok) {
-        _fail(title: '打不开麦克风', message: '请到系统设置里允许可可使用麦克风，然后再试一次。');
+        _fail(title: '打不开麦克风', message: '请允许可可使用麦克风，然后再试一次。');
         return;
       }
 
-      final stream = await _recorder.startStream(
-        const RecordConfig(
-          encoder: AudioEncoder.pcm16bits,
-          sampleRate: 16000,
-          numChannels: 1,
-        ),
-      );
-
-      _micSub = stream.listen((chunk) async {
+      await _mic.start();
+      _micSub = _mic.pcmStream.listen((chunk) async {
         if (chunk.isEmpty) return;
         _pcm.add(chunk);
         if (_speechDetector.feed(chunk)) {
           await finishListening(manual: false);
         }
       });
+    } on MicPcmException catch (e) {
+      _fail(title: '打不开麦克风', message: e.message);
     } catch (_) {
       _fail(title: '打不开麦克风', message: '请稍后再试，或换一张重新看。刚才没有录下声音。');
     }
@@ -248,7 +261,7 @@ class LookController extends StateNotifier<LookState> {
 
     Uint8List pcm = Uint8List(0);
     try {
-      await _recorder.stop();
+      await _mic.stop();
       await _micSub?.cancel();
       _micSub = null;
       pcm = _pcm.takeBytes();
@@ -279,10 +292,7 @@ class LookController extends StateNotifier<LookState> {
 
       final conversationId = state.conversationId;
       if (conversationId == null || conversationId.isEmpty) {
-        _fail(
-          title: '没法继续问',
-          message: '这次不能继续问，可以换一张再看。照片没有保存在可可这边。',
-        );
+        _fail(title: '没法继续问', message: '这次不能继续问，可以换一张再看。照片没有保存在可可这边。');
         return;
       }
 
@@ -307,10 +317,7 @@ class LookController extends StateNotifier<LookState> {
       _fail(title: '刚才没办成', message: e.message);
     } catch (_) {
       if (!_alive(gen)) return;
-      _fail(
-        title: '刚才没办成',
-        message: '网络或服务暂时不可用。您可以再说一次，刚才没有保存错误数据。',
-      );
+      _fail(title: '刚才没办成', message: '网络或服务暂时不可用。您可以再说一次，刚才没有保存错误数据。');
     } finally {
       _finishingListen = false;
     }
@@ -353,23 +360,16 @@ class LookController extends StateNotifier<LookState> {
     }
   }
 
+  /// 用 data URI 播放，避免 Web 无临时文件。
   Future<void> _playMp3(Uint8List bytes) async {
     await _player.stop();
-    final path =
-        '${Directory.systemTemp.path}/coco-look-tts-${DateTime.now().microsecondsSinceEpoch}.mp3';
-    final file = File(path);
-    try {
-      await file.writeAsBytes(bytes, flush: true);
-      await _player.setFilePath(path);
-      await _player.play();
-      await _player.processingStateStream.firstWhere(
-        (s) => s == ProcessingState.completed || s == ProcessingState.idle,
-      );
-    } finally {
-      try {
-        if (await file.exists()) await file.delete();
-      } catch (_) {}
-    }
+    await _player.setAudioSource(
+      AudioSource.uri(Uri.dataFromBytes(bytes, mimeType: 'audio/mpeg')),
+    );
+    await _player.play();
+    await _player.processingStateStream.firstWhere(
+      (s) => s == ProcessingState.completed || s == ProcessingState.idle,
+    );
   }
 
   void _fail({
@@ -398,9 +398,7 @@ class LookController extends StateNotifier<LookState> {
     await _micSub?.cancel();
     _micSub = null;
     try {
-      if (await _recorder.isRecording()) {
-        await _recorder.stop();
-      }
+      await _mic.stop();
     } catch (_) {}
   }
 
@@ -409,7 +407,7 @@ class LookController extends StateNotifier<LookState> {
     _opGen++;
     unawaited(_teardownMic());
     unawaited(_player.dispose());
-    unawaited(_recorder.dispose());
+    unawaited(_mic.dispose());
     super.dispose();
   }
 }

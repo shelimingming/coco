@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// 看一看单页阶段，对齐首页语音陪伴的 idle / listening / thinking / speaking。
 enum LookPhase {
   /// 未选图或已重置，等待选来源
@@ -41,7 +43,7 @@ class LookState {
   const LookState({
     this.phase = LookPhase.idle,
     this.source,
-    this.imagePath,
+    this.imageBytes,
     this.conversationId,
     this.headline = '',
     this.detail = '',
@@ -57,7 +59,7 @@ class LookState {
 
   final LookPhase phase;
   final LookSource? source;
-  final String? imagePath;
+  final Uint8List? imageBytes;
   final String? conversationId;
   final String headline;
   final String detail;
@@ -74,7 +76,7 @@ class LookState {
   final String? errorTitle;
   final String? errorMessage;
 
-  bool get hasImage => imagePath != null && imagePath!.isNotEmpty;
+  bool get hasImage => imageBytes != null && imageBytes!.isNotEmpty;
 
   bool get isBusy =>
       phase == LookPhase.analyzing ||
@@ -103,7 +105,7 @@ class LookState {
   LookState copyWith({
     LookPhase? phase,
     LookSource? source,
-    String? imagePath,
+    Uint8List? imageBytes,
     String? conversationId,
     String? headline,
     String? detail,
@@ -122,7 +124,7 @@ class LookState {
     return LookState(
       phase: phase ?? this.phase,
       source: source ?? this.source,
-      imagePath: clearImage ? null : (imagePath ?? this.imagePath),
+      imageBytes: clearImage ? null : (imageBytes ?? this.imageBytes),
       conversationId: clearImage
           ? null
           : (conversationId ?? this.conversationId),

@@ -4,7 +4,7 @@ import '../../../../core/theme/tokens.dart';
 import '../../../../core/widgets/coco_button.dart';
 import '../../../notifications/domain/models.dart';
 
-/// 父母确认子女建议的提醒：展示事项/时间/重复/建议人，确认后才调度。
+/// 父母确认子女建议的提醒：标题带建议人，展示事项/时间/重复，确认后才调度。
 class ReminderSuggestionCard extends StatelessWidget {
   const ReminderSuggestionCard({
     super.key,
@@ -28,6 +28,7 @@ class ReminderSuggestionCard extends StatelessWidget {
     final title = notification.suggestionTitle?.trim().isNotEmpty == true
         ? notification.suggestionTitle!.trim()
         : _fallbackTitle(notification.body);
+    // 建议人放进标题，详情区不再重复「由谁建议」
     final who = notification.suggestedByDisplayName?.trim().isNotEmpty == true
         ? notification.suggestedByDisplayName!.trim()
         : '家人';
@@ -35,7 +36,6 @@ class ReminderSuggestionCard extends StatelessWidget {
       ('提醒什么', title),
       ('时间', _timeLabel(notification.suggestionScheduleTime)),
       ('是否重复', _repeatLabel(notification.suggestionScheduleType)),
-      ('由谁建议', who),
     ];
 
     return Stack(
@@ -65,10 +65,10 @@ class ReminderSuggestionCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    '确认这个提醒',
+                  Text(
+                    '$who想要我提醒你',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w700,
                       height: 1.2,
@@ -105,7 +105,7 @@ class ReminderSuggestionCard extends StatelessWidget {
                   ),
                   const SizedBox(height: CocoSpace.s5),
                   CocoPrimaryButton(
-                    label: '确认这个提醒',
+                    label: '接受',
                     loading: busy,
                     loadingLabel: '正在确认…',
                     onPressed: busy ? null : onAccept,

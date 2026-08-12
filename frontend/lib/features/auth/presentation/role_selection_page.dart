@@ -25,11 +25,11 @@ class RoleSelectionPage extends StatelessWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 全屏门前场景，按钮叠在场景底部之上
+          // 全屏门前场景；竖屏 cover 会左右裁切，偏右对齐以保住右侧木门
           Image.asset(
             _sceneAsset,
             fit: BoxFit.cover,
-            alignment: const Alignment(0, -0.12),
+            alignment: const Alignment(0.55, -0.08),
           ),
           // 中下渐变：场景淡入奶油底，避免硬切
           const Align(
@@ -81,7 +81,7 @@ class RoleSelectionPage extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _RoleOptionButton(
-                  label: '我是家长',
+                  label: '我是长辈',
                   iconAsset: _parentIconAsset,
                   iconColor: CocoColors.parentPrimary,
                   iconBackground: CocoColors.parentPrimarySoft,
@@ -139,7 +139,7 @@ class _IntroBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '您好，我是AI陪伴宠物可可',
+                '您好，我是AI关怀助手可可',
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
@@ -149,7 +149,7 @@ class _IntroBubble extends StatelessWidget {
               ),
               SizedBox(height: CocoSpace.s2),
               Text(
-                '您是家长，还是子女？',
+                '您是长辈，还是子女？',
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w500,

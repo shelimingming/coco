@@ -9,8 +9,8 @@ enum UserRole {
     );
   }
 
-  /// 对外展示文案与 UI 交付「家长 / 子女」对齐。
-  String get label => this == UserRole.parent ? '家长' : '子女';
+  /// 对外展示文案：长辈 / 子女（与角色选择页一致）。
+  String get label => this == UserRole.parent ? '长辈' : '子女';
 }
 
 class AppUser {

@@ -1,0 +1,35 @@
+{
+    "name": "可可",
+    "short_name": "可可",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#FFF8F0",
+    "theme_color": "#E07A3D",
+    "description": "可可 Coco：面向老人与子女的 AI 家庭陪伴助手",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
