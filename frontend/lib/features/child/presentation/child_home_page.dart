@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
@@ -88,7 +87,7 @@ class ChildHomePage extends ConsumerWidget {
                   delegate: SliverChildListDelegate([
                     _AttentionBlock(
                       today: today,
-                      parentUserId: familyAsync.valueOrNull?.parentUserId,
+                      parentPhone: familyAsync.valueOrNull?.parentPhone,
                       parentName: parentName,
                     ),
                     const SizedBox(height: CocoSpace.s5),
@@ -162,12 +161,12 @@ class _StatusHeader extends StatelessWidget {
 class _AttentionBlock extends StatelessWidget {
   const _AttentionBlock({
     required this.today,
-    required this.parentUserId,
+    required this.parentPhone,
     required this.parentName,
   });
 
   final ChildToday today;
-  final String? parentUserId;
+  final String? parentPhone;
   final String parentName;
 
   @override
@@ -232,7 +231,7 @@ class _AttentionBlock extends StatelessWidget {
             summary: today.needsContactReason ?? '可可建议及时联系确认长辈状况。',
             updatedAt: DateTime.now(),
             showActions: true,
-            parentUserId: parentUserId,
+            parentPhone: parentPhone,
             parentName: parentName,
           )
         else
@@ -245,7 +244,9 @@ class _AttentionBlock extends StatelessWidget {
                 summary: item.summary,
                 updatedAt: item.createdAt,
                 showActions: true,
-                parentUserId: parentUserId,
+                // 点「知道了」按条标记已读，从首页未读列表消失
+                shareId: item.id,
+                parentPhone: parentPhone,
                 parentName: parentName,
               ),
             ),
@@ -298,15 +299,16 @@ class _EmptyAttentionCard extends StatelessWidget {
   }
 }
 
-class _AttentionCard extends ConsumerWidget {
+class _AttentionCard extends ConsumerStatefulWidget {
   const _AttentionCard({
     required this.tag,
     required this.title,
     required this.summary,
     required this.updatedAt,
     required this.showActions,
-    required this.parentUserId,
+    required this.parentPhone,
     required this.parentName,
+    this.shareId,
   });
 
   final String tag;
@@ -314,26 +316,50 @@ class _AttentionCard extends ConsumerWidget {
   final String summary;
   final DateTime updatedAt;
   final bool showActions;
-  final String? parentUserId;
+  final String? shareId;
+  final String? parentPhone;
   final String parentName;
 
-  Future<void> _openWeChat(BuildContext context) async {
-    final uri = Uri.parse('weixin://');
-    final ok = await canLaunchUrl(uri) && await launchUrl(uri);
-    if (!ok && context.mounted) {
+  @override
+  ConsumerState<_AttentionCard> createState() => _AttentionCardState();
+}
+
+class _AttentionCardState extends ConsumerState<_AttentionCard> {
+  bool _marking = false;
+
+  Future<void> _acknowledge() async {
+    final shareId = widget.shareId;
+    if (_marking || shareId == null) {
+      return;
+    }
+    setState(() => _marking = true);
+    try {
+      await markCareShareRead(ref, shareId);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final message = error is ApiException
+          ? error.message
+          : '标记失败。您可以再试一次，数据没有丢失。';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('未能打开微信。请确认已安装微信后重试。')));
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) {
+        setState(() => _marking = false);
+      }
     }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final soft = Color.alphaBlend(
       CocoColors.warning.withValues(alpha: 0.12),
       CocoColors.white,
     );
+    final canAcknowledge = widget.shareId != null;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(CocoSpace.s5),
@@ -362,7 +388,7 @@ class _AttentionCard extends ConsumerWidget {
               borderRadius: BorderRadius.circular(CocoRadius.pill),
             ),
             child: Text(
-              '● $tag',
+              '● ${widget.tag}',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: CocoColors.warning,
                 fontWeight: FontWeight.w600,
@@ -371,10 +397,10 @@ class _AttentionCard extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: CocoSpace.s3),
-          Text(title, style: theme.textTheme.titleMedium),
+          Text(widget.title, style: theme.textTheme.titleMedium),
           const SizedBox(height: CocoSpace.s2),
           Text(
-            summary,
+            widget.summary,
             style: theme.textTheme.bodyLarge?.copyWith(
               color: CocoColors.neutral700,
               fontSize: 15,
@@ -383,13 +409,13 @@ class _AttentionCard extends ConsumerWidget {
           ),
           const SizedBox(height: CocoSpace.s3),
           Text(
-            _formatUpdated(updatedAt),
+            _formatUpdated(widget.updatedAt),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: CocoColors.neutral500,
               fontSize: 13,
             ),
           ),
-          if (showActions) ...[
+          if (widget.showActions) ...[
             const SizedBox(height: CocoSpace.s4),
             Row(
               children: [
@@ -398,31 +424,26 @@ class _AttentionCard extends ConsumerWidget {
                     label: '打电话',
                     iconAsset: 'assets/icons/child/icon-action-phone.svg',
                     filled: true,
-                    // 短按拨打；长按可改本地保存的号码
+                    // 直接用家庭接口下发的长辈注册号拨打
                     onPressed: () => callParentPhone(
                       context,
-                      ref,
-                      parentUserId: parentUserId,
-                      parentName: parentName,
-                    ),
-                    onLongPress: () => callParentPhone(
-                      context,
-                      ref,
-                      parentUserId: parentUserId,
-                      parentName: parentName,
-                      forceEdit: true,
+                      parentName: widget.parentName,
+                      parentPhone: widget.parentPhone,
                     ),
                   ),
                 ),
-                const SizedBox(width: CocoSpace.s3),
-                Expanded(
-                  child: _ActionButton(
-                    label: '微信',
-                    iconAsset: 'assets/icons/child/icon-action-wechat.svg',
-                    filled: false,
-                    onPressed: () => _openWeChat(context),
+                // 无摘要 id 时（如纯建议联系）只保留打电话
+                if (canAcknowledge) ...[
+                  const SizedBox(width: CocoSpace.s3),
+                  Expanded(
+                    child: _ActionButton(
+                      label: _marking ? '请稍候…' : '知道了',
+                      icon: Icons.check_rounded,
+                      filled: false,
+                      onPressed: _marking ? null : _acknowledge,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ],
@@ -448,52 +469,63 @@ class _AttentionCard extends ConsumerWidget {
 class _ActionButton extends StatelessWidget {
   const _ActionButton({
     required this.label,
-    required this.iconAsset,
     required this.filled,
     required this.onPressed,
-    this.onLongPress,
+    this.iconAsset,
+    this.icon,
   });
 
   final String label;
-  final String iconAsset;
+  final String? iconAsset;
+  final IconData? icon;
   final bool filled;
-  final VoidCallback onPressed;
-  final VoidCallback? onLongPress;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final bg = filled ? CocoColors.childPrimary : CocoColors.childSurface;
     final fg = filled ? CocoColors.white : CocoColors.childPrimary;
+    final disabled = onPressed == null;
+    final color = disabled ? fg.withValues(alpha: 0.5) : fg;
     return Material(
       color: bg,
       borderRadius: BorderRadius.circular(CocoRadius.md),
       child: InkWell(
         onTap: onPressed,
-        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(CocoRadius.md),
         child: Container(
           height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(CocoRadius.md),
-            border: filled ? null : Border.all(color: CocoColors.childPrimary),
+            border: filled
+                ? null
+                : Border.all(
+                    color: disabled
+                        ? CocoColors.childPrimary.withValues(alpha: 0.4)
+                        : CocoColors.childPrimary,
+                  ),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SvgPicture.asset(
-                iconAsset,
-                width: 18,
-                height: 18,
-                colorFilter: ColorFilter.mode(fg, BlendMode.srcIn),
-              ),
-              const SizedBox(width: CocoSpace.s2),
+              if (iconAsset != null)
+                SvgPicture.asset(
+                  iconAsset!,
+                  width: 18,
+                  height: 18,
+                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+                )
+              else if (icon != null)
+                Icon(icon, size: 18, color: color),
+              if (iconAsset != null || icon != null)
+                const SizedBox(width: CocoSpace.s2),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: fg,
+                  color: color,
                 ),
               ),
             ],

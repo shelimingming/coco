@@ -98,6 +98,7 @@ class AuthService:
             session,
             phone_hash=phone_hash,
             phone_masked=mask_phone(normalized),
+            phone_e164=normalized,
             role=role,
             display_name=display_name,
             device_id=device_id,
@@ -214,6 +215,7 @@ class AuthService:
         *,
         phone_hash: str,
         phone_masked: str,
+        phone_e164: str,
         role: UserRole,
         display_name: str | None,
         device_id: str,
@@ -224,6 +226,7 @@ class AuthService:
             user = User(
                 phone_hash=phone_hash,
                 phone_masked=phone_masked,
+                phone_e164=phone_e164,
                 display_name=name,
                 role=role.value,
                 status=UserStatus.ACTIVE.value,
@@ -238,6 +241,8 @@ class AuthService:
             if display_name and display_name.strip():
                 user.display_name = display_name.strip()
             user.phone_masked = phone_masked
+            # 存量账号补齐明文，供子女端拨打
+            user.phone_e164 = phone_e164
 
         now = datetime.now(UTC)
         refresh_token = generate_refresh_token()

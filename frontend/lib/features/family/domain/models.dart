@@ -27,6 +27,7 @@ class FamilyInfo {
     this.childUserId,
     this.parentDisplayName,
     this.childDisplayName,
+    this.parentPhone,
   });
 
   final String id;
@@ -36,6 +37,8 @@ class FamilyInfo {
   final String status;
   final String? parentDisplayName;
   final String? childDisplayName;
+  // 子女视角下发的长辈 11 位号；父母视角为 null
+  final String? parentPhone;
 
   bool get isActive =>
       status == 'active' && parentUserId != null && childUserId != null;
@@ -48,6 +51,7 @@ class FamilyInfo {
       status: json['status'] as String,
       parentDisplayName: json['parent_display_name'] as String?,
       childDisplayName: json['child_display_name'] as String?,
+      parentPhone: json['parent_phone'] as String?,
     );
   }
 }

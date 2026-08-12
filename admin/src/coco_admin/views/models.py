@@ -117,13 +117,15 @@ class UserAdmin(ReadOnlyModelView, model=User):
     column_labels = {
         User.display_name: "用户名",
         User.phone_masked: "手机号",
+        User.phone_e164: "手机号明文",
         User.role: "角色",
         User.status: "状态",
         User.created_at: "创建时间",
         User.id: "用户 ID",
     }
     column_details_exclude_list = [User.phone_hash]
-    column_searchable_list = [User.display_name, User.phone_masked]
+    # 列表仍用掩码；详情可见 phone_e164 便于排障
+    column_searchable_list = [User.display_name, User.phone_masked, User.phone_e164]
     column_sortable_list = [User.created_at, User.role, User.status, User.display_name]
     column_filters = [
         StaticValuesFilter(User.role, values=[("parent", "父母"), ("child", "子女")]),

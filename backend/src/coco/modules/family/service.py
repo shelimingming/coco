@@ -176,6 +176,11 @@ class FamilyService:
             if family.child_user_id is not None
             else None
         )
+        # 仅绑定子女可见长辈明文号，避免父母侧接口误带出
+        parent_phone: str | None = None
+        if user.role == UserRole.CHILD.value and parent is not None and parent.phone_e164:
+            parent_phone = parent.phone_e164.removeprefix("+86")
+
         return FamilyResponse(
             id=family.id,
             parent_user_id=family.parent_user_id,
@@ -183,4 +188,5 @@ class FamilyService:
             status=family.status,
             parent_display_name=parent.display_name if parent else None,
             child_display_name=child.display_name if child else None,
+            parent_phone=parent_phone,
         )

@@ -112,13 +112,14 @@ class _TranscriptBubble extends StatelessWidget {
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 320),
+        // 单条气泡加高一点，老人端更好读、更好点
+        constraints: const BoxConstraints(maxWidth: 320, minHeight: 96),
         child: Container(
           padding: const EdgeInsets.fromLTRB(
+            CocoSpace.s5,
             CocoSpace.s4,
-            CocoSpace.s3,
-            CocoSpace.s4,
-            CocoSpace.s4,
+            CocoSpace.s5,
+            CocoSpace.s5,
           ),
           decoration: BoxDecoration(
             color: background,
@@ -144,12 +145,12 @@ class _TranscriptBubble extends StatelessWidget {
                   color: palette.textMuted,
                 ),
               ),
-              const SizedBox(height: CocoSpace.s2),
+              const SizedBox(height: CocoSpace.s3),
               Text(
                 entry.text,
                 style: TextStyle(
                   fontSize: 22,
-                  height: 1.4,
+                  height: 1.5,
                   fontWeight: FontWeight.w500,
                   color: palette.captionText,
                 ),

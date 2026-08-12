@@ -58,6 +58,15 @@ async def test_family_bind_reminder_and_care_share(client: AsyncClient) -> None:
     )
     assert join.status_code == 200, join.text
     assert join.json()["status"] == "active"
+    # 子女绑定后可拿到长辈 11 位注册号，用于一键拨打
+    assert join.json()["parent_phone"] == parent_phone
+
+    parent_view = await client.get(
+        "/v1/family",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    assert parent_view.status_code == 200, parent_view.text
+    assert parent_view.json()["parent_phone"] is None
 
     reminder = await client.post(
         "/v1/reminders",

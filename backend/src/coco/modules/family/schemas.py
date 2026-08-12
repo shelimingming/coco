@@ -26,3 +26,5 @@ class FamilyResponse(BaseModel):
     status: str
     parent_display_name: str | None = None
     child_display_name: str | None = None
+    # 仅子女视角返回；11 位国内号，用于一键拨打
+    parent_phone: str | None = None
