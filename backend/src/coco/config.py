@@ -39,6 +39,9 @@ class Settings(BaseSettings):
 
     cors_allowed_origins: str = "*"
 
+    # Docker 一体部署：指向 Flutter Web 构建目录；空则不托管静态站
+    web_static_dir: str | None = None
+
     # 百炼：密钥只留服务端；无 Key 时应用照常启动，实时/文本/识图能力关闭或降级
     # 模型名均可在 .env 用 COCO_REALTIME_MODEL / COCO_TEXT_MODEL / COCO_VISION_MODEL 覆盖
     aliyun_api_key: SecretStr | None = Field(

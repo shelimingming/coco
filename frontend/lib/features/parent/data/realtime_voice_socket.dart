@@ -50,11 +50,15 @@ class RealtimeVoiceSocket {
   bool get isConnected => _channel != null;
 
   /// 由 Dio baseUrl 推导 ws/wss，并附带 JWT。
+  /// 空 baseUrl（Docker 同源部署）时用当前页面 origin。
   static Uri buildUri({
     required String httpBaseUrl,
     required String accessToken,
   }) {
-    final base = Uri.parse(httpBaseUrl);
+    final trimmed = httpBaseUrl.trim();
+    final parsed = trimmed.isEmpty ? Uri.base : Uri.parse(trimmed);
+    // 无 host 时视为同源（相对地址 / 空配置）
+    final base = parsed.hasAuthority ? parsed : Uri.base;
     final scheme = base.scheme == 'https' ? 'wss' : 'ws';
     return Uri(
       scheme: scheme,

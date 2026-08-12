@@ -99,6 +99,58 @@ flutter run -d "iPhone 17 Pro" \
 
 真机请改成 Mac 局域网 IP。
 
+## Web（本地）
+
+```bash
+./scripts/dev_web.sh
+```
+
+详见 [`frontend/README.md`](frontend/README.md)。
+
+## 虚机增量更新（无 Docker）
+
+首次部署完成后，用脚本把本机改动同步到虚机（默认 `47.116.165.157`）：
+
+```bash
+./scripts/deploy_vm.sh                 # 前后端
+./scripts/deploy_vm.sh --backend-only  # 只后端
+./scripts/deploy_vm.sh --web-only      # 只 Web
+./scripts/deploy_vm.sh --host IP       # 换机器
+```
+
+需本机已能 `ssh root@虚机`（建议密钥登录）。远端目录：`/opt/coco`，服务名：`coco`。
+
+## Docker 一体部署（Web + API）
+
+前后端打进同一镜像：FastAPI 提供 `/v1`、`/health`，并托管 Flutter Web。数据库用**外部 Postgres**。
+
+```bash
+cp docker.env.example docker.env
+# 编辑 docker.env：必填 COCO_DATABASE_URL（及密钥等）
+
+docker build -t coco:latest .
+docker run --rm -p 8000:8000 --env-file docker.env \
+  --add-host=host.docker.internal:host-gateway \
+  coco:latest
+```
+
+- 应用：http://127.0.0.1:8000
+- 健康检查：http://127.0.0.1:8000/health
+- 开发验证码：`246810`（`COCO_SMS_PROVIDER=dev` 时）
+- 启动时会执行 `alembic upgrade head`；库与账号需事先就绪
+- 连本机 Postgres：`COCO_DATABASE_URL` 主机用 `host.docker.internal`（上面 `--add-host` 在 Linux 上也可用；Docker Desktop / macOS 通常自带）
+
+上线注意：
+
+1. `COCO_ENVIRONMENT=production` 时禁止 `SMS_PROVIDER=dev` 与含 `local-development` 的密钥。
+2. 配置 `COCO_ALIYUN_API_KEY` 以启用实时语音 / 识图。
+3. 公网务必在前面加 HTTPS 反向代理（麦克风需要安全上下文）；同源部署可保持 `COCO_CORS_ALLOWED_ORIGINS=*`。
+4. 若 Web 与 API 不同域，构建时传入：
+
+```bash
+docker build --build-arg COCO_API_BASE_URL=https://api.example.com -t coco:latest .
+```
+
 ## 本期范围
 
 - 前后端骨架

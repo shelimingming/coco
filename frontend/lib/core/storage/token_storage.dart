@@ -1,33 +1,46 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
 
-/// 安全存储 refresh token 与设备 ID。
+import 'token_storage_stub.dart'
+    if (dart.library.html) 'token_storage_web.dart'
+    if (dart.library.io) 'token_storage_io.dart'
+    as impl;
+
+/// 持久化 refresh token 与设备 ID（IO 走安全存储，Web 走 localStorage）。
 class TokenStorage {
-  TokenStorage({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+  TokenStorage({TokenStorageBackend? backend})
+    : _backend = backend ?? impl.createTokenStorageBackend();
 
   static const _refreshTokenKey = 'coco_refresh_token';
   static const _deviceIdKey = 'coco_device_id';
 
-  final FlutterSecureStorage _storage;
+  final TokenStorageBackend _backend;
 
-  Future<String?> readRefreshToken() => _storage.read(key: _refreshTokenKey);
+  Future<String?> readRefreshToken() => _backend.read(_refreshTokenKey);
 
   Future<void> writeRefreshToken(String token) =>
-      _storage.write(key: _refreshTokenKey, value: token);
+      _backend.write(_refreshTokenKey, token);
 
-  Future<void> clearRefreshToken() => _storage.delete(key: _refreshTokenKey);
+  Future<void> clearRefreshToken() => _backend.delete(_refreshTokenKey);
 
   Future<String> getOrCreateDeviceId() async {
-    final existing = await _storage.read(key: _deviceIdKey);
+    final existing = await _backend.read(_deviceIdKey);
     if (existing != null && existing.length >= 8) {
       return existing;
     }
     final created = const Uuid().v4();
-    await _storage.write(key: _deviceIdKey, value: created);
+    await _backend.write(_deviceIdKey, created);
     return created;
   }
+}
+
+/// 平台密钥/本地存储后端。
+abstract class TokenStorageBackend {
+  Future<String?> read(String key);
+
+  Future<void> write(String key, String value);
+
+  Future<void> delete(String key);
 }
 
 final tokenStorageProvider = Provider<TokenStorage>((ref) => TokenStorage());

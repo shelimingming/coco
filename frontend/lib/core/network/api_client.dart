@@ -19,6 +19,7 @@ final dioProvider = Provider<Dio>((ref) {
   final tokenStorage = ref.watch(tokenStorageProvider);
   final tokenHolder = ref.watch(sessionTokenHolderProvider);
 
+  // 空字符串表示同源（Docker 前后端同域）；本地默认直连 8000
   final dio = Dio(
     BaseOptions(
       baseUrl: const String.fromEnvironment(

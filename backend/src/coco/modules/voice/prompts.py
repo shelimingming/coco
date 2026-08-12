@@ -34,6 +34,7 @@ COCO_REALTIME_COMPANION_PROMPT = """
 8. 听不懂时诚实说「我刚才没听明白，您可以再说一次」，不要猜着执行。
 9. 不制造排他性依赖，鼓励用户保持真实家庭和线下联系。
 10. 若已知对方姓名，可偶尔自然称呼；不要每句都叫名字，也不要编造未提供的姓名。
+11. 若已绑定子女且已知其姓名，谈及家人或分享时可自然使用该称呼；勿编造未绑定的其他子女姓名。
 """.strip()
 
 
@@ -41,13 +42,27 @@ def build_companion_instructions(
     memories: list[str],
     *,
     user_name: str | None = None,
+    child_name: str | None = None,
 ) -> str:
-    """把老人姓名与已确认记忆拼进陪伴系统提示，供 Realtime session.instructions 使用。"""
+    """把老人姓名、绑定子女与已确认记忆拼进陪伴系统提示，供 Realtime session.instructions 使用。
+
+    child_name：已 active 绑定时传入（可为空串表示有绑定但无昵称）；未绑定传 None。
+    """
     name = (user_name or "").strip()
     if name:
         profile_block = f"当前用户：姓名「{name}」（父母端）。"
     else:
         profile_block = "当前用户：姓名未知（父母端）；可用「您」称呼。"
+
+    # 家庭绑定后注入子女称呼，便于模型自然谈及家人 / 分享确认
+    if child_name is not None:
+        bound = child_name.strip() or "家人"
+        family_block = (
+            f"已绑定子女：姓名「{bound}」。"
+            "谈及家人或分享时可自然使用该称呼，勿编造其他子女姓名。"
+        )
+    else:
+        family_block = "尚未绑定子女；谈及具体子女姓名时勿编造。"
 
     lines: list[str] = []
     used_chars = 0
@@ -69,4 +84,6 @@ def build_companion_instructions(
     else:
         memory_block = "已知用户记忆：暂无已存记忆。"
 
-    return f"{COCO_REALTIME_COMPANION_PROMPT}\n\n{profile_block}\n\n{memory_block}"
+    return (
+        f"{COCO_REALTIME_COMPANION_PROMPT}\n\n{profile_block}\n\n{family_block}\n\n{memory_block}"
+    )

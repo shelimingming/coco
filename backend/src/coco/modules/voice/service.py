@@ -143,22 +143,39 @@ async def resolve_ws_user(
     return user
 
 
+async def _active_bound_child_name(session: AsyncSession, user: User) -> str | None:
+    """已 active 绑定则返回子女昵称（可能为空串）；未绑定返回 None。"""
+    family = await get_family(session, user)
+    if (
+        family is None
+        or family.child_user_id is None
+        or family.status != FamilyStatus.ACTIVE.value
+    ):
+        return None
+    child = await session.get(User, family.child_user_id)
+    return (child.display_name if child else None) or ""
+
+
 async def _load_companion_instructions(user_id: UUID) -> str:
-    """建连前加载姓名与已确认记忆，拼进系统提示。"""
+    """建连前加载姓名、绑定子女与已确认记忆，拼进系统提示。"""
     factory = get_session_factory()
     async with factory() as session:
         user = await session.get(User, user_id)
         if user is None:
             return build_companion_instructions([])
         name = user.display_name
+        child_name = await _active_bound_child_name(session, user)
         try:
             memories = await MemoryService().list_for_user(session, user=user)
         except AppError:
             logger.warning("load_memories_for_voice_failed user_id=%s", user_id)
-            return build_companion_instructions([], user_name=name)
+            return build_companion_instructions(
+                [], user_name=name, child_name=child_name
+            )
         return build_companion_instructions(
             [m.content for m in memories],
             user_name=name,
+            child_name=child_name,
         )
 
 
@@ -414,15 +431,9 @@ async def _resolve_child_display_name(user_id: UUID) -> str:
         user = await session.get(User, user_id)
         if user is None:
             return "家人"
-        family = await get_family(session, user)
-        if (
-            family is None
-            or family.child_user_id is None
-            or family.status != FamilyStatus.ACTIVE.value
-        ):
+        name = await _active_bound_child_name(session, user)
+        if name is None:
             return "家人"
-        child = await session.get(User, family.child_user_id)
-        name = (child.display_name if child else None) or ""
         return name.strip() or "家人"
 
 

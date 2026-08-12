@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 import structlog
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from coco import __version__
@@ -17,9 +19,9 @@ from coco.config import Settings, get_settings
 from coco.database import dispose_database, get_session_factory, init_database
 from coco.errors import register_exception_handlers
 from coco.logging import configure_logging
+from coco.modules.audio.router import router as audio_router
 from coco.modules.auth.router import me_router
 from coco.modules.auth.router import router as auth_router
-from coco.modules.audio.router import router as audio_router
 from coco.modules.care.router import router as care_router
 from coco.modules.conversations.router import router as conversations_router
 from coco.modules.family.router import router as family_router
@@ -31,6 +33,45 @@ from coco.modules.reminders.router import router as reminders_router
 from coco.modules.vision.router import router as vision_router
 from coco.modules.voice.router import router as voice_router
 from coco.scheduler import scheduler_loop
+
+
+def _mount_web_static(app: FastAPI, settings: Settings) -> None:
+    """一体部署时托管 Flutter Web；必须在 API 路由注册之后挂载。"""
+    raw = (settings.web_static_dir or "").strip()
+    if not raw:
+        return
+    root = Path(raw).expanduser().resolve()
+    if not root.is_dir():
+        raise RuntimeError(f"COCO_WEB_STATIC_DIR 不是目录：{root}")
+    index = root / "index.html"
+    if not index.is_file():
+        raise RuntimeError(f"COCO_WEB_STATIC_DIR 缺少 index.html：{root}")
+
+    def _safe_file(full_path: str) -> Path | None:
+        if not full_path or full_path.endswith("/"):
+            return None
+        candidate = (root / full_path).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            return None
+        return candidate if candidate.is_file() else None
+
+    @app.get("/")
+    async def web_index() -> FileResponse:
+        return FileResponse(index)
+
+    # 捕获前端资源与 go_router 深链；/health、/v1 已先注册，不会被盖住
+    @app.get("/{full_path:path}")
+    async def web_spa_or_asset(full_path: str) -> FileResponse:
+        # 未知 API/文档路径保持 404，避免误返回 index.html
+        head = full_path.split("/", 1)[0]
+        if head in {"v1", "health", "docs", "redoc", "openapi.json"}:
+            raise HTTPException(status_code=404, detail="Not Found")
+        file_path = _safe_file(full_path)
+        if file_path is not None:
+            return FileResponse(file_path)
+        return FileResponse(index)
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -104,6 +145,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(care_router)
     app.include_router(messages_router)
     app.include_router(notifications_router)
+    # 静态站最后挂载，避免吞掉 /health、/v1、/docs
+    _mount_web_static(app, resolved)
     return app
 
 
