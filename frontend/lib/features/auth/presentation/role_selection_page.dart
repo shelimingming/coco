@@ -63,7 +63,8 @@ class RoleSelectionPage extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
                   CocoSpace.s5,
-                  CocoSpace.s3,
+                  // 气泡略下移，离开状态栏更松一点
+                  CocoSpace.s8,
                   CocoSpace.s6,
                   0,
                 ),
@@ -71,11 +72,11 @@ class RoleSelectionPage extends StatelessWidget {
               ),
             ),
           ),
-          // 按钮上移：贴近渐变中段，底部留白更大
+          // 按钮再上移一点，避免贴底
           Positioned(
             left: CocoSpace.s6,
             right: CocoSpace.s6,
-            bottom: CocoSpace.s10 + bottomInset,
+            bottom: CocoSpace.s10 + CocoSpace.s8 + bottomInset,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
