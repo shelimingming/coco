@@ -11,6 +11,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../care/application/care_providers.dart';
 import '../../care/domain/models.dart';
 import '../../family/application/family_providers.dart';
+import '../../family/presentation/call_parent_phone.dart';
 
 /// 子女端近况：需要关注 + 今日信息同步，顶部铺交付稿背景。
 class ChildHomePage extends ConsumerWidget {
@@ -76,7 +77,11 @@ class ChildHomePage extends ConsumerWidget {
                 ),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    _AttentionBlock(today: today),
+                    _AttentionBlock(
+                      today: today,
+                      parentUserId: familyAsync.valueOrNull?.parentUserId,
+                      parentName: parentName,
+                    ),
                     const SizedBox(height: CocoSpace.s5),
                     _SyncBlock(items: today.reminderItems),
                   ]),
@@ -142,9 +147,15 @@ class _StatusHeader extends StatelessWidget {
 }
 
 class _AttentionBlock extends StatelessWidget {
-  const _AttentionBlock({required this.today});
+  const _AttentionBlock({
+    required this.today,
+    required this.parentUserId,
+    required this.parentName,
+  });
 
   final ChildToday today;
+  final String? parentUserId;
+  final String parentName;
 
   @override
   Widget build(BuildContext context) {
@@ -208,6 +219,8 @@ class _AttentionBlock extends StatelessWidget {
             summary: today.needsContactReason ?? '可可建议及时联系确认长辈状况。',
             updatedAt: DateTime.now(),
             showActions: true,
+            parentUserId: parentUserId,
+            parentName: parentName,
           )
         else
           ...items.map(
@@ -219,6 +232,8 @@ class _AttentionBlock extends StatelessWidget {
                 summary: item.summary,
                 updatedAt: item.createdAt,
                 showActions: true,
+                parentUserId: parentUserId,
+                parentName: parentName,
               ),
             ),
           ),
@@ -270,13 +285,15 @@ class _EmptyAttentionCard extends StatelessWidget {
   }
 }
 
-class _AttentionCard extends StatelessWidget {
+class _AttentionCard extends ConsumerWidget {
   const _AttentionCard({
     required this.tag,
     required this.title,
     required this.summary,
     required this.updatedAt,
     required this.showActions,
+    required this.parentUserId,
+    required this.parentName,
   });
 
   final String tag;
@@ -284,11 +301,8 @@ class _AttentionCard extends StatelessWidget {
   final String summary;
   final DateTime updatedAt;
   final bool showActions;
-
-  Future<void> _openPhone() async {
-    // 无通讯录号码时只打开系统电话，不预填、不自动拨号
-    await launchUrl(Uri(scheme: 'tel'));
-  }
+  final String? parentUserId;
+  final String parentName;
 
   Future<void> _openWeChat(BuildContext context) async {
     final uri = Uri.parse('weixin://');
@@ -301,7 +315,7 @@ class _AttentionCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final soft = Color.alphaBlend(
       CocoColors.warning.withValues(alpha: 0.12),
@@ -371,7 +385,20 @@ class _AttentionCard extends StatelessWidget {
                     label: '打电话',
                     iconAsset: 'assets/icons/child/icon-action-phone.svg',
                     filled: true,
-                    onPressed: _openPhone,
+                    // 短按拨打；长按可改本地保存的号码
+                    onPressed: () => callParentPhone(
+                      context,
+                      ref,
+                      parentUserId: parentUserId,
+                      parentName: parentName,
+                    ),
+                    onLongPress: () => callParentPhone(
+                      context,
+                      ref,
+                      parentUserId: parentUserId,
+                      parentName: parentName,
+                      forceEdit: true,
+                    ),
                   ),
                 ),
                 const SizedBox(width: CocoSpace.s3),
@@ -411,12 +438,14 @@ class _ActionButton extends StatelessWidget {
     required this.iconAsset,
     required this.filled,
     required this.onPressed,
+    this.onLongPress,
   });
 
   final String label;
   final String iconAsset;
   final bool filled;
   final VoidCallback onPressed;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -427,6 +456,7 @@ class _ActionButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(CocoRadius.md),
       child: InkWell(
         onTap: onPressed,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(CocoRadius.md),
         child: Container(
           height: 48,
