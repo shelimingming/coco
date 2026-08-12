@@ -9,6 +9,7 @@ import '../features/auth/presentation/splash_page.dart';
 import '../features/child/presentation/child_attention_page.dart';
 import '../features/child/presentation/child_home_page.dart';
 import '../features/child/presentation/child_shell.dart';
+import '../features/child/presentation/child_suggest_reminder_page.dart';
 import '../features/family/presentation/child_family_page.dart';
 import '../features/family/presentation/child_invite_page.dart';
 import '../features/family/presentation/child_join_page.dart';
@@ -139,6 +140,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'attention',
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) => const ChildAttentionPage(),
+                  ),
+                  GoRoute(
+                    path: 'reminders/suggest',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) =>
+                        const ChildSuggestReminderPage(),
                   ),
                 ],
               ),

@@ -46,8 +46,13 @@ class RemindersPage extends ConsumerWidget {
                     );
                   }
 
+                  final pending = items
+                      .where((r) => r.isPendingConfirm)
+                      .toList();
                   final active = items.where((r) => r.isActive).toList();
-                  final done = items.where((r) => !r.isActive).toList();
+                  final done = items
+                      .where((r) => !r.isActive && !r.isPendingConfirm)
+                      .toList();
 
                   return RefreshIndicator(
                     color: CocoColors.parentPrimary,
@@ -61,7 +66,25 @@ class RemindersPage extends ConsumerWidget {
                         CocoSpace.s8,
                       ),
                       children: [
+                        if (pending.isNotEmpty) ...[
+                          const _SectionTitle('等待确认'),
+                          const SizedBox(height: CocoSpace.s3),
+                          ...pending.map(
+                            (r) => Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: CocoSpace.s3,
+                              ),
+                              child: _PendingSuggestionCard(
+                                reminder: r,
+                                onAccept: () => _accept(context, ref, r),
+                                onReject: () => _reject(context, ref, r),
+                              ),
+                            ),
+                          ),
+                        ],
                         if (active.isNotEmpty) ...[
+                          if (pending.isNotEmpty)
+                            const SizedBox(height: CocoSpace.s5),
                           const _SectionTitle('待办'),
                           const SizedBox(height: CocoSpace.s3),
                           ...active.map(
@@ -77,7 +100,7 @@ class RemindersPage extends ConsumerWidget {
                           ),
                         ],
                         if (done.isNotEmpty) ...[
-                          if (active.isNotEmpty)
+                          if (pending.isNotEmpty || active.isNotEmpty)
                             const SizedBox(height: CocoSpace.s5),
                           const _SectionTitle('已结束'),
                           const SizedBox(height: CocoSpace.s3),
@@ -104,6 +127,54 @@ class RemindersPage extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _accept(
+    BuildContext context,
+    WidgetRef ref,
+    Reminder reminder,
+  ) async {
+    try {
+      await ref.read(remindersApiProvider).acceptSuggestion(reminder.id);
+      ref.invalidate(remindersListProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已确认：${reminder.title}')));
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error is ApiException ? error.message : '确认失败。您可以再试一次，提醒还没有生效。',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _reject(
+    BuildContext context,
+    WidgetRef ref,
+    Reminder reminder,
+  ) async {
+    try {
+      await ref.read(remindersApiProvider).rejectSuggestion(reminder.id);
+      ref.invalidate(remindersListProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已告诉家人不用这个提醒。')));
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error is ApiException ? error.message : '操作失败。您可以再试一次，提醒仍在等待确认。',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _delete(
@@ -271,7 +342,12 @@ class _ReminderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final meta = '${reminder.isDaily ? '每天' : '一次'} ${reminder.timeLabel}';
+    final meta = reminder.scheduleMeta;
+    final sourceLabel = reminder.isChildSuggested
+        ? (reminder.suggestedByDisplayName?.isNotEmpty == true
+              ? '由${reminder.suggestedByDisplayName}建议'
+              : '子女建议')
+        : null;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -314,6 +390,18 @@ class _ReminderCard extends StatelessWidget {
                 color: CocoColors.neutral500,
               ),
             ),
+            if (sourceLabel != null) ...[
+              const SizedBox(height: CocoSpace.s1),
+              Text(
+                sourceLabel,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500,
+                  height: 1.3,
+                  color: CocoColors.neutral500,
+                ),
+              ),
+            ],
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
@@ -330,6 +418,81 @@ class _ReminderCard extends StatelessWidget {
                 child: const Text('删除'),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 子女建议、等待父母确认的卡片。
+class _PendingSuggestionCard extends StatelessWidget {
+  const _PendingSuggestionCard({
+    required this.reminder,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  final Reminder reminder;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final who = reminder.suggestedByDisplayName?.isNotEmpty == true
+        ? reminder.suggestedByDisplayName!
+        : '家人';
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: CocoColors.parentPrimarySoft,
+        borderRadius: BorderRadius.circular(CocoRadius.xl),
+        boxShadow: const [
+          BoxShadow(
+            color: CocoColors.onboardingShadow,
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(CocoSpace.s5),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              reminder.title,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+                color: CocoColors.neutral950,
+              ),
+            ),
+            const SizedBox(height: CocoSpace.s2),
+            Text(
+              reminder.scheduleMeta,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w500,
+                height: 1.3,
+                color: CocoColors.neutral500,
+              ),
+            ),
+            const SizedBox(height: CocoSpace.s1),
+            Text(
+              '子女建议 · 等待确认（$who）',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: CocoColors.parentPrimary,
+              ),
+            ),
+            const SizedBox(height: CocoSpace.s4),
+            CocoPrimaryButton(label: '确认这个提醒', onPressed: onAccept),
+            const SizedBox(height: CocoSpace.s3),
+            CocoSecondaryButton(label: '不用了', onPressed: onReject),
           ],
         ),
       ),

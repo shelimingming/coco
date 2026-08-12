@@ -24,6 +24,7 @@ import 'widgets/parent_home_palette.dart';
 import 'widgets/parent_home_tool_bar.dart';
 import 'widgets/parent_pending_action_card.dart';
 import 'widgets/reminder_confirm_card.dart';
+import 'widgets/reminder_suggestion_card.dart';
 
 /// 父母端首页：全屏白天场景，说话原地进对话；可可说话时自动出半透明气泡。
 class ParentHomePage extends ConsumerStatefulWidget {
@@ -83,8 +84,11 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     final inCall =
         callState.isActive || callState.phase == VoiceCallPhase.error;
     final pollerState = ref.watch(notificationPollerProvider);
+    final pendingSuggestion = pollerState.pendingSuggestion;
     final pendingReminder = pollerState.pendingReminder;
-    final pendingChildStatus = pendingReminder == null
+    // 一屏一事：建议确认 > 到点完成 > 报平安
+    final pendingChildStatus =
+        pendingSuggestion == null && pendingReminder == null
         ? pollerState.pendingChildStatus
         : null;
     final voicePending = inCall && callState.pendingAction != null;
@@ -97,10 +101,11 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     final showCaptionBubble =
         inCall && !_captionVisible && callState.assistantCaption.isNotEmpty;
     final showTranscript = inCall && _captionVisible;
-    // 「字」开、或确认大卡（提醒 / 报平安 / 语音待确认）时虚化场景
+    // 「字」开、或确认大卡（建议 / 到点 / 报平安 / 语音待确认）时虚化场景
     final blurBackground =
         showTranscript ||
         voicePending ||
+        (!inCall && pendingSuggestion != null) ||
         (!inCall && pendingReminder != null) ||
         (!inCall && pendingChildStatus != null);
 
@@ -224,6 +229,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                             showCaptionBubble: showCaptionBubble,
                             showTranscript: showTranscript,
                             voicePending: voicePending,
+                            pendingSuggestion: pendingSuggestion,
                             pendingReminder: pendingReminder,
                             pendingChildStatus: pendingChildStatus,
                             inCall: inCall,
@@ -257,6 +263,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                       child: _buildBottomCopy(
                         inCall: inCall,
                         voicePending: voicePending,
+                        pendingSuggestion: pendingSuggestion,
                         pendingReminder: pendingReminder,
                         pendingChildStatus: pendingChildStatus,
                         callState: callState,
@@ -296,6 +303,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   Widget _buildBottomCopy({
     required bool inCall,
     required bool voicePending,
+    required AppNotification? pendingSuggestion,
     required AppNotification? pendingReminder,
     required AppNotification? pendingChildStatus,
     required VoiceCallState callState,
@@ -304,6 +312,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   }) {
     if (!inCall &&
         !voicePending &&
+        pendingSuggestion == null &&
         pendingReminder == null &&
         pendingChildStatus == null) {
       return Column(
@@ -364,6 +373,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required bool showCaptionBubble,
     required bool showTranscript,
     required bool voicePending,
+    required AppNotification? pendingSuggestion,
     required AppNotification? pendingReminder,
     required AppNotification? pendingChildStatus,
     required bool inCall,
@@ -392,6 +402,26 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
           onCancel: () {
             unawaited(callController.cancelPendingAction());
           },
+        ),
+      );
+    }
+
+    if (!inCall && pendingSuggestion != null) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.only(top: CocoSpace.s4),
+        child: ReminderSuggestionCard(
+          notification: pendingSuggestion,
+          busy: _actionBusy,
+          onAccept: () => _runAction(() {
+            return ref
+                .read(notificationPollerProvider.notifier)
+                .acceptPendingSuggestion();
+          }),
+          onReject: () => _runAction(() {
+            return ref
+                .read(notificationPollerProvider.notifier)
+                .rejectPendingSuggestion();
+          }),
         ),
       );
     }
@@ -439,6 +469,15 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         final side = constraints.biggest.shortestSide
             .clamp(200.0, 320.0)
             .toDouble();
+        // 「字」开时小狗与背景同虚化，避免抢文字可读性
+        Widget companion = CocoCompanionView(pose: companionPose, size: side);
+        if (showTranscript) {
+          companion = ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: companion,
+          );
+        }
+
         return Stack(
           children: [
             // 各姿态统一略下移；开「字」时再略下，给聊天列表留空
@@ -446,7 +485,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
               alignment: Alignment(0, showTranscript ? 0.62 : 0.42),
               child: Semantics(
                 label: inCall ? callState.statusLabel : '和可可说话',
-                child: CocoCompanionView(pose: companionPose, size: side),
+                child: companion,
               ),
             ),
             if (showTranscript)
@@ -454,8 +493,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                 top: 0,
                 left: 0,
                 right: 0,
-                // 列表盖住上半区，底部露出小狗脸
-                bottom: side * 0.55,
+                // 列表再往下占一点，气泡更高、小狗更少抢眼
+                bottom: side * 0.38,
                 child: ParentCallTranscriptPanel(
                   palette: palette,
                   entries: callState.displayTranscript,

@@ -23,11 +23,15 @@ class ReminderStatus(enum.StrEnum):
     PAUSED = "PAUSED"
     DONE = "DONE"
     DELETED = "DELETED"
+    # 子女建议：父母确认前不调度
+    PENDING_CONFIRM = "PENDING_CONFIRM"
+    REJECTED = "REJECTED"
 
 
 class ReminderCreatedSource(enum.StrEnum):
     PARENT = "PARENT"
     VOICE = "VOICE"
+    CHILD = "CHILD"
 
 
 class OccurrenceState(enum.StrEnum):
@@ -61,7 +65,14 @@ class Reminder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=ReminderCreatedSource.PARENT.value,
     )
-    # UTC，调度器按此扫描 due
+    # 子女建议时记录建议人；父母自建/语音创建为空
+    suggested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("coco.users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # UTC，调度器按此扫描 due；PENDING_CONFIRM 时必须为空
     next_trigger_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

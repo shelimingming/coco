@@ -24,6 +24,25 @@ void main() {
       expect(reminder.isDaily, isTrue);
       expect(reminder.isActive, isTrue);
     });
+
+    test('parses child suggestion pending confirm', () {
+      final reminder = Reminder.fromJson({
+        'id': 'r2',
+        'title': '喝水',
+        'schedule_type': 'ONCE',
+        'schedule_time': '09:30:00',
+        'status': 'PENDING_CONFIRM',
+        'created_source': 'CHILD',
+        'next_trigger_at': null,
+        'created_at': '2026-08-12T03:00:00Z',
+        'suggested_by_user_id': 'c1',
+        'suggested_by_display_name': '小明',
+      });
+      expect(reminder.isPendingConfirm, isTrue);
+      expect(reminder.isChildSuggested, isTrue);
+      expect(reminder.scheduleMeta, '一次 09:30');
+      expect(reminder.suggestedByDisplayName, '小明');
+    });
   });
 
   group('ChildToday', () {

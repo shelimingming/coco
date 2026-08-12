@@ -18,6 +18,8 @@ class NotificationType(enum.StrEnum):
     REMINDER = "REMINDER"
     CARE_MESSAGE = "CARE_MESSAGE"
     CHILD_STATUS = "CHILD_STATUS"
+    # 子女建议提醒，等待父母确认后才调度
+    REMINDER_SUGGESTION = "REMINDER_SUGGESTION"
 
 
 class Notification(UUIDPrimaryKeyMixin, TimestampMixin, Base):

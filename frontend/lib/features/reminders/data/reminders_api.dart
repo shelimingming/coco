@@ -55,6 +55,62 @@ class RemindersApi {
     }
   }
 
+  /// 子女为父母创建提醒建议（待父母确认）。
+  Future<Reminder> createSuggestion({
+    required String title,
+    required String scheduleType,
+    required String scheduleTime,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/v1/reminders/suggestions',
+        data: {
+          'title': title,
+          'schedule_type': scheduleType,
+          'schedule_time': scheduleTime,
+        },
+      );
+      return Reminder.fromJson(asJsonMap(response.data));
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
+  Future<List<Reminder>> listSuggestions() async {
+    try {
+      final response = await _dio.get<List<dynamic>>(
+        '/v1/reminders/suggestions',
+      );
+      return (response.data ?? [])
+          .map((e) => Reminder.fromJson(asJsonMap(e)))
+          .toList();
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
+  Future<Reminder> acceptSuggestion(String reminderId) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/v1/reminders/$reminderId/accept',
+      );
+      return Reminder.fromJson(asJsonMap(response.data));
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
+  Future<Reminder> rejectSuggestion(String reminderId) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/v1/reminders/$reminderId/reject',
+      );
+      return Reminder.fromJson(asJsonMap(response.data));
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
   Future<ReminderOccurrence> confirm({
     required String reminderId,
     required String occurrenceId,

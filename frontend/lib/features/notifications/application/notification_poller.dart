@@ -7,6 +7,7 @@ import '../../../core/notifications/local_notifications.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../auth/domain/models.dart';
 import '../../care/application/care_providers.dart';
+import '../../reminders/application/reminders_providers.dart';
 import '../../reminders/data/reminders_api.dart';
 import '../data/notifications_api.dart';
 import '../domain/models.dart';
@@ -15,11 +16,14 @@ import '../domain/models.dart';
 class NotificationPollerState {
   const NotificationPollerState({
     this.pendingReminder,
+    this.pendingSuggestion,
     this.pendingChildStatus,
     this.seenIds = const {},
   });
 
   final AppNotification? pendingReminder;
+  // 子女建议提醒：父母确认后才调度
+  final AppNotification? pendingSuggestion;
   // 子女报平安：需在父母首页落卡，不能只依赖系统横幅
   final AppNotification? pendingChildStatus;
   final Set<String> seenIds;
@@ -27,6 +31,8 @@ class NotificationPollerState {
   NotificationPollerState copyWith({
     AppNotification? pendingReminder,
     bool clearPendingReminder = false,
+    AppNotification? pendingSuggestion,
+    bool clearPendingSuggestion = false,
     AppNotification? pendingChildStatus,
     bool clearPendingChildStatus = false,
     Set<String>? seenIds,
@@ -35,6 +41,9 @@ class NotificationPollerState {
       pendingReminder: clearPendingReminder
           ? null
           : (pendingReminder ?? this.pendingReminder),
+      pendingSuggestion: clearPendingSuggestion
+          ? null
+          : (pendingSuggestion ?? this.pendingSuggestion),
       pendingChildStatus: clearPendingChildStatus
           ? null
           : (pendingChildStatus ?? this.pendingChildStatus),
@@ -138,6 +147,7 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
       final seen = Set<String>.from(state.seenIds);
       // 每次按未读列表重算待办卡，避免只弹系统通知、首页空白
       AppNotification? latestReminder;
+      AppNotification? latestSuggestion;
       AppNotification? latestChildStatus;
       final local = _ref.read(localNotificationServiceProvider);
       final role = auth.user?.role;
@@ -148,7 +158,17 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
         if (isNew) seen.add(item.id);
 
         if (role == UserRole.parent) {
-          if (item.isReminder) {
+          if (item.isReminderSuggestion) {
+            latestSuggestion = _newer(latestSuggestion, item);
+            if (isNew) {
+              await local.show(
+                id: item.id.hashCode & 0x7fffffff,
+                title: item.title,
+                body: item.body,
+                payload: 'notification:${item.id}',
+              );
+            }
+          } else if (item.isReminder) {
             latestReminder = _newer(latestReminder, item);
             if (isNew) {
               final skipBanner = shouldSkipReminderBanner(
@@ -182,6 +202,7 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
         } else if (role == UserRole.child) {
           if (item.isCareMessage && isNew) {
             _ref.invalidate(childTodayProvider);
+            _ref.invalidate(childSuggestionsProvider);
             await local.show(
               id: item.id.hashCode & 0x7fffffff,
               title: item.title,
@@ -194,6 +215,7 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
 
       state = NotificationPollerState(
         pendingReminder: latestReminder,
+        pendingSuggestion: latestSuggestion,
         pendingChildStatus: latestChildStatus,
         seenIds: seen,
       );
@@ -242,6 +264,32 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
     await dismissPendingReminder(markRead: true);
   }
 
+  Future<void> acceptPendingSuggestion() async {
+    final pending = state.pendingSuggestion;
+    if (pending == null) return;
+    final reminderId = pending.reminderId;
+    if (reminderId == null) {
+      await dismissPendingSuggestion(markRead: true);
+      return;
+    }
+    await _ref.read(remindersApiProvider).acceptSuggestion(reminderId);
+    _ref.invalidate(remindersListProvider);
+    await dismissPendingSuggestion(markRead: true);
+  }
+
+  Future<void> rejectPendingSuggestion() async {
+    final pending = state.pendingSuggestion;
+    if (pending == null) return;
+    final reminderId = pending.reminderId;
+    if (reminderId == null) {
+      await dismissPendingSuggestion(markRead: true);
+      return;
+    }
+    await _ref.read(remindersApiProvider).rejectSuggestion(reminderId);
+    _ref.invalidate(remindersListProvider);
+    await dismissPendingSuggestion(markRead: true);
+  }
+
   /// 父母确认「知道了」：标记已读并收起卡片，不制造等待回复状态。
   Future<void> acknowledgePendingChildStatus() async {
     final pending = state.pendingChildStatus;
@@ -260,6 +308,16 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
       } catch (_) {}
     }
     state = state.copyWith(clearPendingReminder: true);
+  }
+
+  Future<void> dismissPendingSuggestion({bool markRead = false}) async {
+    final pending = state.pendingSuggestion;
+    if (pending != null && markRead) {
+      try {
+        await _ref.read(notificationsApiProvider).markRead(pending.id);
+      } catch (_) {}
+    }
+    state = state.copyWith(clearPendingSuggestion: true);
   }
 
   /// 兼容旧调用名。

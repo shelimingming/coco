@@ -7,18 +7,20 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
 import '../../../core/widgets/coco_text_field.dart';
-import '../application/reminders_providers.dart';
-import '../data/reminders_api.dart';
+import '../../reminders/application/reminders_providers.dart';
+import '../../reminders/data/reminders_api.dart';
 
-/// 父母端手动创建提醒（语音创建是主路径，这里是兜底）。
-class NewReminderPage extends ConsumerStatefulWidget {
-  const NewReminderPage({super.key});
+/// 子女为父母创建提醒建议；须父母确认后才调度。
+class ChildSuggestReminderPage extends ConsumerStatefulWidget {
+  const ChildSuggestReminderPage({super.key});
 
   @override
-  ConsumerState<NewReminderPage> createState() => _NewReminderPageState();
+  ConsumerState<ChildSuggestReminderPage> createState() =>
+      _ChildSuggestReminderPageState();
 }
 
-class _NewReminderPageState extends ConsumerState<NewReminderPage> {
+class _ChildSuggestReminderPageState
+    extends ConsumerState<ChildSuggestReminderPage> {
   final _titleController = TextEditingController();
   bool _daily = true;
   TimeOfDay _time = const TimeOfDay(hour: 20, minute: 0);
@@ -53,16 +55,16 @@ class _NewReminderPageState extends ConsumerState<NewReminderPage> {
     try {
       await ref
           .read(remindersApiProvider)
-          .create(
+          .createSuggestion(
             title: title,
             scheduleType: _daily ? 'DAILY' : 'ONCE',
             scheduleTime: '$hh:$mm:00',
           );
-      ref.invalidate(remindersListProvider);
+      ref.invalidate(childSuggestionsProvider);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('已设好：$title，$hh:$mm')));
+      ).showSnackBar(SnackBar(content: Text('已发给父母确认：$title，$hh:$mm')));
       context.pop();
     } catch (error) {
       if (!mounted) return;
@@ -70,7 +72,7 @@ class _NewReminderPageState extends ConsumerState<NewReminderPage> {
         _busy = false;
         _error = error is ApiException
             ? error.message
-            : '提醒没有设成功。您可以再试一次，没有写入错误数据。';
+            : '提醒建议没有发出去。您可以再试一次，没有写入错误数据。';
       });
     }
   }
@@ -82,10 +84,17 @@ class _NewReminderPageState extends ConsumerState<NewReminderPage> {
     final mm = _time.minute.toString().padLeft(2, '0');
 
     return CocoScaffold(
-      title: '新建提醒',
+      title: '给父母设提醒',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Text(
+            '提醒会先发给父母确认，确认后才会到点提醒。',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: CocoColors.neutral700,
+            ),
+          ),
+          const SizedBox(height: CocoSpace.s5),
           CocoTextField(
             controller: _titleController,
             label: '提醒什么',
@@ -100,7 +109,7 @@ class _NewReminderPageState extends ConsumerState<NewReminderPage> {
             contentPadding: EdgeInsets.zero,
             title: Text('每天提醒', style: theme.textTheme.bodyLarge),
             value: _daily,
-            activeThumbColor: CocoColors.parentPrimary,
+            activeThumbColor: CocoColors.childPrimary,
             onChanged: (value) => setState(() => _daily = value),
           ),
           if (_error != null) ...[
@@ -114,9 +123,9 @@ class _NewReminderPageState extends ConsumerState<NewReminderPage> {
           ],
           const Spacer(),
           CocoPrimaryButton(
-            label: '确认这个提醒',
+            label: '发给父母确认',
             loading: _busy,
-            loadingLabel: '正在保存…',
+            loadingLabel: '正在发送…',
             onPressed: _submit,
           ),
           const SizedBox(height: CocoSpace.s3),

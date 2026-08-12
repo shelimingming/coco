@@ -16,6 +16,14 @@ class ReminderCreateRequest(BaseModel):
     user_confirmed: bool = True
 
 
+class ReminderSuggestionCreateRequest(BaseModel):
+    """子女为父母创建的提醒建议（须父母确认后才调度）。"""
+
+    title: str = Field(min_length=1, max_length=200)
+    schedule_type: str = Field(pattern="^(ONCE|DAILY)$")
+    schedule_time: time
+
+
 class ReminderUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     schedule_type: str | None = Field(default=None, pattern="^(ONCE|DAILY)$")
@@ -32,6 +40,8 @@ class ReminderResponse(BaseModel):
     created_source: str
     next_trigger_at: datetime | None
     created_at: datetime
+    suggested_by_user_id: UUID | None = None
+    suggested_by_display_name: str | None = None
 
 
 class OccurrenceResponse(BaseModel):

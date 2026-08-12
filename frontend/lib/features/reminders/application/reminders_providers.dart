@@ -3,9 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/reminders_api.dart';
 import '../domain/models.dart';
 
-final remindersListProvider =
-    FutureProvider.autoDispose<List<Reminder>>((ref) async {
+final remindersListProvider = FutureProvider.autoDispose<List<Reminder>>((
+  ref,
+) async {
   return ref.watch(remindersApiProvider).list();
+});
+
+/// 子女自己建议过的提醒列表。
+final childSuggestionsProvider = FutureProvider.autoDispose<List<Reminder>>((
+  ref,
+) async {
+  return ref.watch(remindersApiProvider).listSuggestions();
 });
 
 /// 最近一项活跃提醒，供父母首页展示。

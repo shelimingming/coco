@@ -12,6 +12,8 @@ import '../../care/application/care_providers.dart';
 import '../../care/domain/models.dart';
 import '../../family/application/family_providers.dart';
 import '../../family/presentation/call_parent_phone.dart';
+import '../../reminders/application/reminders_providers.dart';
+import '../../reminders/domain/models.dart';
 
 /// 子女端近况：需要关注 + 今日信息同步，顶部铺交付稿背景。
 class ChildHomePage extends ConsumerWidget {
@@ -23,7 +25,13 @@ class ChildHomePage extends ConsumerWidget {
     final theme = Theme.of(context);
     final todayAsync = ref.watch(childTodayProvider);
     final familyAsync = ref.watch(familyInfoProvider);
+    final suggestionsAsync = ref.watch(childSuggestionsProvider);
     final parentName = familyAsync.valueOrNull?.parentDisplayName ?? '父母';
+    final pendingSuggestions =
+        suggestionsAsync.valueOrNull
+            ?.where((r) => r.isPendingConfirm)
+            .toList() ??
+        const <Reminder>[];
 
     return Scaffold(
       backgroundColor: CocoColors.childBackground,
@@ -62,6 +70,7 @@ class ChildHomePage extends ConsumerWidget {
           onRefresh: () async {
             ref.invalidate(childTodayProvider);
             ref.invalidate(familyInfoProvider);
+            ref.invalidate(childSuggestionsProvider);
             await ref.read(childTodayProvider.future);
           },
           child: CustomScrollView(
@@ -83,7 +92,11 @@ class ChildHomePage extends ConsumerWidget {
                       parentName: parentName,
                     ),
                     const SizedBox(height: CocoSpace.s5),
-                    _SyncBlock(items: today.reminderItems),
+                    _SyncBlock(
+                      items: today.reminderItems,
+                      pendingSuggestions: pendingSuggestions,
+                      onSuggest: () => context.push('/child/reminders/suggest'),
+                    ),
                   ]),
                 ),
               ),
@@ -492,9 +505,15 @@ class _ActionButton extends StatelessWidget {
 }
 
 class _SyncBlock extends StatelessWidget {
-  const _SyncBlock({required this.items});
+  const _SyncBlock({
+    required this.items,
+    required this.pendingSuggestions,
+    required this.onSuggest,
+  });
 
   final List<ChildTodayReminderItem> items;
+  final List<Reminder> pendingSuggestions;
+  final VoidCallback onSuggest;
 
   @override
   Widget build(BuildContext context) {
@@ -502,8 +521,59 @@ class _SyncBlock extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('今日信息同步', style: theme.textTheme.titleMedium),
+        Row(
+          children: [
+            Expanded(child: Text('今日信息同步', style: theme.textTheme.titleMedium)),
+            TextButton(
+              onPressed: onSuggest,
+              style: TextButton.styleFrom(
+                foregroundColor: CocoColors.childPrimary,
+                textStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+                minimumSize: const Size(48, 44),
+                padding: const EdgeInsets.symmetric(horizontal: CocoSpace.s2),
+              ),
+              child: const Text('给父母设个提醒'),
+            ),
+          ],
+        ),
         const SizedBox(height: CocoSpace.s3),
+        if (pendingSuggestions.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(CocoSpace.s5),
+            decoration: BoxDecoration(
+              color: CocoColors.childSurface,
+              borderRadius: BorderRadius.circular(CocoRadius.lg),
+              border: Border.all(color: CocoColors.childBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '等待长辈确认',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: CocoColors.childPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: CocoSpace.s2),
+                ...pendingSuggestions.map((item) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: CocoSpace.s2),
+                    child: Text(
+                      '「${item.title}」${item.scheduleMeta} · 等待确认',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: CocoSpace.s3),
+        ],
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(CocoSpace.s5),

@@ -9,6 +9,8 @@ class Reminder {
     required this.createdSource,
     required this.createdAt,
     this.nextTriggerAt,
+    this.suggestedByUserId,
+    this.suggestedByDisplayName,
   });
 
   final String id;
@@ -19,9 +21,14 @@ class Reminder {
   final String createdSource;
   final DateTime? nextTriggerAt;
   final DateTime createdAt;
+  final String? suggestedByUserId;
+  final String? suggestedByDisplayName;
 
   bool get isActive => status == 'ACTIVE';
+  bool get isPendingConfirm => status == 'PENDING_CONFIRM';
+  bool get isRejected => status == 'REJECTED';
   bool get isDaily => scheduleType == 'DAILY';
+  bool get isChildSuggested => createdSource == 'CHILD';
 
   /// 展示用时刻，如 20:00
   String get timeLabel {
@@ -31,6 +38,8 @@ class Reminder {
     }
     return scheduleTime;
   }
+
+  String get scheduleMeta => '${isDaily ? '每天' : '一次'} $timeLabel';
 
   factory Reminder.fromJson(Map<String, dynamic> json) {
     return Reminder(
@@ -44,6 +53,8 @@ class Reminder {
           ? null
           : DateTime.parse(json['next_trigger_at'] as String),
       createdAt: DateTime.parse(json['created_at'] as String),
+      suggestedByUserId: json['suggested_by_user_id']?.toString(),
+      suggestedByDisplayName: json['suggested_by_display_name'] as String?,
     );
   }
 }

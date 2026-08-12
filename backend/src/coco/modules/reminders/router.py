@@ -13,6 +13,7 @@ from coco.modules.reminders.schemas import (
     OccurrenceResponse,
     ReminderCreateRequest,
     ReminderResponse,
+    ReminderSuggestionCreateRequest,
     ReminderUpdateRequest,
 )
 from coco.modules.reminders.service import ReminderService
@@ -41,6 +42,45 @@ async def list_reminders(
     service: ReminderService = Depends(get_reminder_service),
 ) -> list[ReminderResponse]:
     return await service.list_for_user(session, user=user)
+
+
+@router.post("/suggestions", response_model=ReminderResponse)
+async def create_reminder_suggestion(
+    body: ReminderSuggestionCreateRequest,
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: ReminderService = Depends(get_reminder_service),
+) -> ReminderResponse:
+    return await service.create_suggestion(session, user=user, body=body)
+
+
+@router.get("/suggestions", response_model=list[ReminderResponse])
+async def list_reminder_suggestions(
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: ReminderService = Depends(get_reminder_service),
+) -> list[ReminderResponse]:
+    return await service.list_suggestions_for_child(session, user=user)
+
+
+@router.post("/{reminder_id}/accept", response_model=ReminderResponse)
+async def accept_reminder_suggestion(
+    reminder_id: UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: ReminderService = Depends(get_reminder_service),
+) -> ReminderResponse:
+    return await service.accept_suggestion(session, user=user, reminder_id=reminder_id)
+
+
+@router.post("/{reminder_id}/reject", response_model=ReminderResponse)
+async def reject_reminder_suggestion(
+    reminder_id: UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: ReminderService = Depends(get_reminder_service),
+) -> ReminderResponse:
+    return await service.reject_suggestion(session, user=user, reminder_id=reminder_id)
 
 
 @router.patch("/{reminder_id}", response_model=ReminderResponse)
