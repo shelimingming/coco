@@ -533,7 +533,8 @@ resolve_api_base() {
   fi
 }
 
-BUNDLE_ID="com.coco.app"
+# 真机签名需团队唯一 Bundle ID；模拟器双端 install/launch 也依赖此值。
+BUNDLE_ID="com.sheliming.coco"
 SIMULATOR_APP_PATH="${FRONTEND_DIR}/build/ios/iphonesimulator/Runner.app"
 
 ensure_flutter_deps() {
