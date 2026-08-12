@@ -16,10 +16,7 @@ import '../features/family/presentation/parent_family_page.dart';
 import '../features/family/presentation/parent_join_page.dart';
 import '../features/history/presentation/history_detail_page.dart';
 import '../features/history/presentation/history_page.dart';
-import '../features/look/domain/models.dart';
-import '../features/look/presentation/look_ask_page.dart';
-import '../features/look/presentation/look_capture_page.dart';
-import '../features/look/presentation/look_result_page.dart';
+import '../features/look/presentation/look_page.dart';
 import '../features/memories/presentation/memories_page.dart';
 import '../features/messages/presentation/child_compose_message_page.dart';
 import '../features/messages/presentation/child_messages_page.dart';
@@ -106,32 +103,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: 'memories',
             builder: (context, state) => const MemoriesPage(),
           ),
-          GoRoute(
-            path: 'look',
-            builder: (context, state) => const LookCapturePage(),
-            routes: [
-              GoRoute(
-                path: 'result',
-                builder: (context, state) {
-                  final extra = state.extra;
-                  if (extra is! LookSession) {
-                    return const LookCapturePage();
-                  }
-                  return LookResultPage(session: extra);
-                },
-              ),
-              GoRoute(
-                path: 'ask',
-                builder: (context, state) {
-                  final extra = state.extra;
-                  if (extra is! LookAskArgs) {
-                    return const LookCapturePage();
-                  }
-                  return LookAskPage(args: extra);
-                },
-              ),
-            ],
-          ),
+          GoRoute(path: 'look', builder: (context, state) => const LookPage()),
           GoRoute(
             path: 'history',
             builder: (context, state) => const HistoryPage(),

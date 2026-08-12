@@ -4,7 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/theme/tokens.dart';
 import 'parent_home_palette.dart';
 
-/// 底部四工具：说话 / 看眼前 / 看手机 / 看照片。
+/// 底部两工具：说话 / 看一看。
 class ParentHomeToolBar extends StatelessWidget {
   const ParentHomeToolBar({
     super.key,
@@ -43,22 +43,8 @@ class ParentHomeToolBar extends StatelessWidget {
             onPressed: onTalkPressed,
           ),
           _ToolItem(
-            label: '看眼前',
+            label: '看一看',
             assetPath: 'assets/icons/parent/icon-tool-camera-day.svg',
-            active: false,
-            palette: palette,
-            onPressed: lookEnabled ? onLookPressed : null,
-          ),
-          _ToolItem(
-            label: '看手机',
-            assetPath: 'assets/icons/parent/icon-tool-phone-day.svg',
-            active: false,
-            palette: palette,
-            onPressed: lookEnabled ? onLookPressed : null,
-          ),
-          _ToolItem(
-            label: '看照片',
-            assetPath: 'assets/icons/parent/icon-tool-photo-day.svg',
             active: false,
             palette: palette,
             onPressed: lookEnabled ? onLookPressed : null,

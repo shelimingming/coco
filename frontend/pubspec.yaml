@@ -47,8 +47,9 @@ dependencies:
     sdk: flutter
   flutter_local_notifications: ^22.3.0
   url_launcher: ^6.3.2
-  # 帮我看看：系统相机 / 相册选图（单张，不读整个相册）
+  # 帮我看看：系统相机 / 相册选图；截屏相册读最近一张
   image_picker: ^1.1.2
+  photo_manager: ^3.7.1
   # 识图追问 TTS：播报服务端返回的 MP3
   just_audio: ^0.10.4
   # multipart 音频 content-type

@@ -43,26 +43,3 @@ class LookResult {
     );
   }
 }
-
-/// 取图成功后带本地路径进入结果页 / 追问页。
-class LookSession {
-  const LookSession({required this.result, required this.imagePath});
-
-  final LookResult result;
-  final String imagePath;
-}
-
-/// 追问页入参：同会话继续看图。
-class LookAskArgs {
-  const LookAskArgs({
-    required this.conversationId,
-    required this.imagePath,
-    required this.headline,
-    required this.spokenSummary,
-  });
-
-  final String conversationId;
-  final String imagePath;
-  final String headline;
-  final String spokenSummary;
-}
