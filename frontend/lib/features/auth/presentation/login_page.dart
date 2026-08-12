@@ -558,25 +558,6 @@ List<Widget> _extraFields({
     ]);
   }
 
-  if (state.challenge?.devCode != null) {
-    widgets.addAll([
-      const SizedBox(height: CocoSpace.s4),
-      Container(
-        padding: const EdgeInsets.all(CocoSpace.s3),
-        decoration: BoxDecoration(
-          color: isParent
-              ? CocoColors.parentPrimarySoft
-              : CocoColors.childPrimarySoft,
-          borderRadius: BorderRadius.circular(CocoRadius.md),
-        ),
-        child: Text(
-          '开发验证码：${state.challenge!.devCode}',
-          style: theme.textTheme.bodyMedium,
-        ),
-      ),
-    ]);
-  }
-
   if (state.errorMessage != null) {
     widgets.addAll([
       const SizedBox(height: CocoSpace.s3),

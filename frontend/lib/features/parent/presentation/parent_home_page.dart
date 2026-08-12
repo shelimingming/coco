@@ -41,6 +41,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   /// 出场播完切待机；进语音时会被取消，避免盖住倾听/说话
   Timer? _entranceTimer;
 
+  /// 底栏「我在呢」两行文案所需高度（含底 padding），进对话后文案变短也占同一槽位
+  static const double _bottomCopySlotHeight = 96;
+
   @override
   void initState() {
     super.initState();
@@ -229,59 +232,26 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!inCall &&
-                      !voicePending &&
-                      pendingReminder == null &&
-                      pendingChildStatus == null)
-                    Padding(
+                  // 文案区固定高度：进对话时文案变短也不能让上半 Expanded 变高，否则场景背景会「跳一下」
+                  SizedBox(
+                    height: _bottomCopySlotHeight,
+                    child: Padding(
                       padding: const EdgeInsets.fromLTRB(
                         CocoSpace.s6,
                         0,
                         CocoSpace.s6,
                         CocoSpace.s3,
                       ),
-                      child: Column(
-                        children: [
-                          Text(
-                            '我在呢',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w700,
-                              height: 1.2,
-                              color: palette.text,
-                            ),
-                          ),
-                          const SizedBox(height: CocoSpace.s2),
-                          Text(
-                            '有什么想让我帮忙的？',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w500,
-                              height: 1.3,
-                              color: palette.textMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else if (inCall &&
-                      !_captionVisible &&
-                      callState.phase != VoiceCallPhase.error &&
-                      !voicePending)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: CocoSpace.s3),
-                      child: Text(
-                        callState.statusLabel,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w600,
-                          color: palette.text,
-                        ),
+                      child: _buildBottomCopy(
+                        inCall: inCall,
+                        voicePending: voicePending,
+                        pendingReminder: pendingReminder,
+                        pendingChildStatus: pendingChildStatus,
+                        callState: callState,
+                        palette: palette,
                       ),
                     ),
+                  ),
                   ParentHomeToolBar(
                     palette: palette,
                     inCall: inCall,
@@ -307,6 +277,67 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         ],
       ),
     );
+  }
+
+  /// 底栏状态文案：闲置引导 / 通话状态；无文案时仍占位，避免背景高度变化。
+  Widget _buildBottomCopy({
+    required bool inCall,
+    required bool voicePending,
+    required AppNotification? pendingReminder,
+    required AppNotification? pendingChildStatus,
+    required VoiceCallState callState,
+    required ParentHomePalette palette,
+  }) {
+    if (!inCall &&
+        !voicePending &&
+        pendingReminder == null &&
+        pendingChildStatus == null) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            '我在呢',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+              color: palette.text,
+            ),
+          ),
+          const SizedBox(height: CocoSpace.s2),
+          Text(
+            '有什么想让我帮忙的？',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w500,
+              height: 1.3,
+              color: palette.textMuted,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (inCall &&
+        !_captionVisible &&
+        callState.phase != VoiceCallPhase.error &&
+        !voicePending) {
+      return Center(
+        child: Text(
+          callState.statusLabel,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w600,
+            color: palette.text,
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   Widget _buildCenter({

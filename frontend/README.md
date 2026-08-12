@@ -14,4 +14,4 @@ flutter run -d "iPhone 17 Pro" \
   --dart-define=COCO_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-开发验证码：`246810`（登录页会显示并自动填入）。
+开发验证码：`246810`（登录页会自动填入，不单独展示）。
