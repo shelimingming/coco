@@ -55,12 +55,13 @@ class _LookAskPageState extends ConsumerState<LookAskPage> {
     super.dispose();
   }
 
+  // 与首页语音一致：闲置待机，过程中只有倾听 / 说话
   CocoCompanionPose get _pose => switch (_state.phase) {
-    LookAskPhase.idle => CocoCompanionPose.looking,
+    LookAskPhase.idle => CocoCompanionPose.idle,
     LookAskPhase.listening => CocoCompanionPose.listening,
-    LookAskPhase.thinking => CocoCompanionPose.thinking,
+    LookAskPhase.thinking => CocoCompanionPose.listening,
     LookAskPhase.speaking => CocoCompanionPose.speaking,
-    LookAskPhase.error => CocoCompanionPose.uncertain,
+    LookAskPhase.error => CocoCompanionPose.idle,
   };
 
   String get _primaryLabel => switch (_state.phase) {

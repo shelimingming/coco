@@ -121,7 +121,7 @@ class _LookCapturePageState extends ConsumerState<LookCapturePage> {
                             ),
                             child: const Center(
                               child: CocoCompanionView(
-                                pose: CocoCompanionPose.looking,
+                                pose: CocoCompanionPose.idle,
                                 size: 120,
                               ),
                             ),
@@ -135,7 +135,7 @@ class _LookCapturePageState extends ConsumerState<LookCapturePage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const CocoCompanionView(
-                              pose: CocoCompanionPose.looking,
+                              pose: CocoCompanionPose.idle,
                               size: 132,
                             ),
                             const SizedBox(height: CocoSpace.s4),

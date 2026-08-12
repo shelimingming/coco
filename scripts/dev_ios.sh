@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# Coco 一键本地启动：用户 API + 运营后台 + iOS 26 模拟器上的 Flutter App。
+# Coco 一键本地启动：用户 API + 运营后台 + iOS 模拟器 / USB 真机上的 Flutter App。
 #
 # 用法：
 #   ./scripts/dev_ios.sh                       # 默认：iOS 26 模拟器 + 本地后端 + admin
+#   ./scripts/dev_ios.sh --usb                 # USB 真机一键：后端 0.0.0.0 + App 走 USB 链路 IP
+#   ./scripts/dev_ios.sh --usb --device "佘黎明的iPhone"  # 指定真机（名称或 UDID）
 #   ./scripts/dev_ios.sh --dual                # 同时起两台模拟器，方便父母/子女双角色联调
 #   ./scripts/dev_ios.sh --dual --device "iPhone 17 Pro" --device "iPhone 17"
 #   ./scripts/dev_ios.sh --device "iPhone 17"  # 指定模拟器机型（名称或 UDID；可写两次配双端）
 #   ./scripts/dev_ios.sh --ios 26              # 指定 iOS 大版本（默认 26）
-#   ./scripts/dev_ios.sh --lan                 # 真机调试：后端监听 0.0.0.0，App 用局域网 IP
+#   ./scripts/dev_ios.sh --lan                 # 真机/局域网：后端 0.0.0.0；优先 USB IP，否则 Wi‑Fi
 #   ./scripts/dev_ios.sh --backend-only        # 只起用户 API + admin（不启 App）
 #   ./scripts/dev_ios.sh --app-only            # 只起 App（后端已在别处运行）
 #   ./scripts/dev_ios.sh --no-admin            # 不起运营后台
 #   ./scripts/dev_ios.sh --reuse-backend       # 端口上已有健康服务时复用，不重启
-#   ./scripts/dev_ios.sh --list                # 列出候选模拟器后退出
+#   ./scripts/dev_ios.sh --list                # 列出候选模拟器与已连接真机后退出
 
 set -Eeuo pipefail
 
@@ -43,6 +45,8 @@ RUN_APP=1
 REUSE_BACKEND=0
 KEEP_BACKEND=0
 USE_LAN=0
+# USB 真机：自动选已连接的物理 iPhone，并强制走局域网/USB API。
+USE_USB=0
 LIST_ONLY=0
 # 双模拟器：各跑一份 App，本地数据隔离，可同时登录父母端与子女端。
 DUAL=0
@@ -107,6 +111,12 @@ parse_args() {
       --api-base) API_BASE="${2:?--api-base 需要一个 URL}"; shift 2 ;;
       --port) BACKEND_PORT="${2:?--port 需要一个端口}"; shift 2 ;;
       --lan) USE_LAN=1; shift ;;
+      # 一键 USB 真机：隐含 --lan（后端听 0.0.0.0，App 用 USB/局域网 IP）。
+      --usb|--device-usb|--iphone)
+        USE_USB=1
+        USE_LAN=1
+        shift
+        ;;
       --release) FLUTTER_MODE="release"; shift ;;
       --profile) FLUTTER_MODE="profile"; shift ;;
       --backend-only) RUN_APP=0; KEEP_BACKEND=1; shift ;;
@@ -126,6 +136,10 @@ parse_args() {
   # 不起用户 API 时也不起 admin（除非以后单独加 --admin-only）。
   if (( ! RUN_BACKEND )); then
     RUN_ADMIN=0
+  fi
+
+  if (( USE_USB && DUAL )); then
+    die "--usb 与 --dual 不能同时用。" "真机一次只跑一台；双角色请用两台模拟器：--dual"
   fi
 }
 
@@ -216,6 +230,12 @@ backend_health_ok() {
   curl -fsS --max-time 2 "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null 2>&1
 }
 
+# 真机调试要求后端听 * 或 0.0.0.0，不能只有 127.0.0.1。
+backend_listens_lan() {
+  lsof -nP -iTCP:"${BACKEND_PORT}" -sTCP:LISTEN 2>/dev/null \
+    | grep -qE "\*:${BACKEND_PORT}|0\.0\.0\.0:${BACKEND_PORT}|\[::\]:${BACKEND_PORT}"
+}
+
 admin_health_ok() {
   curl -fsS --max-time 2 "http://127.0.0.1:${ADMIN_PORT}/health" >/dev/null 2>&1
 }
@@ -249,10 +269,16 @@ start_backend() {
 
   if (( REUSE_BACKEND )) && [[ -n "$(port_listener_pid "${BACKEND_PORT}")" ]]; then
     if backend_health_ok; then
-      ok "后端已在 http://127.0.0.1:${BACKEND_PORT} 运行，按 --reuse-backend 复用"
-      return 0
+      # 真机/局域网需要 0.0.0.0；若旧进程只听 127.0.0.1 则不能复用。
+      if (( USE_LAN )) && ! backend_listens_lan; then
+        warn "已有后端只监听 127.0.0.1，真机连不上，将重启为 0.0.0.0"
+      else
+        ok "后端已在 http://127.0.0.1:${BACKEND_PORT} 运行，按 --reuse-backend 复用"
+        return 0
+      fi
+    else
+      die "端口 ${BACKEND_PORT} 被别的进程占用，且不是 Coco 后端。" "换端口：--port 8002，或先停掉占用进程。"
     fi
-    die "端口 ${BACKEND_PORT} 被别的进程占用，且不是 Coco 后端。" "换端口：--port 8002，或先停掉占用进程。"
   fi
 
   # 默认：有进程占着就先停，再按当前代码重新启动。
@@ -371,6 +397,71 @@ cleanup() {
       rm -f "${BACKEND_PID_FILE}"
     fi
   fi
+}
+
+# ---------- 真机（USB） ----------
+
+# 输出已连接物理 iOS：名称<TAB>设备 ID（flutter -d 可用）
+list_physical_ios() {
+  local json
+  # flutter devices --machine 在无设备时也可能非 0；用 || true 避免 set -e 打断。
+  json="$(cd "${FRONTEND_DIR}" && flutter devices --machine 2>/dev/null)" || true
+  [[ -n "${json}" ]] || return 0
+  python3 -c '
+import json, sys
+try:
+    devices = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for d in devices:
+    platform = (d.get("targetPlatform") or d.get("platformType") or "")
+    if not str(platform).startswith("ios"):
+        continue
+    if d.get("emulator") is True:
+        continue
+    name = d.get("name") or ""
+    device_id = d.get("id") or ""
+    if name and device_id:
+        print(f"{name}\t{device_id}")
+' <<<"${json}"
+}
+
+# 按名称 / UDID 选真机；未指定则取第一台已连接物理 iPhone。
+resolve_physical_device() {
+  local query="${1-}" devices name device_id
+  devices="$(list_physical_ios)"
+  [[ -n "${devices}" ]] || die "没有检测到已连接的 iPhone。" \
+    "用数据线连上手机 → 信任此电脑；系统设置 → 网络 → iPhone USB → 取消勾选「除非需要，否则停用」。再用 --list 确认。"
+
+  if [[ -n "${query}" ]]; then
+    while IFS=$'\t' read -r name device_id; do
+      [[ -n "${device_id}" ]] || continue
+      if [[ "${name}" == "${query}" || "${device_id}" == "${query}" ]]; then
+        printf '%s\t%s\n' "${name}" "${device_id}"
+        return 0
+      fi
+    done <<<"${devices}"
+    die "没有名为「${query}」的已连接真机。" "用 --list 查看；或省略 --device 自动选第一台。"
+  fi
+
+  IFS=$'\t' read -r name device_id <<<"$(printf '%s\n' "${devices}" | sed -n '1p')"
+  [[ -n "${name}" && -n "${device_id}" ]] || die "解析真机失败。" "请重插数据线后重试。"
+  printf '%s\t%s\n' "${name}" "${device_id}"
+}
+
+# Mac 侧 USB 链路本地地址（169.254.x）；没有则空。
+usb_link_ip() {
+  local ip iface
+  for iface in $(ifconfig -l 2>/dev/null); do
+    [[ "${iface}" == en* ]] || continue
+    ip="$(ipconfig getifaddr "${iface}" 2>/dev/null || true)"
+    [[ "${ip}" == 169.254.* ]] || continue
+    if ifconfig "${iface}" 2>/dev/null | grep -q 'status: active'; then
+      printf '%s' "${ip}"
+      return 0
+    fi
+  done
+  return 1
 }
 
 # ---------- 模拟器 ----------
@@ -511,7 +602,12 @@ boot_simulator() {
 # ---------- 前端 ----------
 
 lan_ip() {
-  local ip
+  local ip iface
+  # 公司 Wi‑Fi 常开客户端隔离，手机到不了 Mac 的 10.x；USB 的 169.254 链路更稳。
+  if ip="$(usb_link_ip)"; then
+    printf '%s' "${ip}"
+    return 0
+  fi
   for iface in en0 en1; do
     ip="$(ipconfig getifaddr "${iface}" 2>/dev/null || true)"
     [[ -n "${ip}" ]] && { printf '%s' "${ip}"; return 0; }
@@ -525,7 +621,13 @@ resolve_api_base() {
   fi
   if (( USE_LAN )); then
     local ip
-    ip="$(lan_ip)" || die "拿不到局域网 IP。" "手动指定：--api-base http://<你的Mac IP>:${BACKEND_PORT}"
+    if (( USE_USB )); then
+      # USB 模式必须用链路 IP；没有则别悄悄退到 Wi‑Fi（公司网常隔离）。
+      ip="$(usb_link_ip)" || die "手机已连，但 Mac 没有 USB 网络地址（169.254.x）。" \
+        "系统设置 → 网络 → iPhone USB → 取消「除非需要，否则停用」；或手动：--api-base http://<Mac局域网IP>:${BACKEND_PORT}"
+    else
+      ip="$(lan_ip)" || die "拿不到局域网 IP。" "手动指定：--api-base http://<你的Mac IP>:${BACKEND_PORT}"
+    fi
     API_BASE="http://${ip}:${BACKEND_PORT}"
   else
     # 模拟器与 Mac 共享 loopback，127.0.0.1 可直连。
@@ -547,6 +649,9 @@ run_app() {
   ensure_flutter_deps
 
   ok "在 ${name} 上运行 App（${FLUTTER_MODE}，API=${API_BASE}）"
+  if (( USE_USB )); then
+    dim "USB 真机：保持数据线连接；开发验证码见 backend/.env 的 COCO_DEV_SMS_CODE（默认 246810）。"
+  fi
   dim "首次构建会执行 pod install，耗时较久；按 q 退出，r 热重载。"
   cd "${FRONTEND_DIR}"
   flutter run \
@@ -633,6 +738,16 @@ main() {
   preflight
 
   if (( LIST_ONLY )); then
+    local phy name device_id
+    info "已连接的 USB 真机："
+    phy="$(list_physical_ios)"
+    if [[ -n "${phy}" ]]; then
+      while IFS=$'\t' read -r name device_id; do
+        printf '  %-22s %s\n' "${name}" "${device_id}"
+      done <<<"${phy}"
+    else
+      dim "（无）插上手机并信任本机后再试"
+    fi
     info "iOS ${IOS_MAJOR} 可用模拟器："
     list_simulators | while IFS=$'\t' read -r name udid state; do
       printf '  %-22s %s  (%s)\n' "${name}" "${udid}" "${state}"
@@ -649,6 +764,10 @@ main() {
     fi
   else
     backend_health_ok || warn "后端 http://127.0.0.1:${BACKEND_PORT} 没有响应，App 登录会失败。"
+    if (( USE_LAN )) && backend_health_ok && ! backend_listens_lan; then
+      die "当前后端只监听 127.0.0.1，真机连不上。" \
+        "去掉 --app-only 让脚本重启后端，或手动：uvicorn --host 0.0.0.0 --port ${BACKEND_PORT}"
+    fi
   fi
 
   if (( ! RUN_APP )); then
@@ -663,7 +782,13 @@ main() {
 
   resolve_api_base
 
-  if (( DUAL )); then
+  if (( USE_USB )); then
+    local selected name device_id
+    selected="$(resolve_physical_device "${DEVICE_QUERY}")" || exit 1
+    IFS=$'\t' read -r name device_id <<<"${selected}"
+    ok "目标真机：${name}（${device_id}）"
+    run_app "${device_id}" "${name}"
+  elif (( DUAL )); then
     local dual_lines selected_a selected_b
     local name1 udid1 state1 name2 udid2 state2
     # 先取回结果再解析：resolve_* 里的 die 只能结束子 shell，这里要显式判空。

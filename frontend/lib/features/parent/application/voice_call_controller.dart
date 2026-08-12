@@ -13,7 +13,7 @@ import '../domain/pending_voice_action.dart';
 import '../domain/voice_call_state.dart';
 import 'coco_companion_controller.dart';
 
-/// 父母端实时通话状态机：连接 → 听 → 想 → 说，并驱动小狗姿态。
+/// 父母端实时通话状态机：连接 → 听 → 想 → 说；小狗姿态仅倾听 / 说话。
 class VoiceCallController extends StateNotifier<VoiceCallState> {
   VoiceCallController({
     required this.ref,
@@ -306,13 +306,14 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
   }
 
   void _syncPose(VoiceCallPhase phase) {
+    // 通话过程只切倾听 / 说话；连接与思考并入倾听，结束或出错回待机
     final pose = switch (phase) {
       VoiceCallPhase.idle => CocoCompanionPose.idle,
-      VoiceCallPhase.connecting => CocoCompanionPose.looking,
+      VoiceCallPhase.connecting => CocoCompanionPose.listening,
       VoiceCallPhase.listening => CocoCompanionPose.listening,
-      VoiceCallPhase.thinking => CocoCompanionPose.thinking,
+      VoiceCallPhase.thinking => CocoCompanionPose.listening,
       VoiceCallPhase.speaking => CocoCompanionPose.speaking,
-      VoiceCallPhase.error => CocoCompanionPose.uncertain,
+      VoiceCallPhase.error => CocoCompanionPose.idle,
     };
     ref.read(cocoCompanionPoseProvider.notifier).state = pose;
   }

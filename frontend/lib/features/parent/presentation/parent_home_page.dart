@@ -38,6 +38,37 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   /// 对话文字默认关闭，避免干扰不希望看转译的老人。
   bool _captionVisible = false;
 
+  /// 出场播完切待机；进语音时会被取消，避免盖住倾听/说话
+  Timer? _entranceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // 刚进首页：先出场一轮，再进入待机循环
+    WidgetsBinding.instance.addPostFrameCallback((_) => _playEntrance());
+  }
+
+  @override
+  void dispose() {
+    _entranceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _playEntrance() {
+    if (!mounted) return;
+    ref.read(cocoCompanionPoseProvider.notifier).state =
+        CocoCompanionPose.entrance;
+    _entranceTimer?.cancel();
+    _entranceTimer = Timer(CocoCompanionPoseAsset.entranceDuration, () {
+      if (!mounted) return;
+      // 仅仍在出场态时切待机，避免打断已开始的语音姿态
+      if (ref.read(cocoCompanionPoseProvider) == CocoCompanionPose.entrance) {
+        ref.read(cocoCompanionPoseProvider.notifier).state =
+            CocoCompanionPose.idle;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider).user;

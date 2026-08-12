@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/tokens.dart';
 import '../../domain/coco_companion_pose.dart';
 
-/// 父母端主视觉：按姿态展示 Coco 形象，后续可无感换成同路径动图。
+/// 父母端主视觉：按姿态播放 Coco gif（Flutter Image.asset 原生支持循环）。
 class CocoCompanionView extends StatelessWidget {
   const CocoCompanionView({super.key, required this.pose, this.size = 280});
 
@@ -15,19 +14,18 @@ class CocoCompanionView extends StatelessWidget {
     return Semantics(
       label: pose.semanticLabel,
       image: true,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(CocoRadius.xl),
-        child: Image.asset(
-          pose.assetPath,
-          width: size,
-          height: size,
-          // 角色图带黑底，contain 保证全身可见；动图阶段可保持同一 fit
-          fit: BoxFit.contain,
-          alignment: Alignment.center,
-          excludeFromSemantics: true,
-          // 姿态切换时淡入，避免生硬跳切
-          gaplessPlayback: true,
-        ),
+      child: Image.asset(
+        pose.assetPath,
+        width: size,
+        height: size,
+        // gif 为透明底全身角色，contain 保证不裁切耳朵/尾巴
+        fit: BoxFit.contain,
+        alignment: Alignment.center,
+        excludeFromSemantics: true,
+        // 姿态切换时保留上一帧，避免闪一下空位
+        gaplessPlayback: true,
+        // 按姿态 key 强制重建，确保切换到新 gif 时从首帧重播
+        key: ValueKey(pose.assetPath),
       ),
     );
   }

@@ -33,9 +33,8 @@ class LookResultPage extends ConsumerWidget {
                 children: [
                   Center(
                     child: CocoCompanionView(
-                      pose: clear
-                          ? CocoCompanionPose.done
-                          : CocoCompanionPose.uncertain,
+                      // 结果页无专用动图，统一待机
+                      pose: CocoCompanionPose.idle,
                       size: 140,
                     ),
                   ),
