@@ -151,6 +151,14 @@ start_backend() {
   ensure_env_file
   check_database
 
+  info "同步后端依赖（uv sync）"
+  (cd "${BACKEND_DIR}" && uv sync --quiet) || die "uv sync 失败。" "手动执行：cd backend && uv sync"
+
+  # 与 dev_ios.sh 对齐：Web 启动也要先把表结构升到当前代码，否则登录/调度会 500
+  info "执行数据库迁移（alembic upgrade head）"
+  (cd "${BACKEND_DIR}" && uv run alembic upgrade head) \
+    || die "数据库迁移失败。" "确认 backend/.env 中的 COCO_DATABASE_URL 指向可写的 coco 库。"
+
   if (( REUSE_BACKEND )) && [[ -n "$(port_listener_pid "${BACKEND_PORT}")" ]]; then
     if backend_health_ok; then
       ok "后端已在 http://127.0.0.1:${BACKEND_PORT} 运行，按 --reuse-backend 复用"

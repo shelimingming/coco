@@ -105,7 +105,7 @@ flutter run -d "iPhone 17 Pro" \
 ./scripts/dev_web.sh
 ```
 
-双端同屏演示：一体部署时打开域名根路径即进 `/presentation.html`；本地 `flutter run` 可手动打开该页。
+会先 `alembic upgrade head` 再起用户 API 与 Chrome。双端同屏演示：一体部署时打开域名根路径即进 `/presentation.html`；本地 `flutter run` 可手动打开该页。
 
 详见 [`frontend/README.md`](frontend/README.md)。
 

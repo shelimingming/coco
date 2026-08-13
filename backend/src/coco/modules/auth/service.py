@@ -36,17 +36,19 @@ class AuthService:
         normalized = normalize_mainland_phone(phone)
         phone_hash = privacy_digest(self._settings, "phone", normalized)
 
-        one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
-        recent_count = await session.scalar(
-            select(func.count())
-            .select_from(PhoneCode)
-            .where(
-                PhoneCode.phone_hash == phone_hash,
-                PhoneCode.created_at >= one_hour_ago,
+        # 开发短信不走真实通道；双端演示页会自动发码，小时限额会误伤本地联调
+        if self._settings.sms_provider != "dev":
+            one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+            recent_count = await session.scalar(
+                select(func.count())
+                .select_from(PhoneCode)
+                .where(
+                    PhoneCode.phone_hash == phone_hash,
+                    PhoneCode.created_at >= one_hour_ago,
+                )
             )
-        )
-        if int(recent_count or 0) >= self._settings.otp_request_limit_per_hour:
-            raise AppError(429, "auth.too_many_codes", "验证码发送过于频繁，请稍后再试。")
+            if int(recent_count or 0) >= self._settings.otp_request_limit_per_hour:
+                raise AppError(429, "auth.too_many_codes", "验证码发送过于频繁，请稍后再试。")
 
         code = resolve_login_code(self._settings)
         challenge_id = uuid.uuid4()
