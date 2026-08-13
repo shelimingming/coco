@@ -126,6 +126,14 @@ flutter run -d "iPhone 17 Pro" \
 
 远端目录：`/opt/coco`，服务名：`coco`，访问：`http://虚机IP/`（根路径进双端演示页；安全组放行 80）。
 
+HTTPS（`coco.xyfit.top`）：证书放在 `scripts/Nginx/`（已 gitignore），执行：
+
+```bash
+./scripts/apply_nginx_ssl.sh
+```
+
+需安全组放行 **443**。
+
 ## Docker 一体部署（Web + API）
 
 前后端打进同一镜像：FastAPI 提供 `/v1`、`/health`，并托管 Flutter Web。数据库用**外部 Postgres**。
