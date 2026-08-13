@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 
+import pytest
 from pydantic import SecretStr
 
 from coco.config import Settings
@@ -161,3 +162,40 @@ def test_merge_vision_instructions_for_inject() -> None:
     assert "基线陪伴规则" in merged
     assert "桌上有一杯茶" in merged
     assert "当前照片上下文" in merged
+
+
+@pytest.mark.asyncio
+async def test_vision_inject_session_update_omits_turn_detection() -> None:
+    """开麦后注入照片只热更新 instructions，不能再带 turn_detection。"""
+    from coco.providers.qwen_realtime import (
+        QwenAudioRealtimeClient,
+        RealtimeSessionConfig,
+    )
+
+    sent: list[dict] = []
+
+    class _SpyClient(QwenAudioRealtimeClient):
+        def __init__(self) -> None:
+            # 跳过真实密钥与建连；只覆盖发送路径
+            self.session = RealtimeSessionConfig(instructions="基线")
+            self._base_instructions = "基线"
+            self._event_seq = 0
+            self._ws = object()  # noqa: SLF001 — 让 _require_ws 通过
+
+        async def send_event(self, event: dict) -> None:  # type: ignore[override]
+            sent.append(event)
+
+    client = _SpyClient()
+    await client.inject_vision_context_and_respond(
+        scene_description="桌上有一杯茶",
+        source="album",
+    )
+
+    updates = [e for e in sent if e.get("type") == "session.update"]
+    assert len(updates) == 1
+    session_payload = updates[0]["session"]
+    assert "instructions" in session_payload
+    assert "桌上有一杯茶" in session_payload["instructions"]
+    # 若误带 turn_detection，百炼会整包拒绝，照片说不出、说话也无反应
+    assert "turn_detection" not in session_payload
+    assert any(e.get("type") == "response.create" for e in sent)

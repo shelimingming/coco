@@ -59,7 +59,8 @@ class VoiceCallState {
     VoiceCallPhase.connecting => '正在准备对话…',
     VoiceCallPhase.listening => '正在听您说',
     VoiceCallPhase.thinking => '我想一想',
-    VoiceCallPhase.speaking => '我在说',
+    // 播报中可点小狗打断，文案直接提示操作
+    VoiceCallPhase.speaking => '点我可以打断我～',
     VoiceCallPhase.error => errorTitle ?? '出了点问题',
   };
 

@@ -127,8 +127,11 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
           lookController.clearAfterHandoff();
         }
       }
+      // 注入失败时勿继续盖着「看完了」，否则语音错误卡被挡住、像卡住
       if (next.phase == VoiceCallPhase.error) {
         _awaitingVisionHandoff = false;
+        _voiceStartedForLook = false;
+        lookController.clearAfterHandoff();
       }
     });
 
@@ -528,12 +531,13 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required LookState lookState,
     required bool captionVisible,
   }) {
-    // 首页原地识图优先于闲置可可（确认卡仍优先）
+    // 首页原地识图优先于闲置可可（确认卡仍优先）；语音出错时让错误卡露出来
     final lookSession =
         lookState.phase == LookPhase.analyzing ||
         lookState.phase == LookPhase.ready ||
         lookState.phase == LookPhase.error;
     if (lookSession &&
+        callState.phase != VoiceCallPhase.error &&
         !voicePending &&
         (pendingSuggestion == null &&
             pendingReminder == null &&

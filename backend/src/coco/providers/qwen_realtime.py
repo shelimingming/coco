@@ -170,7 +170,17 @@ class QwenAudioRealtimeClient:
             raise RealtimeProviderError("服务端返回了非 JSON 对象事件", code="invalid_event")
         return event
 
-    async def update_session(self, config: RealtimeSessionConfig | None = None) -> None:
+    async def update_session(
+        self,
+        config: RealtimeSessionConfig | None = None,
+        *,
+        include_turn_detection: bool = True,
+    ) -> None:
+        """发送 session.update。
+
+        turn_detection / 音频格式仅允许在首包音频前（IDLE）修改；通话中途更新
+        必须设 include_turn_detection=False，只改 instructions 等可热更新字段。
+        """
         if config is not None:
             self.session = config
         payload: dict[str, Any] = {
@@ -179,11 +189,36 @@ class QwenAudioRealtimeClient:
             "instructions": self.session.instructions,
             "input_audio_format": self.session.input_audio_format,
             "output_audio_format": self.session.output_audio_format,
-            "turn_detection": self._turn_detection_payload(self.session),
         }
+        # 未开麦前可带 turn_detection；开麦后再带会被供应商整包拒绝
+        if include_turn_detection:
+            payload["turn_detection"] = self._turn_detection_payload(self.session)
         if self.session.tools:
             payload["tools"] = list(self.session.tools)
         await self.send_event({"type": "session.update", "session": payload})
+
+    async def update_instructions(self, instructions: str) -> None:
+        """通话中只热更新 instructions，避免误改 turn_detection 导致整通卡死。"""
+        merged = instructions.strip()
+        current = self.session
+        self.session = RealtimeSessionConfig(
+            modalities=current.modalities,
+            voice=current.voice,
+            instructions=merged,
+            input_audio_format=current.input_audio_format,
+            output_audio_format=current.output_audio_format,
+            turn_detection_mode=current.turn_detection_mode,
+            vad_threshold=current.vad_threshold,
+            silence_duration_ms=current.silence_duration_ms,
+            tools=current.tools,
+        )
+        # 按官方约定：只传变更字段，未传字段保持原值
+        await self.send_event(
+            {
+                "type": "session.update",
+                "session": {"instructions": merged},
+            }
+        )
 
     async def inject_vision_context_and_respond(
         self,
@@ -207,18 +242,8 @@ class QwenAudioRealtimeClient:
             scene_description,
             source=source,
         )
-        updated = RealtimeSessionConfig(
-            modalities=self.session.modalities,
-            voice=self.session.voice,
-            instructions=merged,
-            input_audio_format=self.session.input_audio_format,
-            output_audio_format=self.session.output_audio_format,
-            turn_detection_mode=self.session.turn_detection_mode,
-            vad_threshold=self.session.vad_threshold,
-            silence_duration_ms=self.session.silence_duration_ms,
-            tools=self.session.tools,
-        )
-        await self.update_session(updated)
+        # 麦已上行后禁止再写 turn_detection，否则 session.update 整包失败、照片说不出
+        await self.update_instructions(merged)
         # 仅 create_response 可能不触发；补隐藏触发文本，勿当用户原话展示
         text = (trigger_text or VISION_INJECT_TRIGGER_TEXT).strip()
         await self.send_event(
