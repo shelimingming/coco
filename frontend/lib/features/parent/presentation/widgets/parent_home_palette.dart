@@ -58,3 +58,15 @@ String parentHomeGreeting(String name, [DateTime? now]) {
       : '晚上好';
   return '$period，$name';
 }
+
+/// 每次进入首页的 TTS 开场白：点小狗即可说话。
+String parentHomeVoiceGreeting(String name) {
+  final parts = parentHomeVoiceGreetingParts(name);
+  return '${parts.title}，${parts.subtitle}';
+}
+
+/// 开场白拆成两行，气泡主副文案与 TTS 共用。
+({String title, String subtitle}) parentHomeVoiceGreetingParts(String name) {
+  final who = name.trim().isEmpty ? '家人' : name.trim();
+  return (title: '$who，你好呀，我是可可', subtitle: '点我一下，想聊什么就直接说');
+}

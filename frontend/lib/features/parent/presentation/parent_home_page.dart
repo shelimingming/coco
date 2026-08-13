@@ -5,12 +5,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:just_audio/just_audio.dart';
 
+import '../../../core/audio/mp3_bytes_source.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../look/application/look_controller.dart';
+import '../../look/data/look_api.dart';
 import '../../look/domain/look_state.dart';
 import '../../notifications/application/notification_poller.dart';
 import '../../notifications/domain/models.dart';
@@ -23,6 +26,7 @@ import 'widgets/child_status_card.dart';
 import 'widgets/coco_companion_view.dart';
 import 'widgets/parent_call_transcript_panel.dart';
 import 'widgets/parent_caption_bubble.dart';
+import 'widgets/parent_greeting_bubble.dart';
 import 'widgets/parent_home_look_panel.dart';
 import 'widgets/parent_home_palette.dart';
 import 'widgets/parent_home_tool_bar.dart';
@@ -47,6 +51,20 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   /// 出场播完切待机；进语音时会被取消，避免盖住倾听/说话
   Timer? _entranceTimer;
 
+  /// 进首页时刻，用于等出场结束后再播开场白
+  DateTime? _enteredAt;
+
+  /// 开场 TTS 播放器；与 Realtime 通话音频分离
+  final AudioPlayer _greetingPlayer = AudioPlayer();
+
+  /// 递增以取消进行中的开场白（点说话 / 离页）
+  int _greetingGeneration = 0;
+
+  /// 开场白气泡：出场后展示，5 秒后自动收起
+  bool _showGreetingBubble = false;
+
+  Timer? _greetingBubbleTimer;
+
   /// 识图已注入语音，等可可开口后收起照片面板
   bool _awaitingVisionHandoff = false;
 
@@ -62,18 +80,25 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   @override
   void initState() {
     super.initState();
-    // 刚进首页：先出场一轮，再进入待机循环
-    WidgetsBinding.instance.addPostFrameCallback((_) => _playEntrance());
+    // 刚进首页：出场 + TTS 开场白引导点小狗说话
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _playEntrance();
+      unawaited(_playVoiceGreeting());
+    });
   }
 
   @override
   void dispose() {
     _entranceTimer?.cancel();
+    _greetingBubbleTimer?.cancel();
+    _greetingGeneration++;
+    unawaited(_greetingPlayer.dispose());
     super.dispose();
   }
 
   void _playEntrance() {
     if (!mounted) return;
+    _enteredAt = DateTime.now();
     ref.read(cocoCompanionPoseProvider.notifier).state =
         CocoCompanionPose.entrance;
     _entranceTimer?.cancel();
@@ -85,6 +110,95 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
             CocoCompanionPose.idle;
       }
     });
+  }
+
+  /// 每次挂载首页播一次开场白；失败静默，不挡使用。
+  Future<void> _playVoiceGreeting() async {
+    final generation = ++_greetingGeneration;
+    final name = ref.read(authControllerProvider).user?.displayName ?? '家人';
+    final text = parentHomeVoiceGreeting(name);
+
+    // TTS 与出场并行拉取；失败仍可出气泡引导
+    final speechFuture = ref
+        .read(audioApiProvider)
+        .speech(text)
+        .then<Uint8List?>((bytes) => bytes)
+        .catchError((_) => null);
+
+    // 等出场跑完再开口，避免跑动中抢话
+    final entered = _enteredAt ?? DateTime.now();
+    final wait =
+        CocoCompanionPoseAsset.entranceDuration -
+        DateTime.now().difference(entered);
+    if (wait > Duration.zero) {
+      await Future<void>.delayed(wait);
+    }
+    if (!_greetingStillActive(generation)) return;
+
+    _entranceTimer?.cancel();
+    // 气泡与 TTS 同步出现；气泡固定 5 秒，不跟音频时长
+    _revealGreetingBubble();
+    ref.read(cocoCompanionPoseProvider.notifier).state =
+        CocoCompanionPose.speaking;
+
+    final raw = await speechFuture;
+    if (!_greetingStillActive(generation)) return;
+
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        await _greetingPlayer.setAudioSource(Mp3BytesSource(raw));
+        if (!_greetingStillActive(generation)) return;
+        await _greetingPlayer.play();
+      } catch (_) {
+        // Web 自动播放策略或播放失败时忽略
+      }
+    }
+
+    // 音频先结束但气泡还在：保持说话姿态，等 5 秒定时器收回
+    if (mounted &&
+        generation == _greetingGeneration &&
+        !_showGreetingBubble &&
+        ref.read(cocoCompanionPoseProvider) == CocoCompanionPose.speaking &&
+        !ref.read(voiceCallControllerProvider).isActive) {
+      ref.read(cocoCompanionPoseProvider.notifier).state =
+          CocoCompanionPose.idle;
+    }
+  }
+
+  /// 展示开场气泡，5 秒后自动消失；若仍在说话姿态则切回待机。
+  void _revealGreetingBubble() {
+    _greetingBubbleTimer?.cancel();
+    setState(() => _showGreetingBubble = true);
+    _greetingBubbleTimer = Timer(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      setState(() => _showGreetingBubble = false);
+      // 气泡收起时若未进通话，说话姿态一并收回
+      if (ref.read(cocoCompanionPoseProvider) == CocoCompanionPose.speaking &&
+          !ref.read(voiceCallControllerProvider).isActive) {
+        ref.read(cocoCompanionPoseProvider.notifier).state =
+            CocoCompanionPose.idle;
+      }
+    });
+  }
+
+  void _hideGreetingBubble() {
+    _greetingBubbleTimer?.cancel();
+    if (_showGreetingBubble && mounted) {
+      setState(() => _showGreetingBubble = false);
+    }
+  }
+
+  bool _greetingStillActive(int generation) {
+    if (!mounted || generation != _greetingGeneration) return false;
+    final call = ref.read(voiceCallControllerProvider);
+    return !call.isActive && call.phase != VoiceCallPhase.error;
+  }
+
+  /// 用户主动开口或离开前打断开场白，避免与 Realtime 叠音。
+  void _cancelVoiceGreeting() {
+    _greetingGeneration++;
+    unawaited(_greetingPlayer.stop());
+    _hideGreetingBubble();
   }
 
   @override
@@ -283,6 +397,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                             inCall: inCall,
                             lookState: lookState,
                             captionVisible: _captionVisible,
+                            userName: name,
                           ),
                         ),
                       ),
@@ -428,6 +543,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     final inCall =
         callState.isActive || callState.phase == VoiceCallPhase.error;
 
+    // 进对话前打断开场白，避免与 Realtime 叠音
+    _cancelVoiceGreeting();
+
     if (inCall) {
       if (callState.phase == VoiceCallPhase.error) {
         callController.retry();
@@ -467,6 +585,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
 
   /// 取图识图 → 接通/复用 Realtime → 注入读图上下文。
   Future<void> _runLookAndHandoff(LookSource source) async {
+    // 看图也会进语音，先停开场白
+    _cancelVoiceGreeting();
+
     final lookController = ref.read(lookControllerProvider.notifier);
     final callController = ref.read(voiceCallControllerProvider.notifier);
     final callState = ref.read(voiceCallControllerProvider);
@@ -530,6 +651,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required bool inCall,
     required LookState lookState,
     required bool captionVisible,
+    required String userName,
   }) {
     // 首页原地识图优先于闲置可可（确认卡仍优先）；语音出错时让错误卡露出来
     final lookSession =
@@ -686,6 +808,10 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
           );
         }
 
+        final greetingParts = parentHomeVoiceGreetingParts(userName);
+        // 闲置时展示开场气泡；进通话 / 开「字」后不再叠
+        final showGreeting = _showGreetingBubble && !inCall && !showTranscript;
+
         return Stack(
           children: [
             // 开「字」时小狗再下沉，列表几乎铺满到工具栏上方
@@ -701,6 +827,20 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                 ),
               ),
             ),
+            if (showGreeting)
+              Positioned(
+                top: CocoSpace.s2,
+                left: 0,
+                right: 0,
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ParentGreetingBubble(
+                    palette: palette,
+                    title: greetingParts.title,
+                    subtitle: greetingParts.subtitle,
+                  ),
+                ),
+              ),
             if (showTranscript)
               Positioned(
                 top: 0,
