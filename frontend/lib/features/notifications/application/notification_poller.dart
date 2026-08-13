@@ -70,8 +70,8 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
 
   final Ref _ref;
   Timer? _timer;
-  // 报平安依赖前台轮询落卡；过长会感觉「没收到」
-  static const _interval = Duration(seconds: 8);
+  // 报平安/关怀消息依赖前台轮询落卡；过长会感觉「没收到」
+  static const _interval = Duration(seconds: 5);
   // 退后台期间为哪些提醒排过本地定时；回前台时 REMINDER 横幅去重
   Set<String> _scheduledWhileBackground = {};
   DateTime? _backgroundedAt;
