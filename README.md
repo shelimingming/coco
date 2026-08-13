@@ -109,18 +109,22 @@ flutter run -d "iPhone 17 Pro" \
 
 详见 [`frontend/README.md`](frontend/README.md)。
 
-## 虚机增量更新（无 Docker）
+## 虚机部署（无 Docker）
 
-首次部署完成后，用脚本把本机改动同步到虚机（默认 `106.13.135.10`，对外 **80**）：
+私钥放在 `scripts/coco-vm.key`（已 gitignore）。默认主机 `106.13.110.85`，对外 **80**。
 
 ```bash
+# 首次：Postgres + Nginx + systemd 骨架
+./scripts/setup_vm.sh
+
+# 同步代码 / 构建 Web / 迁移 / 重启
 ./scripts/deploy_vm.sh                 # 前后端
 ./scripts/deploy_vm.sh --backend-only  # 只后端
 ./scripts/deploy_vm.sh --web-only      # 只 Web
 ./scripts/deploy_vm.sh --host IP       # 换机器
 ```
 
-需本机已能 `ssh root@虚机`（建议密钥登录）。远端目录：`/opt/coco`，服务名：`coco`，访问：`http://虚机IP/`（安全组放行 80）。
+远端目录：`/opt/coco`，服务名：`coco`，访问：`http://虚机IP/`（根路径进双端演示页；安全组放行 80）。
 
 ## Docker 一体部署（Web + API）
 

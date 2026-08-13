@@ -11,9 +11,9 @@
 #   ./scripts/deploy_vm.sh --skip-sync-deps    # 跳过 uv sync（无依赖变更时）
 #
 # 环境变量（可选）：
-#   COCO_DEPLOY_HOST / COCO_DEPLOY_USER / COCO_DEPLOY_SSH_OPTS
+#   COCO_DEPLOY_HOST / COCO_DEPLOY_USER / COCO_DEPLOY_SSH_OPTS / COCO_DEPLOY_IDENTITY
 #
-# 前提：已能 ssh 登录虚机；远端已按无 Docker 方式装好 /opt/coco 与 coco.service。
+# 前提：已能 ssh 登录虚机；远端已跑过 ./scripts/setup_vm.sh（或等价首次装机）。
 # 同源部署：Web 使用空 COCO_API_BASE_URL。
 
 set -Eeuo pipefail
@@ -23,11 +23,19 @@ ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_DIR="${ROOT_DIR}/backend"
 FRONTEND_DIR="${ROOT_DIR}/frontend"
 
-DEPLOY_HOST="${COCO_DEPLOY_HOST:-106.13.135.10}"
+DEPLOY_HOST="${COCO_DEPLOY_HOST:-106.13.110.85}"
 DEPLOY_USER="${COCO_DEPLOY_USER:-root}"
-# 虚机对外端口（systemd 已监听 80）
+# 虚机对外端口（Nginx 监听 80，反代本机 8000）
 DEPLOY_PORT="${COCO_DEPLOY_PORT:-80}"
+DEFAULT_IDENTITY="${SCRIPT_DIR}/coco-vm.key"
+DEPLOY_IDENTITY="${COCO_DEPLOY_IDENTITY:-}"
+if [[ -z "${DEPLOY_IDENTITY}" && -f "${DEFAULT_IDENTITY}" ]]; then
+  DEPLOY_IDENTITY="${DEFAULT_IDENTITY}"
+fi
 SSH_OPTS="${COCO_DEPLOY_SSH_OPTS:--o StrictHostKeyChecking=accept-new}"
+if [[ -n "${DEPLOY_IDENTITY}" ]]; then
+  SSH_OPTS="${SSH_OPTS} -i ${DEPLOY_IDENTITY}"
+fi
 REMOTE_ROOT="/opt/coco"
 
 DEPLOY_BACKEND=1
@@ -63,6 +71,11 @@ parse_args() {
     case "$1" in
     --host) DEPLOY_HOST="${2:?--host 需要主机}"; shift 2 ;;
     --user) DEPLOY_USER="${2:?--user 需要用户名}"; shift 2 ;;
+    --identity)
+      DEPLOY_IDENTITY="${2:?--identity 需要私钥路径}"
+      SSH_OPTS="${COCO_DEPLOY_SSH_OPTS:--o StrictHostKeyChecking=accept-new} -i ${DEPLOY_IDENTITY}"
+      shift 2
+      ;;
     --backend-only) DEPLOY_BACKEND=1; DEPLOY_WEB=0; shift ;;
     --web-only) DEPLOY_BACKEND=0; DEPLOY_WEB=1; shift ;;
     --skip-migrate) SKIP_MIGRATE=1; shift ;;
@@ -130,8 +143,19 @@ remote_backend_apply() {
     cat <<EOF
 set -Eeuo pipefail
 export PATH="/root/.local/bin:\$PATH"
+# 国产镜像（uv.lock 含 files.pythonhosted.org 直链，需改写才能走镜像）
+export UV_DEFAULT_INDEX="https://pypi.tuna.tsinghua.edu.cn/simple"
+export UV_PYTHON_INSTALL_MIRROR="https://cdn.npmmirror.com/binaries/python-build-standalone"
+export UV_HTTP_TIMEOUT=180
 cd ${REMOTE_ROOT}/backend
 ln -sfn ${REMOTE_ROOT}/.env .env
+# 将官方 PyPI 文件域名替换为清华镜像（下次 rsync 会恢复，不影响本机锁文件）
+if [[ -f uv.lock ]]; then
+  sed -i \\
+    -e 's|https://files.pythonhosted.org|https://pypi.tuna.tsinghua.edu.cn|g' \\
+    -e 's|https://pypi.org/simple|https://pypi.tuna.tsinghua.edu.cn/simple|g' \\
+    uv.lock
+fi
 EOF
   )"
   if (( ! SKIP_SYNC_DEPS )); then
@@ -176,9 +200,14 @@ main() {
   parse_args "$@"
   need_cmds
 
+  if [[ -n "${DEPLOY_IDENTITY}" ]]; then
+    [[ -f "${DEPLOY_IDENTITY}" ]] || die "找不到私钥：${DEPLOY_IDENTITY}"
+    chmod 600 "${DEPLOY_IDENTITY}" || true
+  fi
+
   info "目标 ${DEPLOY_USER}@${DEPLOY_HOST} → ${REMOTE_ROOT}"
   ssh_cmd "test -d ${REMOTE_ROOT}/backend && test -d ${REMOTE_ROOT}/web" \
-    || die "远端尚未初始化。" "先完成首次无 Docker 部署后再用本脚本增量更新。"
+    || die "远端尚未初始化。" "先执行：./scripts/setup_vm.sh"
 
   if (( DEPLOY_WEB )); then
     build_web

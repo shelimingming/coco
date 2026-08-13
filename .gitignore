@@ -18,6 +18,11 @@
 docker.env
 Nginx/
 
+# 虚机 SSH 私钥（勿提交）
+scripts/coco-vm.key
+scripts/*.pem
+scripts/coco-k-*.txt
+
 # 旧参考工程，只读且体积大，不纳入版本库
 back/
 doc/可可_UI完整交付_v1
