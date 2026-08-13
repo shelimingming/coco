@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -323,23 +324,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                     inCall: inCall,
                     // 分析中禁用眼前/手机，减轻一屏多主操作
                     visionToolsEnabled: !lookAnalyzing,
-                    onTalkPressed: () {
-                      if (inCall) {
-                        if (callState.phase == VoiceCallPhase.error) {
-                          callController.retry();
-                        } else {
-                          callController.stop();
-                        }
-                        setState(() {
-                          _captionVisible = false;
-                          _awaitingVisionHandoff = false;
-                          _voiceStartedForLook = false;
-                        });
-                        lookController.clearAfterHandoff();
-                      } else {
-                        callController.start();
-                      }
-                    },
+                    onTalkPressed: _onTalkPressed,
                     onFrontPressed: () {
                       unawaited(_runLookAndHandoff(LookSource.camera));
                     },
@@ -423,9 +408,58 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   }
 
   void _showVisionPlaceholder(String label) {
+    // Web 无法实现看手机；原生端仍用即将支持的占位提示。
+    final message = kIsWeb
+        ? '"看手机"功能web端无法实现，请使用IOS体验完整功能'
+        : '$label即将支持，您可以先用「看照片」。';
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text('$label即将支持，您可以先用「看照片」。')));
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 底栏「说话」：未通话则开始；通话中再点则结束（出错则重试）。
+  void _onTalkPressed() {
+    final callState = ref.read(voiceCallControllerProvider);
+    final callController = ref.read(voiceCallControllerProvider.notifier);
+    final lookController = ref.read(lookControllerProvider.notifier);
+    final inCall =
+        callState.isActive || callState.phase == VoiceCallPhase.error;
+
+    if (inCall) {
+      if (callState.phase == VoiceCallPhase.error) {
+        callController.retry();
+      } else {
+        callController.stop();
+      }
+      setState(() {
+        _captionVisible = false;
+        _awaitingVisionHandoff = false;
+        _voiceStartedForLook = false;
+      });
+      lookController.clearAfterHandoff();
+    } else {
+      _entranceTimer?.cancel();
+      callController.start();
+    }
+  }
+
+  /// 点小狗：闲置时与「说话」相同开始对话；播报中打断；出错时重试。
+  /// 故意不在倾听/思考时挂断，避免大图误触结束通话。
+  void _onCompanionTapped() {
+    final callState = ref.read(voiceCallControllerProvider);
+    final callController = ref.read(voiceCallControllerProvider.notifier);
+
+    if (!callState.isActive && callState.phase != VoiceCallPhase.error) {
+      _onTalkPressed();
+      return;
+    }
+    if (callState.canInterrupt) {
+      unawaited(callController.interrupt());
+      return;
+    }
+    if (callState.phase == VoiceCallPhase.error) {
+      callController.retry();
+    }
   }
 
   /// 取图识图 → 接通/复用 Realtime → 注入读图上下文。
@@ -438,8 +472,10 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     if (wasInCall) {
       await callController.prepareForVisionLook();
     }
+    if (!mounted) return;
 
-    final result = await lookController.pick(source);
+    // Web「看眼前」要用 context 弹摄像头预览
+    final result = await lookController.pick(source, hostContext: context);
     if (!mounted) return;
     if (result == null) {
       // 取消选图或识图失败
@@ -652,8 +688,13 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
             Align(
               alignment: Alignment(0, showTranscript ? 0.78 : 0.48),
               child: Semantics(
+                button: true,
                 label: inCall ? callState.statusLabel : '和可可说话',
-                child: companion,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _onCompanionTapped,
+                  child: companion,
+                ),
               ),
             ),
             if (showTranscript)

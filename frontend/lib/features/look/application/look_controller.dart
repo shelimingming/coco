@@ -1,9 +1,11 @@
 import 'dart:typed_data';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/network/api_exception.dart';
+import '../data/camera_picker.dart';
 import '../data/look_api.dart';
 import '../data/screenshot_picker.dart';
 import '../domain/look_state.dart';
@@ -16,13 +18,18 @@ class LookController extends StateNotifier<LookState> {
   final Ref _ref;
   final ImagePicker _picker = ImagePicker();
   final ScreenshotPicker _screenshotPicker = createScreenshotPicker();
+  final CameraPicker _cameraPicker = createCameraPicker();
   int _opGen = 0;
 
   LookApi get _lookApi => _ref.read(lookApiProvider);
 
   /// 按来源取图，成功后自动识图。
+  /// [hostContext] 供 Web「看眼前」弹出摄像头预览；相册/截屏可不传。
   /// 分析中可再次选择：取消旧任务，以最后一次为准。
-  Future<LookResult?> pick(LookSource source) async {
+  Future<LookResult?> pick(
+    LookSource source, {
+    BuildContext? hostContext,
+  }) async {
     if (state.phase == LookPhase.analyzing) {
       // 打断进行中的分析；若用户取消相册，勿卡在 analyzing
       _opGen++;
@@ -34,7 +41,7 @@ class LookController extends StateNotifier<LookState> {
     }
 
     try {
-      final picked = await _pickBytes(source);
+      final picked = await _pickBytes(source, hostContext: hostContext);
       if (picked == null) return null;
 
       state = LookState(
@@ -54,21 +61,25 @@ class LookController extends StateNotifier<LookState> {
   }
 
   Future<({Uint8List bytes, String filename})?> _pickBytes(
-    LookSource source,
-  ) async {
+    LookSource source, {
+    BuildContext? hostContext,
+  }) async {
     switch (source) {
       case LookSource.camera:
-        final picked = await _picker.pickImage(
-          source: ImageSource.camera,
-          maxWidth: 1600,
-          maxHeight: 1600,
-          imageQuality: 85,
-        );
-        if (picked == null) return null;
-        return (
-          bytes: await picked.readAsBytes(),
-          filename: picked.name.isNotEmpty ? picked.name : 'camera.jpg',
-        );
+        // Web 需 context 弹预览；无 context 时无法开摄像头
+        final ctx = hostContext;
+        if (ctx == null || !ctx.mounted) {
+          _fail(title: '打不开相机', message: '请回到首页再点「看眼前」。');
+          return null;
+        }
+        final cam = await _cameraPicker.pick(context: ctx);
+        if (cam.isSuccess) {
+          return (bytes: cam.bytes!, filename: cam.filename ?? 'camera.jpg');
+        }
+        if (cam.errorMessage != null) {
+          _fail(title: '打不开相机', message: cam.errorMessage!);
+        }
+        return null;
       case LookSource.album:
         final picked = await _picker.pickImage(
           source: ImageSource.gallery,

@@ -87,7 +87,9 @@ class LookPage extends ConsumerWidget {
                   if (!state.isBusy)
                     _SourceButtons(
                       onPick: (source) {
-                        unawaited(controller.pick(source));
+                        unawaited(
+                          controller.pick(source, hostContext: context),
+                        );
                       },
                     ),
                 ],

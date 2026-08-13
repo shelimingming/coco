@@ -21,8 +21,8 @@ abstract final class CocoColors {
   static const Color parentSecondary = Color(0xFF7C6848);
   static const Color parentFocus = Color(0xFF784128);
 
-  /// 老人端首页：闲置工具圆底、字幕气泡；底栏用纯色 parentBackground，不再透底图。
-  static const Color parentHomeToolIdle = Color(0xFFFFFFFF);
+  /// 老人端首页闲置工具圆底：用 primarySoft 暖桃底，避免纯白贴奶油底发飘。
+  static const Color parentHomeToolIdle = parentPrimarySoft;
 
   /// 对话气泡约 72% 白，半透明贴合场景，与身份选择介绍气泡一致。
   static const Color parentHomeCaptionBubble = Color(0xB8FFFFFF);
