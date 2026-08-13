@@ -202,6 +202,7 @@ run_web_app() {
 
   ok "在 Chrome 上运行 Web（${FLUTTER_MODE}，API=${API_BASE}）"
   dim "麦克风需 localhost/HTTPS；开发验证码见 backend/.env 的 COCO_DEV_SMS_CODE（默认 246810）。"
+  dim "双端同屏演示：在地址栏改开 /presentation.html（长辈 / 子女左右对照）。"
   dim "按 q 退出，r 热重载。"
   cd "${FRONTEND_DIR}"
   flutter run \

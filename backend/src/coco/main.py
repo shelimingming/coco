@@ -11,7 +11,7 @@ from uuid import uuid4
 import structlog
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from coco import __version__
@@ -57,9 +57,14 @@ def _mount_web_static(app: FastAPI, settings: Settings) -> None:
             return None
         return candidate if candidate.is_file() else None
 
+    presentation = root / "presentation.html"
+
     @app.get("/")
-    async def web_index() -> FileResponse:
-        return FileResponse(index)
+    async def web_root() -> RedirectResponse:
+        # 域名根路径默认进双端演示页；单端 App 仍用 /index.html
+        if presentation.is_file():
+            return RedirectResponse(url="/presentation.html", status_code=302)
+        return RedirectResponse(url="/index.html", status_code=302)
 
     # 捕获前端资源与 go_router 深链；/health、/v1 已先注册，不会被盖住
     @app.get("/{full_path:path}")

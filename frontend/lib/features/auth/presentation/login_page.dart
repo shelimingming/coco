@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/tokens.dart';
+import '../../../core/web/presentation_slot.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_loading.dart';
 import '../application/auth_controller.dart';
@@ -28,7 +29,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   bool _requestingCode = false;
   bool _loggingIn = false;
 
+  /// presentation 双端演示：进入登录表单后填号、发码只跑一次（仍先展示身份选择）。
+  bool _presentationAutofillDone = false;
+
   static const _parentBgAsset = 'assets/images/onboarding/login_room_bg.png';
+  static const _presentationParentPhone = '13811111111';
+  static const _presentationChildPhone = '13822222222';
 
   @override
   void dispose() {
@@ -41,6 +47,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(authControllerProvider);
+
+    // 演示 iframe：身份选完后再预填手机号并自动获取验证码
+    _schedulePresentationAutofill(state);
 
     if (state.step == LoginStep.role) {
       return RoleSelectionPage(
@@ -97,6 +106,39 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       await ref.read(authControllerProvider.notifier).requestCode(phone);
     } finally {
       if (mounted) setState(() => _requestingCode = false);
+    }
+  }
+
+  void _schedulePresentationAutofill(AuthState state) {
+    if (readPresentationSlot() == null) return;
+    if (state.isAuthenticated) return;
+    // 回到身份选择后允许再次自动填号发码
+    if (state.step == LoginStep.role) {
+      _presentationAutofillDone = false;
+      return;
+    }
+    if (_presentationAutofillDone) return;
+    if (state.step != LoginStep.phone) return;
+
+    _presentationAutofillDone = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _runPresentationAutofill(state.selectedRole);
+    });
+  }
+
+  Future<void> _runPresentationAutofill(UserRole role) async {
+    final phone = role == UserRole.child
+        ? _presentationChildPhone
+        : _presentationParentPhone;
+
+    if (_phoneController.text.trim().isEmpty) {
+      _phoneController.text = phone;
+    }
+    // 尚未发过码时自动点「获取验证码」（开发环境会回填固定码）
+    if (ref.read(authControllerProvider).challenge == null &&
+        !_requestingCode) {
+      await _submitPhone();
     }
   }
 

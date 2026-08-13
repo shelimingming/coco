@@ -38,6 +38,7 @@ Web 说明：
 
 - 麦克风需要安全上下文（`localhost` 或 HTTPS）。
 - 桌面以约 520px 手机壳居中；提醒不做浏览器后台定时，依赖前台轮询与站内卡片。
+- **双端同屏演示**：一体部署时访问域名根路径会跳到 `/presentation.html`；左右 iframe 分别带 `presentation_slot=parent` / `child`，登录态互不覆盖（仅 Web `localStorage` 隔离，不影响 iOS）。先选身份，再自动填演示手机号并发验证码。
 - 生产环境请将后端 `COCO_CORS_ALLOWED_ORIGINS` 收成具体 Web 域名（开发可用 `*`）。
 - 一体上线：仓库根目录 `docker build` / `docker run`（见根 README「Docker 一体部署」）。
 

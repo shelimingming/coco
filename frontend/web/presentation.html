@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="可可双端演示：长辈与子女同屏对照">
+  <title>可可(AI关怀助手)· 双端演示</title>
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <style>
+    :root {
+      --bg: #f3efe9;
+      --ink: #26231f;
+      --muted: #5d574f;
+      --parent: #c85f36;
+      --child: #28786b;
+      --frame: #ffffff;
+      --shadow: rgba(0, 0, 0, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background:
+        radial-gradient(1200px 600px at 20% -10%, #fff8ed 0%, transparent 55%),
+        radial-gradient(1000px 500px at 90% 10%, #e6f2f0 0%, transparent 50%),
+        var(--bg);
+      color: var(--ink);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
+        "Microsoft YaHei", sans-serif;
+    }
+
+    .page {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 24px 28px;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px 20px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 42em;
+    }
+
+    .stage {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+    }
+
+    .dot.parent { background: var(--parent); }
+    .dot.child { background: var(--child); }
+
+    .frame {
+      flex: 1;
+      min-height: 520px;
+      border: 0;
+      border-radius: 20px;
+      background: var(--frame);
+      box-shadow: 0 18px 40px var(--shadow);
+      overflow: hidden;
+    }
+
+    @media (max-width: 900px) {
+      .stage {
+        grid-template-columns: 1fr;
+      }
+
+      .frame {
+        min-height: 640px;
+        height: 78vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- 同域双 iframe + presentation_slot，登录态写入隔离的 localStorage key -->
+  <div class="page">
+    <header>
+      <h1>可可(AI关怀助手)· 双端演示</h1>
+      <p>web端仅用于演示，完整功能使用IOS端</p>
+    </header>
+    <div class="stage">
+      <section class="panel" aria-label="长辈端">
+        <div class="label"><span class="dot parent" aria-hidden="true"></span>长辈端</div>
+        <iframe
+          class="frame"
+          title="长辈端"
+          src="./index.html?presentation_slot=parent"
+          allow="microphone; autoplay; clipboard-write"
+        ></iframe>
+      </section>
+      <section class="panel" aria-label="子女端">
+        <div class="label"><span class="dot child" aria-hidden="true"></span>子女端</div>
+        <iframe
+          class="frame"
+          title="子女端"
+          src="./index.html?presentation_slot=child"
+          allow="microphone; autoplay; clipboard-write"
+        ></iframe>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

@@ -105,6 +105,8 @@ flutter run -d "iPhone 17 Pro" \
 ./scripts/dev_web.sh
 ```
 
+双端同屏演示：一体部署时打开域名根路径即进 `/presentation.html`；本地 `flutter run` 可手动打开该页。
+
 详见 [`frontend/README.md`](frontend/README.md)。
 
 ## 虚机增量更新（无 Docker）
@@ -134,7 +136,8 @@ docker run --rm -p 8000:8000 --env-file docker.env \
   coco:latest
 ```
 
-- 应用：http://127.0.0.1:8000
+- 应用：http://127.0.0.1:8000 （根路径跳转 `/presentation.html` 双端演示）
+- 单端 Web：http://127.0.0.1:8000/index.html
 - 健康检查：http://127.0.0.1:8000/health
 - 开发验证码：`246810`（`COCO_SMS_PROVIDER=dev` 时）
 - 启动时会执行 `alembic upgrade head`；库与账号需事先就绪

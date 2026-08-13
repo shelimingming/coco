@@ -21,4 +21,5 @@ Nginx/
 # 旧参考工程，只读且体积大，不纳入版本库
 back/
 doc/可可_UI完整交付_v1
+doc/可可_UI完整交付_v2
 diagrams/
