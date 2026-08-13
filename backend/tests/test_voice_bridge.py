@@ -147,3 +147,17 @@ def test_redact_realtime_event_hides_audio() -> None:
     redacted = redact_realtime_event({"type": "response.audio.delta", "delta": audio_b64})
     assert "secret-audio" not in str(redacted)
     assert "omitted" in redacted["delta"]
+
+
+def test_merge_vision_instructions_for_inject() -> None:
+    """vision.inject 依赖的照片块拼接可单测，不打真实 WebSocket。"""
+    from coco.modules.voice.prompts import merge_instructions_with_vision
+
+    merged = merge_instructions_with_vision(
+        "基线陪伴规则",
+        "桌上有一杯茶",
+        source="album",
+    )
+    assert "基线陪伴规则" in merged
+    assert "桌上有一杯茶" in merged
+    assert "当前照片上下文" in merged

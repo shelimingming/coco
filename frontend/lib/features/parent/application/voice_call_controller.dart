@@ -44,6 +44,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
   bool _started = false;
   bool _sessionReady = false;
   String _assistantAccum = '';
+  Completer<bool>? _readyWaiter;
 
   Future<void> start() async {
     if (_started || state.isActive) return;
@@ -89,6 +90,88 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
         message: '网络或语音服务暂时不可用。您可以稍后再试，刚才没有录下任何声音。',
       );
     }
+  }
+
+  /// 已接通则立即返回；否则 start 并等到 session.ready（或失败）。
+  Future<bool> ensureStarted() async {
+    if (_sessionReady && state.isActive) return true;
+    if (state.phase == VoiceCallPhase.error) {
+      await _teardown(resetToIdle: true);
+    }
+    if (!_started) {
+      final waiter = Completer<bool>();
+      _readyWaiter = waiter;
+      await start();
+      if (_sessionReady && state.isActive) {
+        _completeReadyWaiter(true);
+        return true;
+      }
+      if (state.phase == VoiceCallPhase.error) {
+        _completeReadyWaiter(false);
+        return false;
+      }
+      return waiter.future;
+    }
+    if (_sessionReady && state.isActive) return true;
+    if (state.phase == VoiceCallPhase.error) return false;
+    final waiter = Completer<bool>();
+    _readyWaiter = waiter;
+    return waiter.future;
+  }
+
+  void _completeReadyWaiter(bool ok) {
+    final waiter = _readyWaiter;
+    _readyWaiter = null;
+    if (waiter != null && !waiter.isCompleted) {
+      waiter.complete(ok);
+    }
+  }
+
+  /// 识图开始前：打断播报并抑制麦克风，避免抢话。
+  Future<void> prepareForVisionLook() async {
+    if (!_started) return;
+    _mic.suppress = true;
+    try {
+      await _socket.cancelResponse();
+    } catch (_) {}
+    await _player.clear();
+    _assistantAccum = '';
+    if (state.isActive) {
+      state = state.copyWith(
+        phase: VoiceCallPhase.listening,
+        assistantCaption: '',
+      );
+      _syncPose(VoiceCallPhase.listening);
+    }
+  }
+
+  /// 识图期间暂时不把麦克风上行发给模型，避免抢话。
+  void setMicSuppressed(bool suppressed) {
+    _mic.suppress = suppressed;
+  }
+
+  /// 注入读图上下文并让可可开口；须已 ensureStarted。
+  Future<void> injectVisionContext({
+    required String sceneDescription,
+    String? source,
+  }) async {
+    if (!_sessionReady || !_started) return;
+    final scene = sceneDescription.trim();
+    if (scene.isEmpty) return;
+    try {
+      await _socket.cancelResponse();
+    } catch (_) {}
+    await _player.clear();
+    _assistantAccum = '';
+    // 注入后等模型开口；播报时仍由 assistant.audio 抑制麦克风
+    _mic.suppress = false;
+    state = state.copyWith(
+      phase: VoiceCallPhase.thinking,
+      userCaption: '',
+      assistantCaption: '',
+    );
+    _syncPose(VoiceCallPhase.thinking);
+    await _socket.injectVisionContext(sceneDescription: scene, source: source);
   }
 
   Future<void> stop() async {
@@ -155,6 +238,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
       case 'session.ready':
         _sessionReady = true;
         _readyTimeout?.cancel();
+        _completeReadyWaiter(true);
         state = state.copyWith(
           phase: VoiceCallPhase.listening,
           clearError: true,
@@ -286,6 +370,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
   }
 
   Future<void> _fail({required String title, required String message}) async {
+    _completeReadyWaiter(false);
     await _teardown(resetToIdle: false);
     state = VoiceCallState(
       phase: VoiceCallPhase.error,
@@ -300,6 +385,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
     _sessionReady = false;
     _assistantAccum = '';
     _mic.suppress = false;
+    _completeReadyWaiter(false);
     _readyTimeout?.cancel();
     _readyTimeout = null;
     await _micSub?.cancel();

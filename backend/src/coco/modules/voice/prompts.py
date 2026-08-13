@@ -58,8 +58,7 @@ def build_companion_instructions(
     if child_name is not None:
         bound = child_name.strip() or "家人"
         family_block = (
-            f"已绑定子女：姓名「{bound}」。"
-            "谈及家人或分享时可自然使用该称呼，勿编造其他子女姓名。"
+            f"已绑定子女：姓名「{bound}」。谈及家人或分享时可自然使用该称呼，勿编造其他子女姓名。"
         )
     else:
         family_block = "尚未绑定子女；谈及具体子女姓名时勿编造。"
@@ -87,3 +86,63 @@ def build_companion_instructions(
     return (
         f"{COCO_REALTIME_COMPANION_PROMPT}\n\n{profile_block}\n\n{family_block}\n\n{memory_block}"
     )
+
+
+# 读图上下文上限，避免撑爆 Realtime instructions
+_VISION_SCENE_MAX_CHARS = 1200
+
+_SOURCE_LABELS = {
+    "album": "相册照片",
+    "camera": "眼前实拍",
+    "screenshot": "手机截屏",
+}
+
+
+def build_vision_context_block(
+    scene_description: str,
+    *,
+    source: str | None = None,
+) -> str:
+    """拼进 session.instructions 的照片块；换图时整块替换，不累加。"""
+    scene = (scene_description or "").strip()
+    if len(scene) > _VISION_SCENE_MAX_CHARS:
+        scene = scene[:_VISION_SCENE_MAX_CHARS] + "…"
+    if not scene:
+        scene = "（读图结果为空，请诚实说看不太清。）"
+
+    source_key = (source or "").strip().lower()
+    source_label = _SOURCE_LABELS.get(source_key, "一张照片")
+
+    return f"""
+【当前照片上下文】（系统读图结果，不是用户原话；换图时整块替换）
+来源：{source_label}
+读图内容：
+{scene}
+
+关于这张照片：
+1. 用户刚把这张图交给你看。请先用一两句口语说明你看到了什么，再自然等对方追问。
+2. 只依据上述读图内容，图上没有的不要编造。
+3. 药盒文字、账单、验证码、一次性通知等不要调用 save_memory。
+4. 不做医疗诊断或剂量建议；不把未知链接判为绝对安全。
+""".strip()
+
+
+def merge_instructions_with_vision(
+    base_instructions: str,
+    scene_description: str,
+    *,
+    source: str | None = None,
+) -> str:
+    """在陪伴基线 instructions 上附加（或替换）照片块。"""
+    base = (base_instructions or "").strip()
+    vision_block = build_vision_context_block(scene_description, source=source)
+    if not base:
+        return vision_block
+    return f"{base}\n\n{vision_block}"
+
+
+# 触发可可开口：不作为用户字幕转发（桥接侧会抑制 user.final）
+VISION_INJECT_TRIGGER_TEXT = (
+    "（系统：用户刚把一张照片交给你看。请根据当前照片上下文，"
+    "用一两句口语说说你看到了什么，然后等用户继续说。）"
+)

@@ -146,11 +146,7 @@ async def resolve_ws_user(
 async def _active_bound_child_name(session: AsyncSession, user: User) -> str | None:
     """已 active 绑定则返回子女昵称（可能为空串）；未绑定返回 None。"""
     family = await get_family(session, user)
-    if (
-        family is None
-        or family.child_user_id is None
-        or family.status != FamilyStatus.ACTIVE.value
-    ):
+    if family is None or family.child_user_id is None or family.status != FamilyStatus.ACTIVE.value:
         return None
     child = await session.get(User, family.child_user_id)
     return (child.display_name if child else None) or ""
@@ -169,9 +165,7 @@ async def _load_companion_instructions(user_id: UUID) -> str:
             memories = await MemoryService().list_for_user(session, user=user)
         except AppError:
             logger.warning("load_memories_for_voice_failed user_id=%s", user_id)
-            return build_companion_instructions(
-                [], user_name=name, child_name=child_name
-            )
+            return build_companion_instructions([], user_name=name, child_name=child_name)
         return build_companion_instructions(
             [m.content for m in memories],
             user_name=name,
@@ -226,8 +220,10 @@ def is_recoverable_vendor_error(event: dict[str, Any]) -> bool:
         return True
     if "no active response" in text or "no response to cancel" in text:
         return True
-    if err_type == "invalid_request_error" and "response" in text and (
-        "progress" in text or "cancel" in text
+    if (
+        err_type == "invalid_request_error"
+        and "response" in text
+        and ("progress" in text or "cancel" in text)
     ):
         return True
     return False
@@ -552,7 +548,57 @@ async def _consume_client_events(
                     pending_store=pending_store,
                 )
             continue
+        if event_type == "vision.inject":
+            await _inject_vision_from_client(websocket, vendor, event)
+            continue
         # 忽略未知上行事件，避免供应商协议泄漏到客户端约定。
+
+
+async def _inject_vision_from_client(
+    websocket: WebSocket,
+    vendor: QwenAudioRealtimeClient,
+    event: dict[str, Any],
+) -> None:
+    """把多模态读图结果写入 Realtime instructions 并触发可可开口。"""
+    scene = event.get("scene_description")
+    if not isinstance(scene, str) or not scene.strip():
+        await _send_json(
+            websocket,
+            _client_event(
+                "error",
+                code="realtime.vision_empty",
+                message="照片内容没传过来。请再选一张照片试试。",
+            ),
+        )
+        return
+    source = event.get("source")
+    source_str = source.strip() if isinstance(source, str) else None
+    # 打断当前播报，再注入新图上下文
+    with contextlib.suppress(Exception):
+        await vendor.cancel_response()
+    try:
+        await vendor.inject_vision_context_and_respond(
+            scene_description=scene.strip(),
+            source=source_str,
+        )
+    except Exception:
+        logger.exception("realtime_vision_inject_failed")
+        await _send_json(
+            websocket,
+            _client_event(
+                "error",
+                code="realtime.vision_inject_failed",
+                message="照片看完了，但没接上语音。您可以再点「说话」继续聊。",
+            ),
+        )
+        return
+    await _send_json(
+        websocket,
+        _client_event(
+            "vision.injected",
+            source=source_str,
+        ),
+    )
 
 
 async def _confirm_pending_from_screen(

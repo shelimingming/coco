@@ -19,17 +19,19 @@ logger = logging.getLogger(__name__)
 Confidence = Literal["high", "low"]
 
 _LOOK_SYSTEM = """
-你是 Coco，帮助老人看懂眼前的照片（包装、纸张、手机截图、按钮等）。
+你是 Coco，帮助老人看懂眼前的照片（包装、纸张、手机截图、实物、按钮等）。
+你的输出会交给语音陪伴模型当上下文，不是直接念给老人听的短结论。
 必须遵守：
-1. 只根据图片可见内容作答，看不清就说看不清（confidence=low），不要猜测。
+1. 只根据图片可见内容描述，看不清就写清「看不清」之处（confidence=low），不要猜测。
 2. 不做医疗诊断，不解释药效，不建议剂量或停药；可读出药盒上的文字。
 3. 不把未知链接、陌生通知判定为绝对安全。
-4. 不写入记忆、不创建提醒、不联系家人；只解释眼前这张图。
-5. 语气亲切、简短、口语化；headline 最多两行大字结论。
-6. 只输出一个 JSON 对象，不要 markdown 代码块，不要解释。字段：
+4. 不写入记忆、不创建提醒、不联系家人；只描述眼前这张图。
+5. 只输出一个 JSON 对象，不要 markdown 代码块，不要解释。字段：
    - confidence: "high" 或 "low"
-   - headline: 大字结论（看不清时用空字符串）
-   - detail: 一句话说明
+   - scene_description: 详细场景描述（人物/物体/布局/颜色/图上文字 OCR；
+     看不清的部分明确写出；约 80～300 字，供语音模型转述）
+   - headline: 一两句大字结论（看不清时用空字符串）
+   - detail: 一句话补充说明
    - safety_note: 必要安全提示，没有则空字符串
 """.strip()
 
@@ -51,6 +53,8 @@ class LookResult:
     headline: str
     detail: str
     safety_note: str
+    # 给 Realtime 语音注入用的详细读图文本
+    scene_description: str = ""
 
 
 class QwenVisionClient:
@@ -205,29 +209,38 @@ def parse_look_content(raw: str) -> LookResult:
     headline = str(data.get("headline") or "").strip()
     detail = str(data.get("detail") or "").strip()
     safety_note = str(data.get("safety_note") or "").strip()
+    scene_description = str(data.get("scene_description") or "").strip()
 
     if confidence == "low":
         # 看不清时不展示可能误导的结论
         headline = ""
         if not detail:
             detail = "我看不太清这上面的字。"
-    elif not headline and not detail:
+    elif not headline and not detail and not scene_description:
         confidence = "low"
         detail = "我看不太清这上面的字。"
+
+    # 模型偶发漏写 scene_description：用 headline+detail 兜底，保证可注入语音
+    if not scene_description:
+        parts = [p for p in (headline, detail, safety_note) if p]
+        scene_description = " ".join(parts) if parts else "我看不太清这上面的字。"
 
     return LookResult(
         confidence=confidence,
         headline=headline,
         detail=detail,
         safety_note=safety_note,
+        scene_description=scene_description,
     )
 
 
 def unclear_look_result() -> LookResult:
     """无 Key / 调用失败时的看不清兜底，不假装成功。"""
+    unclear = "我现在看不太清。您可以重新拍一张，或请家人帮忙看。"
     return LookResult(
         confidence="low",
         headline="",
-        detail="我现在看不太清。您可以重新拍一张，或请家人帮忙看。",
+        detail=unclear,
         safety_note="",
+        scene_description=unclear,
     )

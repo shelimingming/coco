@@ -100,6 +100,7 @@ class VisionService:
             headline=result.headline,
             detail=result.detail,
             safety_note=result.safety_note,
+            scene_description=result.scene_description,
             conversation_id=conversation_id,
         )
 
@@ -274,6 +275,7 @@ class VisionService:
                         "headline": result.headline,
                         "detail": result.detail,
                         "safety_note": result.safety_note,
+                        "scene_description": result.scene_description,
                     },
                     display_summary=summary,
                 )
@@ -344,7 +346,7 @@ class VisionService:
 
 
 def _spoken_from_look(result: LookResult) -> str:
-    """把结构化识图结果拼成可朗读短句。"""
+    """落库用短句：优先 headline+detail；无则截断 scene_description。"""
     parts: list[str] = []
     if result.headline.strip():
         parts.append(result.headline.strip())
@@ -352,6 +354,9 @@ def _spoken_from_look(result: LookResult) -> str:
         parts.append(result.detail.strip())
     if result.safety_note.strip():
         parts.append(result.safety_note.strip())
-    if not parts:
-        return "我看不太清这上面的字。您可以重新拍一张。"
-    return " ".join(parts)
+    if parts:
+        return " ".join(parts)
+    scene = result.scene_description.strip()
+    if scene:
+        return scene if len(scene) <= 200 else scene[:200] + "…"
+    return "我看不太清这上面的字。您可以重新拍一张。"

@@ -13,6 +13,8 @@ class LookResponse(BaseModel):
     headline: str = ""
     detail: str
     safety_note: str = ""
+    # 注入 Realtime 语音的详细读图文本（非直接 TTS）
+    scene_description: str = ""
     # 历史会话 id；仅文本摘要入历史，不含图片
     conversation_id: UUID | None = None
 

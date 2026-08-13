@@ -67,3 +67,31 @@ def test_truncates_by_count_and_chars() -> None:
     assert text.count("- 记忆条目") <= 30
     memory_section = text.split("已知用户记忆", 1)[1]
     assert len(memory_section) < 2000
+
+
+def test_vision_context_block_and_merge() -> None:
+    from coco.modules.voice.prompts import (
+        VISION_INJECT_TRIGGER_TEXT,
+        build_vision_context_block,
+        merge_instructions_with_vision,
+    )
+
+    block = build_vision_context_block(
+        "一张红烧肉照片，盘子在桌上。",
+        source="album",
+    )
+    assert "当前照片上下文" in block
+    assert "相册照片" in block
+    assert "红烧肉" in block
+    assert "不要调用 save_memory" in block
+
+    base = build_companion_instructions([], user_name="王奶奶")
+    merged = merge_instructions_with_vision(base, "药盒标签写着阿司匹林", source="camera")
+    assert "王奶奶" in merged
+    assert "眼前实拍" in merged
+    assert "阿司匹林" in merged
+    # 换图：再 merge 仍以 base 为底，不累加旧照片块
+    merged2 = merge_instructions_with_vision(base, "一盆绿植", source="camera")
+    assert "绿植" in merged2
+    assert "阿司匹林" not in merged2
+    assert "系统：用户刚把一张照片" in VISION_INJECT_TRIGGER_TEXT

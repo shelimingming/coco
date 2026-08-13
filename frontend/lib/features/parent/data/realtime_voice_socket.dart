@@ -147,6 +147,24 @@ class RealtimeVoiceSocket {
     );
   }
 
+  /// 把多模态读图结果注入当前 Realtime 会话，触发可可开口讲照片。
+  Future<void> injectVisionContext({
+    required String sceneDescription,
+    String? source,
+  }) async {
+    final channel = _channel;
+    if (channel == null) return;
+    final scene = sceneDescription.trim();
+    if (scene.isEmpty) return;
+    channel.sink.add(
+      jsonEncode({
+        'type': 'vision.inject',
+        'scene_description': scene,
+        if (source != null && source.isNotEmpty) 'source': source,
+      }),
+    );
+  }
+
   Future<void> endSession() async {
     final channel = _channel;
     if (channel == null) return;

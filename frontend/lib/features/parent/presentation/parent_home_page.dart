@@ -46,6 +46,12 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   /// 出场播完切待机；进语音时会被取消，避免盖住倾听/说话
   Timer? _entranceTimer;
 
+  /// 识图已注入语音，等可可开口后收起照片面板
+  bool _awaitingVisionHandoff = false;
+
+  /// 本次为看图新开的通话；识图失败时挂断，避免空连
+  bool _voiceStartedForLook = false;
+
   /// 底栏「我在呢」两行文案所需高度（含底 padding），进对话后文案变短也占同一槽位
   static const double _bottomCopySlotHeight = 96;
 
@@ -100,10 +106,31 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     final voicePending = inCall && callState.pendingAction != null;
     final lookState = ref.watch(lookControllerProvider);
     final lookController = ref.read(lookControllerProvider.notifier);
-    // 首页原地识图：有图或失败提示时占用中间区
+    // 分析中 / 待交接 / 失败时占用中间区；可可开口后 clear
     final lookSession =
-        lookState.hasImage || lookState.phase == LookPhase.error;
+        lookState.phase == LookPhase.analyzing ||
+        lookState.phase == LookPhase.ready ||
+        lookState.phase == LookPhase.error;
     final lookAnalyzing = lookState.phase == LookPhase.analyzing;
+
+    // 识图注入后：可可一开口就收起照片，回到说话 UI
+    ref.listen<VoiceCallState>(voiceCallControllerProvider, (prev, next) {
+      if (!_awaitingVisionHandoff) return;
+      if (next.phase == VoiceCallPhase.speaking ||
+          next.phase == VoiceCallPhase.listening) {
+        if (prev?.phase == VoiceCallPhase.thinking ||
+            prev?.phase == VoiceCallPhase.connecting ||
+            lookState.phase == LookPhase.ready) {
+          _awaitingVisionHandoff = false;
+          _voiceStartedForLook = false;
+          lookController.clearAfterHandoff();
+        }
+      }
+      if (next.phase == VoiceCallPhase.error) {
+        _awaitingVisionHandoff = false;
+      }
+    });
+
     final palette = ParentHomePalette.standard;
     final greeting = parentHomeGreeting(name);
     // 默认对话不叠气泡；仅「字」开时展示本通记录；识图结果也跟「字」
@@ -303,15 +330,22 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                         } else {
                           callController.stop();
                         }
-                        setState(() => _captionVisible = false);
+                        setState(() {
+                          _captionVisible = false;
+                          _awaitingVisionHandoff = false;
+                          _voiceStartedForLook = false;
+                        });
+                        lookController.clearAfterHandoff();
                       } else {
                         callController.start();
                       }
                     },
-                    onFrontPressed: () => _showVisionPlaceholder('看眼前'),
+                    onFrontPressed: () {
+                      unawaited(_runLookAndHandoff(LookSource.camera));
+                    },
                     onPhonePressed: () => _showVisionPlaceholder('看手机'),
                     onPhotoPressed: () {
-                      unawaited(lookController.pick(LookSource.album));
+                      unawaited(_runLookAndHandoff(LookSource.album));
                     },
                   ),
                 ],
@@ -394,6 +428,56 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     ).showSnackBar(SnackBar(content: Text('$label即将支持，您可以先用「看照片」。')));
   }
 
+  /// 取图识图 → 接通/复用 Realtime → 注入读图上下文。
+  Future<void> _runLookAndHandoff(LookSource source) async {
+    final lookController = ref.read(lookControllerProvider.notifier);
+    final callController = ref.read(voiceCallControllerProvider.notifier);
+    final callState = ref.read(voiceCallControllerProvider);
+    final wasInCall = callState.isActive;
+
+    if (wasInCall) {
+      await callController.prepareForVisionLook();
+    }
+
+    final result = await lookController.pick(source);
+    if (!mounted) return;
+    if (result == null) {
+      // 取消选图或识图失败
+      if (wasInCall) {
+        callController.setMicSuppressed(false);
+      }
+      final look = ref.read(lookControllerProvider);
+      if (look.phase == LookPhase.error && _voiceStartedForLook && !wasInCall) {
+        await callController.stop();
+        _voiceStartedForLook = false;
+      }
+      return;
+    }
+
+    if (!wasInCall) {
+      _voiceStartedForLook = true;
+    }
+
+    final ok = await callController.ensureStarted();
+    if (!mounted) return;
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('照片看完了，但没接上语音。您可以再点「说话」继续聊。')),
+        );
+      }
+      lookController.clearAfterHandoff();
+      _voiceStartedForLook = false;
+      return;
+    }
+
+    _awaitingVisionHandoff = true;
+    await callController.injectVisionContext(
+      sceneDescription: result.sceneDescription,
+      source: source.wireName,
+    );
+  }
+
   Widget _buildCenter({
     required VoiceCallState callState,
     required VoiceCallController callController,
@@ -410,15 +494,14 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   }) {
     // 首页原地识图优先于闲置可可（确认卡仍优先）
     final lookSession =
-        lookState.hasImage || lookState.phase == LookPhase.error;
+        lookState.phase == LookPhase.analyzing ||
+        lookState.phase == LookPhase.ready ||
+        lookState.phase == LookPhase.error;
     if (lookSession &&
         !voicePending &&
         (pendingSuggestion == null &&
             pendingReminder == null &&
             pendingChildStatus == null)) {
-      final caption = lookState.replyText.trim().isNotEmpty
-          ? lookState.replyText
-          : lookState.headline;
       final errorText = lookState.phase == LookPhase.error
           ? [
               if (lookState.errorTitle != null) lookState.errorTitle!,
@@ -453,10 +536,13 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
       return ParentHomeLookPanel(
         palette: palette,
         imageBytes: lookState.imageBytes!,
-        analyzing: lookState.phase == LookPhase.analyzing,
-        showCaption: captionVisible,
-        captionText: caption,
+        analyzing:
+            lookState.phase == LookPhase.analyzing ||
+            lookState.phase == LookPhase.ready,
+        showCaption: false,
+        captionText: '',
         errorMessage: errorText,
+        statusHint: lookState.phase == LookPhase.ready ? '看完了，接着和您说' : null,
       );
     }
 

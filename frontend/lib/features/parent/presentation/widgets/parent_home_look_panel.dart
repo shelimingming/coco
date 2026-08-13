@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/tokens.dart';
 import 'parent_home_palette.dart';
 
-/// 首页原地识图区：照片框 +「可可正在看」临时条 + 可选结果文字。
+/// 首页原地识图区：照片框 +「可可正在看」临时条；结论改由语音「字」展示。
 class ParentHomeLookPanel extends StatelessWidget {
   const ParentHomeLookPanel({
     super.key,
@@ -70,6 +70,7 @@ class ParentHomeLookPanel extends StatelessWidget {
               ),
             ),
           ],
+          // 结论跟语音「字」开关，识图面板不再叠结论气泡
           if (showCaption && captionText.trim().isNotEmpty) ...[
             const SizedBox(height: CocoSpace.s4),
             Container(

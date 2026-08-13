@@ -73,6 +73,8 @@ class QwenAudioRealtimeClient:
         self._open_timeout_seconds = open_timeout_seconds
         self._ws: ClientConnection | None = None
         self._event_seq = 0
+        # 建连时的陪伴基线；识图注入只在之上替换照片块，不丢记忆/规则
+        self._base_instructions = self.session.instructions
 
     @property
     def connected(self) -> bool:
@@ -182,6 +184,54 @@ class QwenAudioRealtimeClient:
         if self.session.tools:
             payload["tools"] = list(self.session.tools)
         await self.send_event({"type": "session.update", "session": payload})
+
+    async def inject_vision_context_and_respond(
+        self,
+        *,
+        scene_description: str,
+        source: str | None = None,
+        trigger_text: str | None = None,
+    ) -> None:
+        """用读图结果更新 instructions（替换上一张），再触发一轮口语回复。
+
+        附带一条短 user 文本触发 response.create；调用方应抑制其 user.final 字幕。
+        """
+        from coco.modules.voice.prompts import (
+            VISION_INJECT_TRIGGER_TEXT,
+            merge_instructions_with_vision,
+        )
+
+        base = self._base_instructions or self.session.instructions
+        merged = merge_instructions_with_vision(
+            base,
+            scene_description,
+            source=source,
+        )
+        updated = RealtimeSessionConfig(
+            modalities=self.session.modalities,
+            voice=self.session.voice,
+            instructions=merged,
+            input_audio_format=self.session.input_audio_format,
+            output_audio_format=self.session.output_audio_format,
+            turn_detection_mode=self.session.turn_detection_mode,
+            vad_threshold=self.session.vad_threshold,
+            silence_duration_ms=self.session.silence_duration_ms,
+            tools=self.session.tools,
+        )
+        await self.update_session(updated)
+        # 仅 create_response 可能不触发；补隐藏触发文本，勿当用户原话展示
+        text = (trigger_text or VISION_INJECT_TRIGGER_TEXT).strip()
+        await self.send_event(
+            {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": text}],
+                },
+            }
+        )
+        await self.create_response()
 
     async def send_event(self, event: Mapping[str, Any]) -> None:
         ws = self._require_ws()
