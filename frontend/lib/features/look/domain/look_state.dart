@@ -86,7 +86,7 @@ class LookState {
   String get statusLabel => switch (phase) {
     LookPhase.idle when !hasImage => '选一张图，我帮你看',
     LookPhase.idle => '想继续问，直接说就行',
-    LookPhase.analyzing => '可可正在看…',
+    LookPhase.analyzing => '可可正在看',
     LookPhase.listening => '正在听您说',
     LookPhase.thinking => '我想一想',
     LookPhase.speaking => '我在说',
@@ -97,7 +97,7 @@ class LookState {
     LookPhase.listening => '我说完了',
     LookPhase.thinking => '可可正在想…',
     LookPhase.speaking => '打断',
-    LookPhase.error => '换一张',
+    LookPhase.error => '再选一张',
     LookPhase.idle when hasImage => '点一下开始说',
     _ => '',
   };

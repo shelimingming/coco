@@ -4,30 +4,37 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/theme/tokens.dart';
 import 'parent_home_palette.dart';
 
-/// 底部两工具：说话 / 看一看。
+/// 底部四工具：说话 / 看眼前 / 看手机 / 看照片。
+/// 「看照片」为瞬时动作，不保持高亮；分析中禁用眼前/手机以减干扰。
 class ParentHomeToolBar extends StatelessWidget {
   const ParentHomeToolBar({
     super.key,
     required this.palette,
     required this.inCall,
     required this.onTalkPressed,
-    required this.onLookPressed,
-    this.lookEnabled = true,
+    required this.onFrontPressed,
+    required this.onPhonePressed,
+    required this.onPhotoPressed,
+    this.visionToolsEnabled = true,
   });
 
   final ParentHomePalette palette;
   final bool inCall;
   final VoidCallback onTalkPressed;
-  final VoidCallback onLookPressed;
-  final bool lookEnabled;
+  final VoidCallback onFrontPressed;
+  final VoidCallback onPhonePressed;
+  final VoidCallback onPhotoPressed;
+
+  /// 分析中为 false：禁用看眼前 / 看手机。
+  final bool visionToolsEnabled;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        CocoSpace.s4,
         CocoSpace.s2,
-        CocoSpace.s4,
+        CocoSpace.s2,
+        CocoSpace.s2,
         CocoSpace.s2,
       ),
       child: Row(
@@ -43,11 +50,26 @@ class ParentHomeToolBar extends StatelessWidget {
             onPressed: onTalkPressed,
           ),
           _ToolItem(
-            label: '看一看',
+            label: '看眼前',
             assetPath: 'assets/icons/parent/icon-tool-camera-day.svg',
             active: false,
             palette: palette,
-            onPressed: lookEnabled ? onLookPressed : null,
+            onPressed: visionToolsEnabled ? onFrontPressed : null,
+          ),
+          _ToolItem(
+            label: '看手机',
+            assetPath: 'assets/icons/parent/icon-tool-phone-day.svg',
+            active: false,
+            palette: palette,
+            onPressed: visionToolsEnabled ? onPhonePressed : null,
+          ),
+          _ToolItem(
+            label: '看照片',
+            assetPath: 'assets/icons/parent/icon-tool-photo-day.svg',
+            active: false,
+            palette: palette,
+            // 分析中仍可再点选图，取消旧任务
+            onPressed: onPhotoPressed,
           ),
         ],
       ),
@@ -94,14 +116,14 @@ class _ToolItem extends StatelessWidget {
                 customBorder: const CircleBorder(),
                 onTap: onPressed,
                 child: SizedBox(
+                  // 直径 64 ≥ DESIGN 老人端热区 56
                   width: 64,
                   height: 64,
                   child: Center(
                     child: SvgPicture.asset(
                       assetPath,
-                      width: 30,
-                      height: 30,
-                      // 暖橙染色：交付 SVG 原色多为墨绿，首页统一滤成父母主色
+                      width: 28,
+                      height: 28,
                       colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
                     ),
                   ),
@@ -113,7 +135,7 @@ class _ToolItem extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 22,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
               height: 1.2,
               color: palette.text,

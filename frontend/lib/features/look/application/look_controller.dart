@@ -37,19 +37,29 @@ class LookController extends StateNotifier<LookState> {
   AudioApi get _audioApi => _ref.read(audioApiProvider);
 
   /// 按来源取图，成功后自动识图。
+  /// 分析中可再次选择：取消旧任务，以最后一次为准（对齐 UI v2）。
   Future<void> pick(LookSource source) async {
-    if (state.isBusy || state.phase == LookPhase.analyzing) return;
+    if (state.phase == LookPhase.thinking) return;
 
-    state = state.copyWith(clearError: true, clearNotice: true, source: source);
+    // 打断进行中的朗读 / 分析；若用户取消相册，勿卡在 analyzing
+    final interruptInFlight =
+        state.phase == LookPhase.analyzing || state.phase == LookPhase.speaking;
+    _opGen++;
+    await _player.stop();
+    await _teardownMic();
+    if (interruptInFlight && state.hasImage) {
+      state = state.copyWith(phase: LookPhase.idle, clearError: true);
+    }
 
     try {
       final picked = await _pickBytes(source);
       if (picked == null) return;
 
-      state = state.copyWith(
-        imageBytes: picked.bytes,
+      // 新图替换整段会话上下文
+      state = LookState(
         phase: LookPhase.analyzing,
-        clearError: true,
+        source: source,
+        imageBytes: picked.bytes,
       );
       await _analyze(
         source: source,
@@ -137,21 +147,23 @@ class LookController extends StateNotifier<LookState> {
         replyText: spoken,
         isClear: result.isClear,
         canFollowUp: canFollowUp,
-        notice: canFollowUp ? state.notice : '这次不能继续问，可以换一张再看。照片没有保存在可可这边。',
+        notice: canFollowUp
+            ? state.notice
+            : '这次不能继续问，可以再点「看照片」选一张。照片没有保存在可可这边。',
         clearError: true,
       );
 
       await _speak(spoken, gen: gen, autoListenAfter: canFollowUp);
     } on ApiException catch (e) {
       if (!_alive(gen)) return;
-      _fail(title: '刚才没看清', message: e.message);
+      _fail(title: '这张照片没看清', message: e.message);
     } catch (_) {
       if (!_alive(gen)) return;
-      _fail(title: '刚才没看清', message: '网络或服务暂时不可用。您可以换一张，照片没有保存在可可这边。');
+      _fail(title: '这张照片没看清', message: '请再试一次。照片没有保存在可可这边。');
     }
   }
 
-  /// 换一张：清空当前会话，回到选来源。
+  /// 清空当前识图会话（旧独立页兼容；首页主路径用再点「看照片」换图）。
   Future<void> reset() async {
     _opGen++;
     await _teardownMic();
@@ -212,7 +224,7 @@ class LookController extends StateNotifier<LookState> {
 
   Future<void> startListening() async {
     if (!state.canFollowUp) {
-      _fail(title: '没法继续问', message: '这次不能继续问，可以换一张再看。照片没有保存在可可这边。');
+      _fail(title: '没法继续问', message: '这次不能继续问，可以再点「看照片」选一张。照片没有保存在可可这边。');
       return;
     }
     if (state.phase == LookPhase.listening ||
@@ -249,7 +261,7 @@ class LookController extends StateNotifier<LookState> {
     } on MicPcmException catch (e) {
       _fail(title: '打不开麦克风', message: e.message);
     } catch (_) {
-      _fail(title: '打不开麦克风', message: '请稍后再试，或换一张重新看。刚才没有录下声音。');
+      _fail(title: '打不开麦克风', message: '请稍后再试，或再点「看照片」重新选图。刚才没有录下声音。');
     }
   }
 
@@ -292,7 +304,7 @@ class LookController extends StateNotifier<LookState> {
 
       final conversationId = state.conversationId;
       if (conversationId == null || conversationId.isEmpty) {
-        _fail(title: '没法继续问', message: '这次不能继续问，可以换一张再看。照片没有保存在可可这边。');
+        _fail(title: '没法继续问', message: '这次不能继续问，可以再点「看照片」选一张。照片没有保存在可可这边。');
         return;
       }
 
@@ -412,7 +424,9 @@ class LookController extends StateNotifier<LookState> {
   }
 }
 
-final lookControllerProvider =
-    StateNotifierProvider.autoDispose<LookController, LookState>((ref) {
-      return LookController(ref);
-    });
+/// 非 autoDispose：首页原地识图需跨「更多」往返保留会话。
+final lookControllerProvider = StateNotifierProvider<LookController, LookState>(
+  (ref) {
+    return LookController(ref);
+  },
+);

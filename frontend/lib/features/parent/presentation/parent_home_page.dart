@@ -9,6 +9,8 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../look/application/look_controller.dart';
+import '../../look/domain/look_state.dart';
 import '../../notifications/application/notification_poller.dart';
 import '../../notifications/domain/models.dart';
 import '../../reminders/application/reminders_providers.dart';
@@ -20,6 +22,7 @@ import 'widgets/child_status_card.dart';
 import 'widgets/coco_companion_view.dart';
 import 'widgets/parent_call_transcript_panel.dart';
 import 'widgets/parent_caption_bubble.dart';
+import 'widgets/parent_home_look_panel.dart';
 import 'widgets/parent_home_palette.dart';
 import 'widgets/parent_home_tool_bar.dart';
 import 'widgets/parent_pending_action_card.dart';
@@ -95,18 +98,25 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         ? pollerState.pendingChildStatus
         : null;
     final voicePending = inCall && callState.pendingAction != null;
+    final lookState = ref.watch(lookControllerProvider);
+    final lookController = ref.read(lookControllerProvider.notifier);
+    // 首页原地识图：有图或失败提示时占用中间区
+    final lookSession =
+        lookState.hasImage || lookState.phase == LookPhase.error;
+    final lookAnalyzing = lookState.phase == LookPhase.analyzing;
     final palette = ParentHomePalette.standard;
     final greeting = parentHomeGreeting(name);
-    // 默认对话不叠气泡；仅「字」开时展示本通记录
-    final showTranscript = inCall && _captionVisible;
-    // 「字」开、或确认大卡（建议 / 到点 / 报平安 / 语音待确认）时虚化场景
+    // 默认对话不叠气泡；仅「字」开时展示本通记录；识图结果也跟「字」
+    final showTranscript = inCall && _captionVisible && !lookSession;
+    // 「字」开、识图、或确认大卡时虚化场景
     final blurBackground =
         showTranscript ||
+        lookSession ||
         voicePending ||
         (!inCall && pendingSuggestion != null) ||
         (!inCall && pendingReminder != null) ||
         (!inCall && pendingChildStatus != null);
-    final bottomCopyHeight = showTranscript
+    final bottomCopyHeight = (showTranscript || lookSession)
         ? _bottomCopySlotWhenTranscript
         : _bottomCopySlotHeight;
 
@@ -130,10 +140,17 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                   Positioned.fill(
                     child: ClipRect(
                       child: BackdropFilter(
-                        // 「字」面板需要更明显虚化，方便读聊天记录
-                        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                        // 识图态按交付：sigma≈16 + 暖白遮罩；「字」面板略加深
+                        filter: ImageFilter.blur(
+                          sigmaX: lookSession ? 16 : 14,
+                          sigmaY: lookSession ? 16 : 14,
+                        ),
                         child: ColoredBox(
-                          color: CocoColors.neutral950.withValues(alpha: 0.18),
+                          color: lookSession
+                              ? CocoColors.parentBackground.withValues(
+                                  alpha: 0.4,
+                                )
+                              : CocoColors.neutral950.withValues(alpha: 0.18),
                         ),
                       ),
                     ),
@@ -182,7 +199,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                                 ),
                               ),
                             ),
-                            if (inCall) ...[
+                            // 「字」全局偏好：通话或识图会话都可切换
+                            if (inCall || lookSession) ...[
                               ParentCaptionToggle(
                                 palette: palette,
                                 visible: _captionVisible,
@@ -195,7 +213,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                               const SizedBox(width: CocoSpace.s3),
                             ],
                             TextButton(
-                              onPressed: inCall
+                              onPressed: (inCall || lookAnalyzing)
                                   ? null
                                   : () => context.push('/parent/functions'),
                               style: TextButton.styleFrom(
@@ -206,7 +224,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                                   fontSize: 22,
                                   fontWeight: FontWeight.w600,
                                 ),
-                                minimumSize: const Size(48, 48),
+                                minimumSize: const Size(56, 56),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: CocoSpace.s2,
                                 ),
@@ -232,6 +250,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                             pendingReminder: pendingReminder,
                             pendingChildStatus: pendingChildStatus,
                             inCall: inCall,
+                            lookState: lookState,
+                            captionVisible: _captionVisible,
                           ),
                         ),
                       ),
@@ -274,7 +294,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                   ParentHomeToolBar(
                     palette: palette,
                     inCall: inCall,
-                    lookEnabled: !inCall,
+                    // 分析中禁用眼前/手机，减轻一屏多主操作
+                    visionToolsEnabled: !lookAnalyzing,
                     onTalkPressed: () {
                       if (inCall) {
                         if (callState.phase == VoiceCallPhase.error) {
@@ -287,7 +308,11 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                         callController.start();
                       }
                     },
-                    onLookPressed: () => context.push('/parent/look'),
+                    onFrontPressed: () => _showVisionPlaceholder('看眼前'),
+                    onPhonePressed: () => _showVisionPlaceholder('看手机'),
+                    onPhotoPressed: () {
+                      unawaited(lookController.pick(LookSource.album));
+                    },
                   ),
                 ],
               ),
@@ -363,6 +388,12 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     return const SizedBox.shrink();
   }
 
+  void _showVisionPlaceholder(String label) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$label即将支持，您可以先用「看照片」。')));
+  }
+
   Widget _buildCenter({
     required VoiceCallState callState,
     required VoiceCallController callController,
@@ -374,7 +405,61 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required AppNotification? pendingReminder,
     required AppNotification? pendingChildStatus,
     required bool inCall,
+    required LookState lookState,
+    required bool captionVisible,
   }) {
+    // 首页原地识图优先于闲置可可（确认卡仍优先）
+    final lookSession =
+        lookState.hasImage || lookState.phase == LookPhase.error;
+    if (lookSession &&
+        !voicePending &&
+        (pendingSuggestion == null &&
+            pendingReminder == null &&
+            pendingChildStatus == null)) {
+      final caption = lookState.replyText.trim().isNotEmpty
+          ? lookState.replyText
+          : lookState.headline;
+      final errorText = lookState.phase == LookPhase.error
+          ? [
+              if (lookState.errorTitle != null) lookState.errorTitle!,
+              if (lookState.errorMessage != null) lookState.errorMessage!,
+            ].where((s) => s.trim().isNotEmpty).join('。')
+          : null;
+
+      if (!lookState.hasImage) {
+        return Center(
+          child: Container(
+            padding: const EdgeInsets.all(CocoSpace.s6),
+            decoration: BoxDecoration(
+              color: CocoColors.parentSurface,
+              borderRadius: BorderRadius.circular(CocoRadius.xl),
+              border: Border.all(
+                color: CocoColors.danger.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Text(
+              errorText ?? '这张照片没看清，请再试一次',
+              style: const TextStyle(
+                fontSize: 22,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+                color: CocoColors.neutral950,
+              ),
+            ),
+          ),
+        );
+      }
+
+      return ParentHomeLookPanel(
+        palette: palette,
+        imageBytes: lookState.imageBytes!,
+        analyzing: lookState.phase == LookPhase.analyzing,
+        showCaption: captionVisible,
+        captionText: caption,
+        errorMessage: errorText,
+      );
+    }
+
     if (callState.phase == VoiceCallPhase.error) {
       return _HomeVoiceError(
         title: callState.errorTitle ?? '出了点问题',

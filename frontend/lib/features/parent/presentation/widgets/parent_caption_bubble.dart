@@ -86,25 +86,35 @@ class ParentCaptionToggle extends StatelessWidget {
     return Semantics(
       button: true,
       label: visible ? '关闭本次对话文字' : '查看本次对话文字',
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(CocoRadius.md),
-        child: Container(
-          width: 44,
-          height: 36,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: visible ? palette.captionToggleOn : null,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: palette.captionToggleOffBorder, width: 2),
-          ),
-          child: Text(
-            '字',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              height: 1,
-              color: visible ? CocoColors.white : palette.link,
+      child: SizedBox(
+        // 可视方块可略小，外扩点击区满足老人端 ≥56
+        width: 56,
+        height: 56,
+        child: Center(
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(CocoRadius.md),
+            child: Container(
+              width: 44,
+              height: 36,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: visible ? palette.captionToggleOn : null,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: palette.captionToggleOffBorder,
+                  width: 2,
+                ),
+              ),
+              child: Text(
+                '字',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                  color: visible ? CocoColors.white : palette.link,
+                ),
+              ),
             ),
           ),
         ),

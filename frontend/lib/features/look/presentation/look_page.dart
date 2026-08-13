@@ -181,7 +181,7 @@ class LookPage extends ConsumerWidget {
                     state.phase == LookPhase.analyzing ||
                     state.phase == LookPhase.thinking,
                 loadingLabel: state.phase == LookPhase.analyzing
-                    ? '可可正在看…'
+                    ? '可可正在看'
                     : '可可正在想…',
                 onPressed:
                     (state.phase == LookPhase.analyzing ||
@@ -201,8 +201,9 @@ class LookPage extends ConsumerWidget {
               ),
             ],
             const SizedBox(height: CocoSpace.s3),
+            // 旧独立页兼容；首页主路径用再点「看照片」换图
             CocoSecondaryButton(
-              label: '换一张',
+              label: '清空重选',
               onPressed: state.isBusy
                   ? null
                   : () => unawaited(controller.reset()),
