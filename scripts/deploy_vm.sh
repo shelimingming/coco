@@ -23,8 +23,10 @@ ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_DIR="${ROOT_DIR}/backend"
 FRONTEND_DIR="${ROOT_DIR}/frontend"
 
-DEPLOY_HOST="${COCO_DEPLOY_HOST:-47.116.165.157}"
+DEPLOY_HOST="${COCO_DEPLOY_HOST:-106.13.135.10}"
 DEPLOY_USER="${COCO_DEPLOY_USER:-root}"
+# 虚机对外端口（systemd 已监听 80）
+DEPLOY_PORT="${COCO_DEPLOY_PORT:-80}"
 SSH_OPTS="${COCO_DEPLOY_SSH_OPTS:--o StrictHostKeyChecking=accept-new}"
 REMOTE_ROOT="/opt/coco"
 
@@ -145,7 +147,7 @@ EOF
   remote_script+=$'\n'"systemctl restart coco"
   remote_script+=$'\n'"sleep 2"
   remote_script+=$'\n'"systemctl is-active coco"
-  remote_script+=$'\n'"curl -fsS http://127.0.0.1:8000/health"
+  remote_script+=$'\n'"curl -fsS http://127.0.0.1:${DEPLOY_PORT}/health"
   remote_script+=$'\n'"echo"
 
   ssh_cmd "bash -s" <<<"${remote_script}" || die "远端应用失败。" "查看：ssh ${DEPLOY_USER}@${DEPLOY_HOST} 'journalctl -u coco -n 50 --no-pager'"
@@ -160,8 +162,13 @@ remote_restart_only() {
 }
 
 health_hint() {
-  dim "健康检查：http://${DEPLOY_HOST}:8000/health"
-  dim "页面：http://${DEPLOY_HOST}:8000 （需安全组放行 8000）"
+  if [[ "${DEPLOY_PORT}" == "80" ]]; then
+    dim "健康检查：http://${DEPLOY_HOST}/health"
+    dim "页面：http://${DEPLOY_HOST}/ （需安全组放行 80）"
+  else
+    dim "健康检查：http://${DEPLOY_HOST}:${DEPLOY_PORT}/health"
+    dim "页面：http://${DEPLOY_HOST}:${DEPLOY_PORT}/ （需安全组放行 ${DEPLOY_PORT}）"
+  fi
 }
 
 main() {

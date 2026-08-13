@@ -109,7 +109,7 @@ flutter run -d "iPhone 17 Pro" \
 
 ## 虚机增量更新（无 Docker）
 
-首次部署完成后，用脚本把本机改动同步到虚机（默认 `47.116.165.157`）：
+首次部署完成后，用脚本把本机改动同步到虚机（默认 `106.13.135.10`，对外 **80**）：
 
 ```bash
 ./scripts/deploy_vm.sh                 # 前后端
@@ -118,7 +118,7 @@ flutter run -d "iPhone 17 Pro" \
 ./scripts/deploy_vm.sh --host IP       # 换机器
 ```
 
-需本机已能 `ssh root@虚机`（建议密钥登录）。远端目录：`/opt/coco`，服务名：`coco`。
+需本机已能 `ssh root@虚机`（建议密钥登录）。远端目录：`/opt/coco`，服务名：`coco`，访问：`http://虚机IP/`（安全组放行 80）。
 
 ## Docker 一体部署（Web + API）
 
