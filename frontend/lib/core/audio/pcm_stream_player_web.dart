@@ -21,6 +21,10 @@ class WebPcmStreamPlayer implements PcmStreamPlayer {
   bool _expectDrain = false;
   bool _disposed = false;
   final List<web.AudioBufferSourceNode> _active = [];
+  // 串行化 feed：控制器里 unawaited，避免并发改写 _nextStart 叠播。
+  Future<void> _feedChain = Future<void>.value();
+  // clear/打断时递增，丢弃排队中尚未起播的块。
+  int _epoch = 0;
 
   @override
   set onDrained(void Function()? callback) => _onDrained = callback;
@@ -28,18 +32,37 @@ class WebPcmStreamPlayer implements PcmStreamPlayer {
   @override
   Future<void> prepare() async {
     if (_disposed) return;
+    final created = _ctx == null;
     final ctx = _ctx ?? web.AudioContext();
     _ctx = ctx;
     if (ctx.state == 'suspended') {
       await ctx.resume().toDart;
     }
-    _nextStart = ctx.currentTime;
+    // 仅新建时初始化游标；每次 feed 都重置会让后续块同时起播叠音。
+    if (created) {
+      _nextStart = ctx.currentTime;
+    }
   }
 
   @override
-  Future<void> feed(Uint8List pcm, {required int sampleRate}) async {
-    if (_disposed || pcm.isEmpty) return;
+  Future<void> feed(Uint8List pcm, {required int sampleRate}) {
+    final epoch = _epoch;
+    // 排队执行，保证调度时间单调递增
+    final scheduled = _feedChain.then(
+      (_) => _feedInternal(pcm, sampleRate: sampleRate, epoch: epoch),
+    );
+    _feedChain = scheduled.catchError((_) {});
+    return scheduled;
+  }
+
+  Future<void> _feedInternal(
+    Uint8List pcm, {
+    required int sampleRate,
+    required int epoch,
+  }) async {
+    if (_disposed || pcm.isEmpty || epoch != _epoch) return;
     await prepare();
+    if (_disposed || epoch != _epoch) return;
     final ctx = _ctx!;
     final rate = sampleRate > 0 ? sampleRate : this.sampleRate;
     final frameCount = pcm.length ~/ 2;
@@ -51,6 +74,8 @@ class WebPcmStreamPlayer implements PcmStreamPlayer {
     for (var i = 0; i < frameCount; i++) {
       channel[i] = bd.getInt16(i * 2, Endian.little) / 32768.0;
     }
+
+    if (epoch != _epoch) return;
 
     final source = ctx.createBufferSource();
     source.buffer = buffer;
@@ -84,6 +109,8 @@ class WebPcmStreamPlayer implements PcmStreamPlayer {
   @override
   Future<void> clear() async {
     _expectDrain = false;
+    _epoch++;
+    _feedChain = Future<void>.value();
     for (final source in List<web.AudioBufferSourceNode>.from(_active)) {
       try {
         source.onended = null;
