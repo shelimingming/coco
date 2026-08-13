@@ -147,7 +147,8 @@ EOF
   remote_script+=$'\n'"systemctl restart coco"
   remote_script+=$'\n'"sleep 2"
   remote_script+=$'\n'"systemctl is-active coco"
-  remote_script+=$'\n'"curl -fsS http://127.0.0.1:${DEPLOY_PORT}/health"
+  # 应用本机监听 8000（Nginx 反代 80/443）；勿打外网端口以免 301
+  remote_script+=$'\n'"curl -fsS http://127.0.0.1:8000/health"
   remote_script+=$'\n'"echo"
 
   ssh_cmd "bash -s" <<<"${remote_script}" || die "远端应用失败。" "查看：ssh ${DEPLOY_USER}@${DEPLOY_HOST} 'journalctl -u coco -n 50 --no-pager'"
