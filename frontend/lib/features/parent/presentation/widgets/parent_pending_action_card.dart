@@ -39,10 +39,11 @@ class ParentPendingActionCard extends StatelessWidget {
           ];
     final confirmLabel = isReminder ? '点击创建' : '告诉家人';
 
+    // 铺满中间区：摘要再长也只滚内容区，「告诉家人 / 先不要了」钉在卡片底
     return Stack(
+      fit: StackFit.expand,
       clipBehavior: Clip.none,
       children: [
-        // 卡片整体下移半个头像，让头像压在上沿
         Padding(
           padding: const EdgeInsets.only(top: _avatarSize / 2),
           child: DecoratedBox(
@@ -57,67 +58,78 @@ class ParentPendingActionCard extends StatelessWidget {
                 ),
               ],
             ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                CocoSpace.s5,
-                CocoSpace.s6,
-                CocoSpace.s5,
-                CocoSpace.s5,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
-                      color: CocoColors.neutral950,
-                    ),
-                  ),
-                  const SizedBox(height: CocoSpace.s4),
-                  const Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: CocoColors.neutral300,
-                  ),
-                  const SizedBox(height: CocoSpace.s4),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: CocoColors.parentPrimarySoft,
-                      borderRadius: BorderRadius.circular(CocoRadius.lg),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: CocoSpace.s5,
-                        vertical: CocoSpace.s5,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (var i = 0; i < rows.length; i++) ...[
-                            if (i > 0) const SizedBox(height: CocoSpace.s3),
-                            _DetailRow(label: rows[i].$1, value: rows[i].$2),
-                          ],
-                        ],
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(CocoRadius.xl),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  CocoSpace.s5,
+                  CocoSpace.s6,
+                  CocoSpace.s5,
+                  CocoSpace.s5,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        color: CocoColors.neutral950,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: CocoSpace.s5),
-                  _ConfirmPrimaryButton(
-                    label: confirmLabel,
-                    busy: busy,
-                    onPressed: busy ? null : onConfirm,
-                  ),
-                  const SizedBox(height: CocoSpace.s3),
-                  _ConfirmSecondaryButton(
-                    label: '先不要了',
-                    busy: busy,
-                    onPressed: busy ? null : onCancel,
-                  ),
-                ],
+                    const SizedBox(height: CocoSpace.s4),
+                    const Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: CocoColors.neutral300,
+                    ),
+                    const SizedBox(height: CocoSpace.s4),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: CocoColors.parentPrimarySoft,
+                            borderRadius: BorderRadius.circular(CocoRadius.lg),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: CocoSpace.s5,
+                              vertical: CocoSpace.s5,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                for (var i = 0; i < rows.length; i++) ...[
+                                  if (i > 0)
+                                    const SizedBox(height: CocoSpace.s3),
+                                  _DetailRow(
+                                    label: rows[i].$1,
+                                    value: rows[i].$2,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: CocoSpace.s5),
+                    _ConfirmPrimaryButton(
+                      label: confirmLabel,
+                      busy: busy,
+                      onPressed: busy ? null : onConfirm,
+                    ),
+                    const SizedBox(height: CocoSpace.s3),
+                    _ConfirmSecondaryButton(
+                      label: '先不要了',
+                      busy: busy,
+                      onPressed: busy ? null : onCancel,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

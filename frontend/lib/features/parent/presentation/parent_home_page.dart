@@ -253,15 +253,16 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     final greeting = parentHomeGreeting(name);
     // 默认对话不叠气泡；仅「字」开时展示本通记录；识图结果也跟「字」
     final showTranscript = inCall && _captionVisible && !lookSession;
-    // 「字」开、识图、或确认大卡时虚化场景
-    final blurBackground =
-        showTranscript ||
-        lookSession ||
+    final showingConfirmCard =
         voicePending ||
         (!inCall && pendingSuggestion != null) ||
         (!inCall && pendingReminder != null) ||
         (!inCall && pendingChildStatus != null);
-    final bottomCopyHeight = (showTranscript || lookSession)
+    // 「字」开、识图、或确认大卡时虚化场景
+    final blurBackground = showTranscript || lookSession || showingConfirmCard;
+    // 确认卡要把高度还给中间区，否则「告诉家人」等按钮会被底栏裁掉
+    final bottomCopyHeight =
+        (showTranscript || lookSession || showingConfirmCard)
         ? _bottomCopySlotWhenTranscript
         : _bottomCopySlotHeight;
 
@@ -717,9 +718,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     }
 
     if (voicePending) {
-      // 对话状态已由底栏「对话中」表达，卡片下不再重复状态文案
-      return SingleChildScrollView(
-        padding: const EdgeInsets.only(top: CocoSpace.s4),
+      // 不用外层 ScrollView：卡片内部钉住按钮，长文案自己滚
+      return Padding(
+        padding: const EdgeInsets.only(top: CocoSpace.s2, bottom: CocoSpace.s2),
         child: ParentPendingActionCard(
           action: callState.pendingAction!,
           busy: callState.pendingActionBusy,

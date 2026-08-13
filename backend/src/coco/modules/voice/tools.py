@@ -111,14 +111,26 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "share_to_child",
             "description": (
-                "把关怀摘要分享给已绑定的子女。摘要齐全后先以 user_confirmed=false 弹出确认卡；"
-                "用户点「告诉家人」或口头说好/对之后，再以 user_confirmed=true 调用。"
+                "把一两句关怀摘要分享给已绑定子女。仅在陪伴追问后关键事实已清楚、"
+                "且老人同意（或主动要求）告诉家人时调用；不要刚听到不舒服就调用。"
+                "summary 写给子女看：发生了什么、现在怎样、建议怎么做；不要聊天原文、不要诊断。"
+                "先以 user_confirmed=false 弹出确认卡；点「告诉家人」或口头说好/对后再 true。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "summary": {"type": "string"},
-                    "urgency": {"type": "string", "enum": ["LOW", "ATTENTION"]},
+                    "summary": {
+                        "type": "string",
+                        "description": (
+                            "给子女的一两句摘要，如："
+                            "今天腿有些酸，目前还能正常走。你有空问候一下就好。"
+                        ),
+                    },
+                    "urgency": {
+                        "type": "string",
+                        "enum": ["LOW", "ATTENTION"],
+                        "description": "平稳问候用 LOW；摔倒、就医或希望尽快联系用 ATTENTION",
+                    },
                     "user_confirmed": {
                         "type": "boolean",
                         "description": "用户是否已点卡或口头确认；未确认必须为 false",
