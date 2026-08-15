@@ -796,9 +796,10 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 主角色尽量占满中间区，老人端更易看见可可
-        final side = (constraints.biggest.shortestSide * 0.95)
-            .clamp(240.0, 420.0)
+        final isEntrance = companionPose == CocoCompanionPose.entrance;
+        // 各姿态统一放大；出场再右贴边，避免 gif 右缘缩进造成腰斩
+        final side = (constraints.maxWidth + CocoSpace.s6)
+            .clamp(280.0, 480.0)
             .toDouble();
         // 「字」开时小狗与背景同虚化，避免抢文字可读性
         Widget companion = CocoCompanionView(pose: companionPose, size: side);
@@ -814,17 +815,26 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         final showGreeting = _showGreetingBubble && !inCall && !showTranscript;
 
         return Stack(
+          // 放大后会溢出水平 padding；出场右贴边也不能硬裁
+          clipBehavior: Clip.none,
           children: [
             // 开「字」时小狗再下沉，列表几乎铺满到工具栏上方
             Align(
-              alignment: Alignment(0, showTranscript ? 0.78 : 0.48),
-              child: Semantics(
-                button: true,
-                label: inCall ? callState.statusLabel : '和可可说话',
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _onCompanionTapped,
-                  child: companion,
+              alignment: Alignment(
+                isEntrance ? 1.0 : 0,
+                showTranscript ? 0.78 : 0.48,
+              ),
+              child: Transform.translate(
+                // 出场吃掉右 padding，让画布右缘贴齐屏幕
+                offset: Offset(isEntrance ? CocoSpace.s6 : 0, 0),
+                child: Semantics(
+                  button: true,
+                  label: inCall ? callState.statusLabel : '和可可说话',
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _onCompanionTapped,
+                    child: companion,
+                  ),
                 ),
               ),
             ),

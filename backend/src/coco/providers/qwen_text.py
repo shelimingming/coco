@@ -12,12 +12,14 @@ from pydantic import SecretStr
 logger = logging.getLogger(__name__)
 
 _TRANSLATE_SYSTEM = """
-你是 Coco，帮助子女把简短报平安消息转成老人更容易听懂的口语表达。
+你是可可，用自己的旁白把子女的报平安转成老人更容易听懂的口语。
 规则：
-1. 保留事实，不夸大、不添医疗判断。
-2. 语气亲切、简短，一两句话即可。
-3. 若原文已清晰，可轻微润色后原样返回。
-4. 只输出转译后的正文，不要解释、不加引号。
+1. 必须第三人称：主语用用户给出的「子女称呼」（如小林），例如「小林已经吃过饭了，让您放心」。
+2. 禁止对老人喊「妈/爸/妈妈/爸爸」等称呼；禁止用子女第一人称「我…」代替孩子说话。
+3. 保留事实，不夸大、不添医疗判断；语气亲切、简短，一两句话即可。
+4. 若原文已清晰，可轻微润色，但仍须第三人称。
+5. 只输出转译后的正文，不要解释、不加引号。
+正例：原文「吃过饭了」→「小林已经吃过饭了，让您放心」。
 """.strip()
 
 _TITLE_SYSTEM = """
@@ -31,6 +33,14 @@ _TITLE_SYSTEM = """
 
 _TITLE_MAX_LEN = 16
 _FALLBACK_TITLE_MAX = 24
+
+# 模型偶发冒充子女：句首喊爸妈，或用「我…」开场
+_PARENT_ADDRESS_RE = re.compile(
+    r"^(妈|爸|妈妈|爸爸|爹|娘|母亲|父亲)[，,！!、]"
+)
+_CHILD_FIRST_PERSON_RE = re.compile(
+    r"^我(刚|已经|在|吃|到|准备|忙|还|先|马上|现在|来)"
+)
 
 
 @dataclass(slots=True)
@@ -97,14 +107,23 @@ class QwenTextClient:
     async def translate_child_status(
         self, text: str, *, child_name: str = "孩子"
     ) -> TranslateResult:
-        """把子女原话转成老人易懂表达；失败时由调用方决定是否降级。"""
-        user_prompt = f"子女称呼：{child_name}\n原文：{text.strip()}\n请转成老人容易理解的一句话。"
+        """把子女原话转成老人易懂的第三人称旁白；失败时由调用方决定是否降级。"""
+        original = text.strip()
+        name = (child_name or "").strip() or "孩子"
+        user_prompt = (
+            f"子女称呼：{name}\n原文：{original}\n"
+            "请用第三人称转述成老人容易理解的一句话，主语必须用上面的子女称呼。"
+        )
         content = await self._chat(
             system=_TRANSLATE_SYSTEM,
             user=user_prompt,
             temperature=0.4,
         )
-        return TranslateResult(text=content, translated=True)
+        # 模型偶发第一人称时回退，避免预览出现「妈，我…」
+        safe = sanitize_child_status_relay(
+            content, original=original, child_name=name
+        )
+        return TranslateResult(text=safe, translated=True)
 
     async def generate_conversation_title(self, transcript: str) -> TitleResult:
         """根据对话摘录生成短标题；失败时由调用方降级。"""
@@ -115,6 +134,35 @@ class QwenTextClient:
             temperature=0.3,
         )
         return TitleResult(title=sanitize_conversation_title(content), generated=True)
+
+
+def looks_like_child_first_person(text: str) -> bool:
+    """是否像子女第一人称或直接喊爸妈（不符合可可旁白）。"""
+    cleaned = text.strip()
+    if not cleaned:
+        return False
+    return bool(
+        _PARENT_ADDRESS_RE.match(cleaned) or _CHILD_FIRST_PERSON_RE.match(cleaned)
+    )
+
+
+def fallback_third_person_relay(original: str, *, child_name: str = "孩子") -> str:
+    """违规输出时的确定性第三人称回退。"""
+    name = (child_name or "").strip() or "孩子"
+    body = original.strip()
+    if not body:
+        return f"{name}传来消息，让您放心。"
+    return f"{name}说，{body}"
+
+
+def sanitize_child_status_relay(
+    model_text: str, *, original: str, child_name: str = "孩子"
+) -> str:
+    """合规则保留模型文案；命中第一人称/喊爸妈则回退。"""
+    cleaned = model_text.strip().strip("「」『』“”\"'‘’")
+    if looks_like_child_first_person(cleaned):
+        return fallback_third_person_relay(original, child_name=child_name)
+    return cleaned or fallback_third_person_relay(original, child_name=child_name)
 
 
 def sanitize_conversation_title(raw: str) -> str:
