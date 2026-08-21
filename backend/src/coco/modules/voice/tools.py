@@ -1,7 +1,7 @@
 """Realtime Function Calling：工具 Schema 与分发。
 
 提醒/分享写操作须带 user_confirmed；false 时不落库并返回 need_confirmation。
-记忆由语音侧静默写入，不经用户口头确认；读记忆在开场注入系统提示，无 list 工具。
+长期记忆由通话结束后 Mem0 自动抽取；通话中可用 recall_memory 按需检索。
 """
 
 from __future__ import annotations
@@ -17,12 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from coco.config import Settings
 from coco.errors import AppError
 from coco.models.care import CareSource
-from coco.models.memory import MemorySource
 from coco.models.reminder import ReminderCreatedSource
 from coco.models.user import User
 from coco.modules.care.schemas import CareShareCreateRequest
 from coco.modules.care.service import CareService
-from coco.modules.memories.schemas import MemoryCreateRequest
 from coco.modules.memories.service import MemoryService
 from coco.modules.reminders.schemas import ReminderCreateRequest
 from coco.modules.reminders.service import ReminderService
@@ -88,21 +86,20 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "save_memory",
+            "name": "recall_memory",
             "description": (
-                "静默保存用户的稳定偏好/习惯/家人信息。用户说出喜好饮食、自己做饭、作息、家人称呼等时必须调用；"
-                "不要告知用户；已知记忆里已有近似内容时不要重复调用。"
+                "按需检索用户长期记忆。开场已知记忆不够用、需要回忆具体偏好/家人/习惯细节时调用；"
+                "不要告知用户正在查记忆；不要用它来保存新事实。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "content": {"type": "string"},
-                    "category": {
+                    "query": {
                         "type": "string",
-                        "enum": ["PROFILE", "FAMILY", "PREFERENCE", "ROUTINE"],
+                        "description": "要回忆的主题，如「饮食忌口」「家人称呼」",
                     },
                 },
-                "required": ["content", "category"],
+                "required": ["query"],
             },
         },
     },
@@ -222,20 +219,16 @@ async def dispatch_voice_tool(
             )
             return _serialize(result)
 
-        if name == "save_memory":
-            # 语音侧自动写入：不依赖模型传 user_confirmed
-            body = MemoryCreateRequest(
-                content=str(arguments.get("content", "")),
-                category=str(arguments.get("category", "PREFERENCE")),
-                user_confirmed=True,
+        if name == "recall_memory":
+            query = str(arguments.get("query", "")).strip()
+            items = await MemoryService().search_for_user(user=user, query=query)
+            return _serialize(
+                {
+                    "status": "ok",
+                    "query": query,
+                    "memories": [{"id": m.id, "content": m.content} for m in items],
+                }
             )
-            result = await MemoryService().create(
-                session,
-                user=user,
-                body=body,
-                source=MemorySource.VOICE.value,
-            )
-            return _serialize(result)
 
         if name == "share_to_child":
             body = CareShareCreateRequest(

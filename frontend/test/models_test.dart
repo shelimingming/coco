@@ -90,18 +90,17 @@ void main() {
     });
   });
 
-  group('Memory category label', () {
-    test('maps PREFERENCE', () {
+  group('Memory', () {
+    test('parses content without category', () {
       final memory = Memory.fromJson({
         'id': 'm1',
         'content': '喜欢晚饭后散步',
-        'category': 'PREFERENCE',
-        'source': 'PARENT',
-        'confirmed': true,
         'created_at': '2026-08-09T03:00:00Z',
         'updated_at': '2026-08-09T03:00:00Z',
       });
-      expect(memory.categoryLabel, '喜好');
+      expect(memory.id, 'm1');
+      expect(memory.content, '喜欢晚饭后散步');
+      expect(memory.createdAt, isNotNull);
     });
   });
 

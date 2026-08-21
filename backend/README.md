@@ -10,6 +10,13 @@ uv run uvicorn coco.main:app --reload --host 127.0.0.1 --port 8000
 
 开发验证码：`246810`（`COCO_DEV_SMS_CODE`）。
 
+## 长期记忆（Mem0）
+
+1. 数据库需先执行：`CREATE EXTENSION IF NOT EXISTS vector;`（超级用户一次即可）。
+2. 配置百炼 Key 后，通话结束会异步抽取记忆到同库 pgvector collection（默认 `coco_memories`）。
+3. 变更历史 SQLite 路径由 `COCO_MEM0_HISTORY_DB_PATH` 控制（默认 `.mem0/history.db`）。
+4. 无 Key 或 `COCO_MEM0_ENABLED=false` 时记忆读写降级为空，不影响语音挂断。
+
 ## 实时语音（父母端）
 
 1. 在 `.env` 配置 `COCO_ALIYUN_API_KEY`（或 `DASHSCOPE_API_KEY`），并开通对应模型。

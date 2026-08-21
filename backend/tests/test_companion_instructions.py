@@ -15,8 +15,8 @@ def test_empty_memories() -> None:
     assert "姓名未知" in text
     assert "尚未绑定子女" in text
     assert "不可承诺已经通知家人" in text
-    assert "必须先调用 save_memory" in text
-    assert "不可只聊天不存" in text
+    assert "自动整理" in text
+    assert "recall_memory" in text
     assert "不要询问「要记住吗？」" in text
     # 提醒：先出卡；关怀：先追问再汇总，同意后才出分享卡
     assert "user_confirmed=false" in text
@@ -90,7 +90,7 @@ def test_vision_context_block_and_merge() -> None:
     assert "当前照片上下文" in block
     assert "相册照片" in block
     assert "红烧肉" in block
-    assert "不要调用 save_memory" in block
+    assert "不要记入长期记忆" in block
     assert "按关怀对话规则先陪伴追问" in block
 
     base = build_companion_instructions([], user_name="王奶奶")

@@ -59,7 +59,7 @@ class MemoriesPage extends ConsumerWidget {
                 Text('还没有记住的事', style: theme.textTheme.titleLarge),
                 const SizedBox(height: CocoSpace.s3),
                 Text(
-                  '和可可聊天时，如果有值得记住的事，可可会问您要不要记住。',
+                  '和可可多聊几次，可可会慢慢记住您的习惯和喜好。',
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: CocoColors.neutral700,
                   ),
@@ -152,23 +152,6 @@ class _MemoryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: CocoSpace.s3,
-                vertical: CocoSpace.s1,
-              ),
-              decoration: BoxDecoration(
-                color: CocoColors.parentPrimarySoft,
-                borderRadius: BorderRadius.circular(CocoRadius.pill),
-              ),
-              child: Text(
-                memory.categoryLabel,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(height: CocoSpace.s3),
             Text(memory.content, style: theme.textTheme.bodyLarge),
             const SizedBox(height: CocoSpace.s4),
             Align(

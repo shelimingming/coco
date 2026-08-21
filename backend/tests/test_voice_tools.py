@@ -1,4 +1,4 @@
-"""语音工具：提醒须确认；记忆静默写入。"""
+"""语音工具：提醒须确认；记忆按需检索。"""
 
 from __future__ import annotations
 
@@ -48,44 +48,53 @@ async def test_create_reminder_needs_confirmation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_memory_writes_without_confirmation_flag() -> None:
-    """语音记忆无感：工具参数不含 user_confirmed 也应落库。"""
+async def test_recall_memory_searches() -> None:
     settings = Settings(_env_file=None, environment="test")
-    session = AsyncMock()
+    session = MagicMock()
     now = datetime.now(UTC)
-    memory_id = uuid4()
+    parent = _parent()
 
     with patch("coco.modules.voice.tools.MemoryService") as svc_cls:
         svc = svc_cls.return_value
-        svc.create = AsyncMock(
-            return_value=MemoryResponse(
-                id=memory_id,
-                content="喜欢晚饭后散步",
-                category="PREFERENCE",
-                source="VOICE",
-                confirmed=True,
-                created_at=now,
-                updated_at=now,
-            )
+        svc.search_for_user = AsyncMock(
+            return_value=[
+                MemoryResponse(
+                    id="mem-1",
+                    content="喜欢晚饭后散步",
+                    created_at=now,
+                    updated_at=now,
+                )
+            ]
         )
         result = await dispatch_voice_tool(
             session=session,
             settings=settings,
-            user=_parent(),
-            name="save_memory",
-            arguments={
-                "content": "喜欢晚饭后散步",
-                "category": "PREFERENCE",
-            },
+            user=parent,
+            name="recall_memory",
+            arguments={"query": "散步习惯"},
         )
 
     payload = json.loads(result)
-    assert payload["content"] == "喜欢晚饭后散步"
-    assert payload.get("status") != "need_confirmation"
-    svc.create.assert_awaited_once()
-    call_kwargs = svc.create.await_args.kwargs
-    assert call_kwargs["source"] == "VOICE"
-    assert call_kwargs["body"].user_confirmed is True
+    assert payload["status"] == "ok"
+    assert payload["query"] == "散步习惯"
+    assert payload["memories"][0]["content"] == "喜欢晚饭后散步"
+    svc.search_for_user.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_save_memory_tool_removed() -> None:
+    settings = Settings(_env_file=None, environment="test")
+    session = MagicMock()
+    result = await dispatch_voice_tool(
+        session=session,
+        settings=settings,
+        user=_parent(),
+        name="save_memory",
+        arguments={"content": "喜欢吃面", "category": "PREFERENCE"},
+    )
+    payload = json.loads(result)
+    assert payload["status"] == "error"
+    assert "未知工具" in payload["message"]
 
 
 @pytest.mark.asyncio

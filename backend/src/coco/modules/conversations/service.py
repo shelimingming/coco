@@ -28,6 +28,7 @@ from coco.modules.conversations.schemas import (
     ConversationItemResponse,
     ConversationListItem,
 )
+from coco.providers.mem0_memory import get_mem0_client
 from coco.providers.qwen_text import fallback_conversation_title, title_or_fallback
 
 logger = logging.getLogger(__name__)
@@ -43,8 +44,11 @@ def tool_display_summary(tool_name: str, arguments: dict[str, Any], result: dict
     status = str(result.get("status") or "")
     need_confirm = status == "need_confirmation"
 
-    # 新通话不再落库记忆工具；保留分支以便兼容历史数据
+    if tool_name == "recall_memory":
+        return "可可回想了记住的事"
+
     if tool_name == "save_memory":
+        # 旧通话可能仍有写记忆工具记录
         content = str(arguments.get("content") or result.get("content") or "").strip()
         return f"帮你记住：{content}" if content else "帮你记住了一件事"
 
@@ -307,15 +311,54 @@ async def _refine_conversation_title(
         logger.exception("conversation_title_refine_failed id=%s", conversation_id)
 
 
+def _messages_for_mem0(items: list[ConversationItem]) -> list[dict[str, str]]:
+    """只取用户/助手转写，供 Mem0 抽取；跳过工具行。"""
+    messages: list[dict[str, str]] = []
+    for item in items:
+        text = (item.text or "").strip()
+        if not text:
+            continue
+        if item.kind == ConversationItemKind.USER.value:
+            messages.append({"role": "user", "content": text})
+        elif item.kind == ConversationItemKind.ASSISTANT.value:
+            messages.append({"role": "assistant", "content": text})
+    return messages
+
+
+async def _extract_memories_from_conversation(
+    conversation_id: UUID,
+    *,
+    user_id: UUID,
+    messages: list[dict[str, str]],
+) -> None:
+    """后台把本通对话交给 Mem0 自动抽取；失败只打日志。"""
+    if not messages:
+        return
+    try:
+        await get_mem0_client().add_from_messages(
+            user_id=str(user_id),
+            messages=messages,
+        )
+    except Exception:
+        logger.exception(
+            "conversation_memory_extract_failed id=%s user_id=%s",
+            conversation_id,
+            user_id,
+        )
+
+
 async def end_conversation(conversation_id: UUID, *, status: str) -> None:
-    """结束会话并异步生成标题；失败只打日志，不打断语音挂断。"""
+    """结束会话并异步生成标题、抽取记忆；失败只打日志，不打断语音挂断。"""
     try:
         factory = get_session_factory()
         # 先落库结束状态 + 兜底标题，挂断路径尽快返回
+        user_id: UUID | None = None
+        mem0_messages: list[dict[str, str]] = []
         async with factory() as session:
             conversation = await session.get(Conversation, conversation_id)
             if conversation is None:
                 return
+            user_id = conversation.user_id
             items_result = await session.execute(
                 select(ConversationItem)
                 .where(ConversationItem.conversation_id == conversation_id)
@@ -324,6 +367,7 @@ async def end_conversation(conversation_id: UUID, *, status: str) -> None:
             items = list(items_result.scalars().all())
             preview = _preview_from_items(items)
             transcript = transcript_for_title(items)
+            mem0_messages = _messages_for_mem0(items)
             conversation.ended_at = datetime.now(UTC)
             conversation.status = status
             conversation.title = fallback_conversation_title(preview)
@@ -338,5 +382,15 @@ async def end_conversation(conversation_id: UUID, *, status: str) -> None:
             ),
             name=f"conversation-title-{conversation_id}",
         )
+        # 记忆抽取同样后台跑；本通说的话要下次建连才注入
+        if user_id is not None and mem0_messages:
+            asyncio.create_task(
+                _extract_memories_from_conversation(
+                    conversation_id,
+                    user_id=user_id,
+                    messages=mem0_messages,
+                ),
+                name=f"conversation-mem0-{conversation_id}",
+            )
     except Exception:
         logger.exception("conversation_end_failed id=%s", conversation_id)

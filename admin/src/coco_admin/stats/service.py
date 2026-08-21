@@ -8,7 +8,6 @@ from typing import Any
 from coco.models.care import CareShare, FamilyMessage
 from coco.models.conversation import Conversation
 from coco.models.family import Family
-from coco.models.memory import Memory
 from coco.models.notification import Notification
 from coco.models.reminder import Reminder, ReminderOccurrence
 from coco.models.user import User
@@ -95,14 +94,6 @@ async def collect_stats(session: AsyncSession, *, now: datetime | None = None) -
         .where(ReminderOccurrence.escalated_at >= today_start),
     )
 
-    memories_total = await _count(session, select(func.count()).select_from(Memory))
-    memories_by_category: dict[str, int] = {}
-    for category in ("PROFILE", "FAMILY", "PREFERENCE", "ROUTINE"):
-        memories_by_category[category] = await _count(
-            session,
-            select(func.count()).select_from(Memory).where(Memory.category == category),
-        )
-
     care_total = await _count(session, select(func.count()).select_from(CareShare))
     care_low = await _count(
         session, select(func.count()).select_from(CareShare).where(CareShare.urgency == "LOW")
@@ -174,10 +165,6 @@ async def collect_stats(session: AsyncSession, *, now: datetime | None = None) -
                 "confirmed": occ_confirmed_today,
                 "escalated": occ_escalated_today,
             },
-        },
-        "memories": {
-            "total": memories_total,
-            "by_category": memories_by_category,
         },
         "care_shares": {
             "total": care_total,

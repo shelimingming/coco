@@ -45,24 +45,6 @@
         </table>
       </div>
 
-      <h4>记忆（最近 {{ aggregate.memories|length }}）</h4>
-      <div class="table-responsive mb-3">
-        <table class="table table-sm">
-          <thead><tr><th>分类</th><th>内容</th><th>来源</th></tr></thead>
-          <tbody>
-          {% for m in aggregate.memories %}
-            <tr>
-              <td>{{ m.category }}</td>
-              <td>{{ m.content }}</td>
-              <td>{{ m.source }}</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="3" class="text-secondary">无</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-
       <h4>语音会话（最近 {{ aggregate.conversations|length }}）</h4>
       <div class="table-responsive mb-3">
         <table class="table table-sm">

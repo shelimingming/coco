@@ -9,7 +9,6 @@ from coco.models.auth import AuthSession
 from coco.models.care import CareShare, FamilyMessage
 from coco.models.conversation import Conversation, ConversationItem
 from coco.models.family import Family, FamilyInvite
-from coco.models.memory import Memory
 from coco.models.notification import Notification
 from coco.models.reminder import Reminder
 from coco.models.user import User
@@ -34,14 +33,6 @@ async def load_user_aggregate(session: AsyncSession, user_id: uuid.UUID) -> dict
             select(Reminder)
             .where(Reminder.user_id == user_id)
             .order_by(Reminder.created_at.desc())
-            .limit(50)
-        )
-    ).all()
-    memories = (
-        await session.scalars(
-            select(Memory)
-            .where(Memory.user_id == user_id)
-            .order_by(Memory.created_at.desc())
             .limit(50)
         )
     ).all()
@@ -113,7 +104,6 @@ async def load_user_aggregate(session: AsyncSession, user_id: uuid.UUID) -> dict
         "users_by_id": users_by_id,
         "families": families,
         "reminders": reminders,
-        "memories": memories,
         "care_shares": care_shares,
         "messages": messages,
         "notifications": notifications,

@@ -3,7 +3,7 @@
 密钥只留在服务端；下行事件脱敏后不含供应商原始音频原文日志。
 提醒/分享经 Function Calling；need_confirmation 时推送 action.pending 大卡，
 点卡确认走 action.confirm，亦可语音说「好」再以 user_confirmed=true 落库。
-记忆开场注入并静默写入；通话过程落库最终转写与（非记忆）工具调用。
+记忆开场注入；通话结束后由 Mem0 自动整理；通话过程落库最终转写与（非检索）工具调用。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-from coco.config import Settings
+from coco.config import Settings, get_settings
 from coco.database import get_session_factory
 from coco.errors import AppError
 from coco.models.auth import AuthSession
@@ -153,7 +153,7 @@ async def _active_bound_child_name(session: AsyncSession, user: User) -> str | N
 
 
 async def _load_companion_instructions(user_id: UUID) -> str:
-    """建连前加载姓名、绑定子女与已确认记忆，拼进系统提示。"""
+    """建连前加载姓名、绑定子女与 Mem0 记忆，拼进系统提示。"""
     factory = get_session_factory()
     async with factory() as session:
         user = await session.get(User, user_id)
@@ -161,13 +161,18 @@ async def _load_companion_instructions(user_id: UUID) -> str:
             return build_companion_instructions([])
         name = user.display_name
         child_name = await _active_bound_child_name(session, user)
+        settings = get_settings()
         try:
-            memories = await MemoryService().list_for_user(session, user=user)
-        except AppError:
-            logger.warning("load_memories_for_voice_failed user_id=%s", user_id)
+            # Mem0 get_all；失败返回空列表，不阻断建连
+            memory_texts = await MemoryService().contents_for_inject(
+                user_id=str(user.id),
+                limit=settings.mem0_inject_limit,
+            )
+        except Exception:
+            logger.warning("load_memories_for_voice_failed user_id=%s", user_id, exc_info=True)
             return build_companion_instructions([], user_name=name, child_name=child_name)
         return build_companion_instructions(
-            [m.content for m in memories],
+            memory_texts,
             user_name=name,
             child_name=child_name,
         )
@@ -774,8 +779,8 @@ async def _handle_function_call(
             pending_store=pending_store,
         )
 
-    # 记忆静默写入：不进通话历史，父母只在「可可记得的我」里看
-    if conversation_id is not None and name != "save_memory":
+    # 记忆检索：不进通话历史，父母只在「可可记得的我」里看
+    if conversation_id is not None and name != "recall_memory":
         await append_tool_call(
             conversation_id,
             seq=seq.next(),

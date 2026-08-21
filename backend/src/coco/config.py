@@ -60,6 +60,19 @@ class Settings(BaseSettings):
     tts_model: str = "qwen-audio-3.0-tts-flash"
     tts_voice: str = "longanhuan"
 
+    # Mem0 长期记忆：自托管 OSS + pgvector；无 Key 或关闭时读写降级为空
+    mem0_enabled: bool = True
+    mem0_embedding_model: str = "text-embedding-v4"
+    mem0_embedding_dims: int = 1024
+    mem0_collection_name: str = "coco_memories"
+    # SQLite 变更历史；容器内需指向可写路径
+    mem0_history_db_path: str = ".mem0/history.db"
+    mem0_inject_limit: int = 20
+    mem0_search_limit: int = 5
+    # pgvector 连接池（AsyncMemory 并发下过小易耗尽）
+    mem0_pg_minconn: int = 1
+    mem0_pg_maxconn: int = 20
+
     # 提醒调度：第二次提醒 / 升级通知子女的间隔（分钟）
     reminder_second_delay_minutes: int = 30
     reminder_escalate_delay_minutes: int = 30
@@ -99,12 +112,33 @@ class Settings(BaseSettings):
         return "https://dashscope.aliyuncs.com"
 
     @property
+    def aliyun_compatible_base_url(self) -> str:
+        """百炼 OpenAI 兼容模式基址（文本 / embedding / Mem0）。"""
+        return f"{self.aliyun_http_base_url}/compatible-mode/v1"
+
+    @property
     def realtime_available(self) -> bool:
         """有可用阿里云 Key 时才对客户端声明实时能力。"""
         key = self.aliyun_api_key
         if key is None:
             return False
         return bool(key.get_secret_value().strip())
+
+    @property
+    def mem0_available(self) -> bool:
+        """Mem0 需要开关打开且有百炼 Key。"""
+        return self.mem0_enabled and self.realtime_available
+
+    def mem0_pg_connection_string(self) -> str:
+        """把 asyncpg URL 转成 psycopg 连接串。
+
+        search_path 必须含 public：pgvector 的 vector 类型通常装在 public，
+        只写 coco 会导致 type \"vector\" does not exist，记忆静默写失败。
+        表仍优先落在 coco（排在 search_path 最前）。
+        """
+        raw = self.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        sep = "&" if "?" in raw else "?"
+        return f"{raw}{sep}options=-csearch_path%3Dcoco%2Cpublic"
 
     def validate_runtime_safety(self) -> None:
         """非开发环境禁止使用开发短信与默认密钥。"""

@@ -13,7 +13,6 @@ from coco.models.auth import AuthSession, PhoneCode
 from coco.models.care import CareShare, FamilyMessage
 from coco.models.conversation import Conversation, ConversationItem
 from coco.models.family import Family, FamilyInvite
-from coco.models.memory import Memory
 from coco.models.notification import Notification
 from coco.models.reminder import Reminder, ReminderOccurrence
 from coco.models.user import User, UserStatus
@@ -462,47 +461,6 @@ class ConversationItemAdmin(ReadOnlyModelView, model=ConversationItem):
     column_default_sort = [(ConversationItem.created_at, True)]
 
 
-class MemoryAdmin(ReadOnlyModelView, model=Memory):
-    name = "记忆"
-    name_plural = "记忆"
-    icon = "fa-solid fa-brain"
-    category = "业务"
-    label_user_attrs = ("user_id",)
-    column_list = [
-        Memory.user_id,
-        Memory.category,
-        Memory.source,
-        Memory.confirmed,
-        Memory.content,
-        Memory.created_at,
-    ]
-    column_labels = {
-        Memory.user_id: "用户",
-        Memory.category: "分类",
-        Memory.source: "来源",
-        Memory.confirmed: "已确认",
-        Memory.content: "内容",
-        Memory.created_at: "创建时间",
-        Memory.id: "记忆 ID",
-    }
-    column_formatters = {Memory.user_id: format_user_name}
-    column_formatters_detail = {Memory.user_id: format_user_name_detail}
-    column_searchable_list = [Memory.content]
-    column_filters = [
-        StaticValuesFilter(
-            Memory.category,
-            values=[
-                ("PROFILE", "个人"),
-                ("FAMILY", "家庭"),
-                ("PREFERENCE", "偏好"),
-                ("ROUTINE", "作息"),
-            ],
-        ),
-    ]
-    column_sortable_list = [Memory.created_at, Memory.category]
-    column_default_sort = [(Memory.created_at, True)]
-
-
 class CareShareAdmin(ReadOnlyModelView, model=CareShare):
     name = "关怀摘要"
     name_plural = "关怀摘要"
@@ -719,7 +677,6 @@ ALL_MODEL_VIEWS: list[type[ModelView]] = [
     ReminderOccurrenceAdmin,
     ConversationAdmin,
     ConversationItemAdmin,
-    MemoryAdmin,
     CareShareAdmin,
     FamilyMessageAdmin,
     NotificationAdmin,
