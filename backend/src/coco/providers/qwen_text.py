@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import httpx
 from pydantic import SecretStr
+
+from coco.observability.llm_trace import (
+    PURPOSE_TEXT_TITLE,
+    PURPOSE_TEXT_TRANSLATE,
+    record_llm_trace,
+    usage_from_openai,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +44,8 @@ _TITLE_MAX_LEN = 16
 _FALLBACK_TITLE_MAX = 24
 
 # 模型偶发冒充子女：句首喊爸妈，或用「我…」开场
-_PARENT_ADDRESS_RE = re.compile(
-    r"^(妈|爸|妈妈|爸爸|爹|娘|母亲|父亲)[，,！!、]"
-)
-_CHILD_FIRST_PERSON_RE = re.compile(
-    r"^我(刚|已经|在|吃|到|准备|忙|还|先|马上|现在|来)"
-)
+_PARENT_ADDRESS_RE = re.compile(r"^(妈|爸|妈妈|爸爸|爹|娘|母亲|父亲)[，,！!、]")
+_CHILD_FIRST_PERSON_RE = re.compile(r"^我(刚|已经|在|吃|到|准备|忙|还|先|马上|现在|来)")
 
 
 @dataclass(slots=True)
@@ -75,6 +80,7 @@ class QwenTextClient:
         system: str,
         user: str,
         temperature: float,
+        purpose: str,
     ) -> str:
         payload = {
             "model": self.model,
@@ -88,21 +94,48 @@ class QwenTextClient:
             "Authorization": f"Bearer {self._api_key.get_secret_value()}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        started = datetime.now(UTC)
+        t0 = time.perf_counter()
         try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("文本模型返回格式异常") from exc
-        if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("文本模型返回空内容")
-        return content.strip()
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise RuntimeError("文本模型返回格式异常") from exc
+            if not isinstance(content, str) or not content.strip():
+                raise RuntimeError("文本模型返回空内容")
+            text = content.strip()
+            await record_llm_trace(
+                purpose=purpose,
+                modality="text",
+                model=self.model,
+                status="ok",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json=payload,
+                response_json={"content": text},
+                usage_json=usage_from_openai(data),
+                started_at=started,
+            )
+            return text
+        except Exception as exc:
+            await record_llm_trace(
+                purpose=purpose,
+                modality="text",
+                model=self.model,
+                status="error",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json=payload,
+                error_message=str(exc),
+                started_at=started,
+            )
+            raise
 
     async def translate_child_status(
         self, text: str, *, child_name: str = "孩子"
@@ -118,11 +151,10 @@ class QwenTextClient:
             system=_TRANSLATE_SYSTEM,
             user=user_prompt,
             temperature=0.4,
+            purpose=PURPOSE_TEXT_TRANSLATE,
         )
         # 模型偶发第一人称时回退，避免预览出现「妈，我…」
-        safe = sanitize_child_status_relay(
-            content, original=original, child_name=name
-        )
+        safe = sanitize_child_status_relay(content, original=original, child_name=name)
         return TranslateResult(text=safe, translated=True)
 
     async def generate_conversation_title(self, transcript: str) -> TitleResult:
@@ -132,6 +164,7 @@ class QwenTextClient:
             system=_TITLE_SYSTEM,
             user=user_prompt,
             temperature=0.3,
+            purpose=PURPOSE_TEXT_TITLE,
         )
         return TitleResult(title=sanitize_conversation_title(content), generated=True)
 
@@ -141,9 +174,7 @@ def looks_like_child_first_person(text: str) -> bool:
     cleaned = text.strip()
     if not cleaned:
         return False
-    return bool(
-        _PARENT_ADDRESS_RE.match(cleaned) or _CHILD_FIRST_PERSON_RE.match(cleaned)
-    )
+    return bool(_PARENT_ADDRESS_RE.match(cleaned) or _CHILD_FIRST_PERSON_RE.match(cleaned))
 
 
 def fallback_third_person_relay(original: str, *, child_name: str = "孩子") -> str:
@@ -155,9 +186,7 @@ def fallback_third_person_relay(original: str, *, child_name: str = "孩子") ->
     return f"{name}说，{body}"
 
 
-def sanitize_child_status_relay(
-    model_text: str, *, original: str, child_name: str = "孩子"
-) -> str:
+def sanitize_child_status_relay(model_text: str, *, original: str, child_name: str = "孩子") -> str:
     """合规则保留模型文案；命中第一人称/喊爸妈则回退。"""
     cleaned = model_text.strip().strip("「」『』“”\"'‘’")
     if looks_like_child_first_person(cleaned):
@@ -199,6 +228,14 @@ async def translate_or_passthrough(
     if not cleaned:
         return TranslateResult(text="", translated=False)
     if api_key is None or not api_key.get_secret_value().strip():
+        await record_llm_trace(
+            purpose=PURPOSE_TEXT_TRANSLATE,
+            modality="text",
+            model=model,
+            status="skipped",
+            request_json={"text": cleaned, "child_name": child_name},
+            error_message="未配置 API Key，原文透传",
+        )
         return TranslateResult(text=cleaned, translated=False)
     try:
         client = QwenTextClient(api_key=api_key, model=model)
@@ -222,6 +259,15 @@ async def title_or_fallback(
     if not cleaned:
         return TitleResult(title=fallback, generated=False)
     if api_key is None or not api_key.get_secret_value().strip():
+        await record_llm_trace(
+            purpose=PURPOSE_TEXT_TITLE,
+            modality="text",
+            model=model,
+            status="skipped",
+            request_json={"transcript": cleaned, "preview": preview},
+            response_json={"title": fallback},
+            error_message="未配置 API Key，使用预览文案兜底",
+        )
         return TitleResult(title=fallback, generated=False)
     try:
         client = QwenTextClient(

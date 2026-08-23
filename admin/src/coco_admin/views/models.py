@@ -13,6 +13,7 @@ from coco.models.auth import AuthSession, PhoneCode
 from coco.models.care import CareShare, FamilyMessage
 from coco.models.conversation import Conversation, ConversationItem
 from coco.models.family import Family, FamilyInvite
+from coco.models.llm_trace import LlmTrace
 from coco.models.notification import Notification
 from coco.models.reminder import Reminder, ReminderOccurrence
 from coco.models.user import User, UserStatus
@@ -39,6 +40,7 @@ from coco_admin.views.labels import (
     format_user_name_detail,
     warm_admin_labels,
 )
+from coco_admin.views.llm_debug import PURPOSE_LABELS
 
 try:
     # 新版 sqladmin 提供 Flash；旧版则降级为无 toast
@@ -357,6 +359,7 @@ class ConversationAdmin(ReadOnlyModelView, model=Conversation):
     label_user_attrs = ("user_id",)
     column_list = [
         Conversation.user_id,
+        Conversation.title,
         Conversation.status,
         Conversation.channel,
         Conversation.started_at,
@@ -365,6 +368,7 @@ class ConversationAdmin(ReadOnlyModelView, model=Conversation):
     ]
     column_labels = {
         Conversation.user_id: "用户",
+        Conversation.title: "标题",
         Conversation.status: "状态",
         Conversation.channel: "通道",
         Conversation.started_at: "开始时间",
@@ -385,7 +389,7 @@ class ConversationAdmin(ReadOnlyModelView, model=Conversation):
         ),
         StaticValuesFilter(
             Conversation.channel,
-            values=[("VOICE_REALTIME", "实时语音")],
+            values=[("VOICE_REALTIME", "实时语音"), ("LOOK", "帮我看看")],
         ),
     ]
     column_sortable_list = [
@@ -669,6 +673,72 @@ class PhoneCodeAdmin(ReadOnlyModelView, model=PhoneCode):
     column_default_sort = [(PhoneCode.created_at, True)]
 
 
+class LlmTraceAdmin(ReadOnlyModelView, model=LlmTrace):
+    name = "模型调用"
+    name_plural = "模型调用"
+    icon = "fa-solid fa-microchip"
+    category = "调试"
+    label_user_attrs = ("user_id",)
+    label_conversation_attrs = ("conversation_id",)
+    column_list = [
+        LlmTrace.started_at,
+        LlmTrace.user_id,
+        LlmTrace.purpose,
+        LlmTrace.model,
+        LlmTrace.status,
+        LlmTrace.latency_ms,
+        LlmTrace.modality,
+    ]
+    column_labels = {
+        LlmTrace.started_at: "开始时间",
+        LlmTrace.user_id: "用户",
+        LlmTrace.conversation_id: "会话",
+        LlmTrace.purpose: "用途",
+        LlmTrace.modality: "模态",
+        LlmTrace.provider: "供应商",
+        LlmTrace.model: "模型",
+        LlmTrace.status: "状态",
+        LlmTrace.latency_ms: "耗时(ms)",
+        LlmTrace.request_json: "请求",
+        LlmTrace.response_json: "响应",
+        LlmTrace.usage_json: "用量",
+        LlmTrace.error_message: "错误",
+        LlmTrace.id: "记录 ID",
+    }
+    column_formatters = {
+        LlmTrace.user_id: format_user_name,
+        LlmTrace.conversation_id: format_conversation_label,
+        LlmTrace.purpose: lambda m, a, request=None: PURPOSE_LABELS.get(
+            getattr(m, a, ""), getattr(m, a, "")
+        ),
+    }
+    column_formatters_detail = {
+        LlmTrace.user_id: format_user_name_detail,
+        LlmTrace.conversation_id: format_conversation_label_detail,
+        LlmTrace.purpose: lambda m, a, request=None: PURPOSE_LABELS.get(
+            getattr(m, a, ""), getattr(m, a, "")
+        ),
+    }
+    column_filters = [
+        StaticValuesFilter(
+            LlmTrace.purpose,
+            values=list(PURPOSE_LABELS.items()),
+        ),
+        StaticValuesFilter(
+            LlmTrace.status,
+            values=[("ok", "成功"), ("error", "失败"), ("skipped", "跳过")],
+        ),
+    ]
+    column_sortable_list = [
+        LlmTrace.started_at,
+        LlmTrace.purpose,
+        LlmTrace.status,
+        LlmTrace.latency_ms,
+    ]
+    column_default_sort = [(LlmTrace.started_at, True)]
+    column_searchable_list = [LlmTrace.purpose, LlmTrace.model, LlmTrace.error_message]
+
+
 ALL_MODEL_VIEWS: list[type[ModelView]] = [
     UserAdmin,
     FamilyAdmin,
@@ -682,4 +752,5 @@ ALL_MODEL_VIEWS: list[type[ModelView]] = [
     NotificationAdmin,
     AuthSessionAdmin,
     PhoneCodeAdmin,
+    LlmTraceAdmin,
 ]

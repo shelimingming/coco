@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from coco_admin.auth import AdminAuth
 from coco_admin.config import AdminSettings
+from coco_admin.views.llm_debug import LlmDebugView
 from coco_admin.views.models import ALL_MODEL_VIEWS
 from coco_admin.views.stats_view import StatsAdminView
 
@@ -27,6 +28,7 @@ def mount_admin(app, engine: AsyncEngine, settings: AdminSettings) -> Admin:
         authentication_backend=authentication_backend,
     )
     admin.add_view(StatsAdminView)
+    admin.add_view(LlmDebugView)
     for view in ALL_MODEL_VIEWS:
         admin.add_view(view)
     return admin

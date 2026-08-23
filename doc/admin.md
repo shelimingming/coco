@@ -24,6 +24,7 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 | --- | --- |
 | http://127.0.0.1:8001/admin | 后台入口（需登录） |
 | http://127.0.0.1:8001/admin/stats | 运营总览（侧栏「运营总览」） |
+| http://127.0.0.1:8001/admin/llm-debug | 模型调试（按用户搜索时间线） |
 | http://127.0.0.1:8001/admin/api/stats | 统计 JSON（需已登录 session） |
 | http://127.0.0.1:8001/health | 健康检查 |
 
@@ -43,6 +44,7 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 | 家庭 / 邀请码 | 家庭详情聚合成员、邀请码、消息、关怀 |
 | 提醒 / 发生记录 | 只读浏览与状态筛选 |
 | 语音会话 / 会话条目 | 只读浏览转写与工具调用；会话详情含时间线回放（含工具 JSON，无音频） |
+| 模型调试 / 模型调用 | 按用户查看全部大模型调用时间线（语音 / 识图 / 标题 / 转译 / Mem0）；列表可按用途与状态筛选 |
 | 关怀 / 消息 / 通知 | 只读浏览业务明文内容 |
 | 登录会话 | 查看设备与吊销状态；批量吊销 |
 | 验证码记录 | 仅 attempts/过期等元数据（hash 不展示，无法还原明文） |
@@ -58,6 +60,7 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 | `COCO_ADMIN_PASSWORD` | 管理员密码 |
 | `COCO_ADMIN_SECRET_KEY` | SQLAdmin session 签名密钥 |
 | `COCO_ADMIN_ENVIRONMENT` | `development` / `staging` / `production` / `test` |
+| `COCO_LLM_TRACE_ENABLED` | backend 开关，默认 true；关闭后不再写入 `llm_traces` |
 
 ## 架构要点
 

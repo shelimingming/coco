@@ -12,6 +12,9 @@
         用户：{{ aggregate.user.display_name if aggregate.user else "未知" }}
         · 条目 {{ aggregate.items|length }} 条
         · 不含原始音频
+        {% if aggregate.user %}
+        · <a href="/admin/llm-debug/user/{{ aggregate.user.id }}">模型调试时间线</a>
+        {% endif %}
       </p>
       <div class="table-responsive">
         <table class="table table-sm table-vcenter">

@@ -8,11 +8,20 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import httpx
 from pydantic import SecretStr
+
+from coco.observability.llm_trace import (
+    PURPOSE_VISION_FOLLOW_UP,
+    PURPOSE_VISION_LOOK,
+    record_llm_trace,
+    usage_from_openai,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,21 +109,53 @@ class QwenVisionClient:
             "Authorization": f"Bearer {self._api_key.get_secret_value()}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        started = datetime.now(UTC)
+        t0 = time.perf_counter()
         try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("识图模型返回格式异常") from exc
-        if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("识图模型返回空内容")
-        return parse_look_content(content)
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise RuntimeError("识图模型返回格式异常") from exc
+            if not isinstance(content, str) or not content.strip():
+                raise RuntimeError("识图模型返回空内容")
+            result = parse_look_content(content)
+            await record_llm_trace(
+                purpose=PURPOSE_VISION_LOOK,
+                modality="vision",
+                model=self.model,
+                status="ok",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json=payload,
+                response_json={
+                    "confidence": result.confidence,
+                    "headline": result.headline,
+                    "detail": result.detail,
+                    "scene_description": result.scene_description,
+                },
+                usage_json=usage_from_openai(data),
+                started_at=started,
+            )
+            return result
+        except Exception as exc:
+            await record_llm_trace(
+                purpose=PURPOSE_VISION_LOOK,
+                modality="vision",
+                model=self.model,
+                status="error",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json=payload,
+                error_message=str(exc),
+                started_at=started,
+            )
+            raise
 
     async def follow_up(
         self,
@@ -174,21 +215,48 @@ class QwenVisionClient:
             "Authorization": f"Bearer {self._api_key.get_secret_value()}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        started = datetime.now(UTC)
+        t0 = time.perf_counter()
         try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("追问模型返回格式异常") from exc
-        if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("追问模型返回空内容")
-        return content.strip()
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise RuntimeError("追问模型返回格式异常") from exc
+            if not isinstance(content, str) or not content.strip():
+                raise RuntimeError("追问模型返回空内容")
+            text = content.strip()
+            await record_llm_trace(
+                purpose=PURPOSE_VISION_FOLLOW_UP,
+                modality="vision",
+                model=self.model,
+                status="ok",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json=payload,
+                response_json={"content": text},
+                usage_json=usage_from_openai(data),
+                started_at=started,
+            )
+            return text
+        except Exception as exc:
+            await record_llm_trace(
+                purpose=PURPOSE_VISION_FOLLOW_UP,
+                modality="vision",
+                model=self.model,
+                status="error",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json=payload,
+                error_message=str(exc),
+                started_at=started,
+            )
+            raise
 
 
 def parse_look_content(raw: str) -> LookResult:

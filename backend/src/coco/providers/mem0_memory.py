@@ -8,13 +8,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from coco.config import Settings, get_settings
+from coco.observability.llm_trace import (
+    PURPOSE_MEM0_EXTRACT,
+    PURPOSE_MEM0_SEARCH,
+    record_llm_trace,
+)
 from coco.providers.mem0_prompts import COCO_MEMORY_CUSTOM_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
@@ -33,6 +39,15 @@ class Mem0MemoryItem:
     created_at: datetime | None
     updated_at: datetime | None
     score: float | None = None
+
+
+def _mem0_item_payload(item: Mem0MemoryItem) -> dict[str, Any]:
+    """调试落库用的精简字段，避免把整份 mem0 对象塞进 JSON。"""
+    return {
+        "id": item.id,
+        "content": item.content,
+        "score": item.score,
+    }
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -169,8 +184,19 @@ class Mem0MemoryClient:
         """通话结束后自动抽取；infer=True 由 Mem0 决定 ADD/UPDATE/NOOP。"""
         if not messages:
             return []
+        started = datetime.now(UTC)
+        t0 = time.perf_counter()
         memory = await self._ensure_memory()
         if memory is None:
+            await record_llm_trace(
+                purpose=PURPOSE_MEM0_EXTRACT,
+                modality="text",
+                model=self._settings.text_model,
+                status="skipped",
+                request_json={"messages": messages},
+                error_message="Mem0 不可用，跳过抽取",
+                started_at=started,
+            )
             return []
         try:
             raw = await memory.add(
@@ -179,13 +205,34 @@ class Mem0MemoryClient:
                 infer=True,
                 prompt=COCO_MEMORY_CUSTOM_INSTRUCTIONS,
             )
-            return [
+            items = [
                 item
                 for item in (_normalize_item(row) for row in _results_list(raw))
                 if item is not None
             ]
-        except Exception:
+            await record_llm_trace(
+                purpose=PURPOSE_MEM0_EXTRACT,
+                modality="text",
+                model=self._settings.text_model,
+                status="ok",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json={"messages": messages},
+                response_json={"memories": [_mem0_item_payload(item) for item in items]},
+                started_at=started,
+            )
+            return items
+        except Exception as exc:
             logger.exception("mem0_add_failed user_id=%s", user_id)
+            await record_llm_trace(
+                purpose=PURPOSE_MEM0_EXTRACT,
+                modality="text",
+                model=self._settings.text_model,
+                status="error",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json={"messages": messages},
+                error_message=str(exc),
+                started_at=started,
+            )
             return []
 
     async def search(
@@ -195,11 +242,22 @@ class Mem0MemoryClient:
         query: str,
         limit: int | None = None,
     ) -> list[Mem0MemoryItem]:
-        memory = await self._ensure_memory()
-        if memory is None:
-            return []
         q = query.strip()
         if not q:
+            return []
+        started = datetime.now(UTC)
+        t0 = time.perf_counter()
+        memory = await self._ensure_memory()
+        if memory is None:
+            await record_llm_trace(
+                purpose=PURPOSE_MEM0_SEARCH,
+                modality="embedding",
+                model=self._settings.mem0_embedding_model,
+                status="skipped",
+                request_json={"query": q},
+                error_message="Mem0 不可用，跳过检索",
+                started_at=started,
+            )
             return []
         top_k = limit if limit is not None else self._settings.mem0_search_limit
         try:
@@ -208,13 +266,34 @@ class Mem0MemoryClient:
                 filters={"user_id": user_id},
                 top_k=max(1, top_k),
             )
-            return [
+            items = [
                 item
                 for item in (_normalize_item(row) for row in _results_list(raw))
                 if item is not None
             ]
-        except Exception:
+            await record_llm_trace(
+                purpose=PURPOSE_MEM0_SEARCH,
+                modality="embedding",
+                model=self._settings.mem0_embedding_model,
+                status="ok",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json={"query": q, "limit": top_k},
+                response_json={"hits": [_mem0_item_payload(item) for item in items]},
+                started_at=started,
+            )
+            return items
+        except Exception as exc:
             logger.exception("mem0_search_failed user_id=%s", user_id)
+            await record_llm_trace(
+                purpose=PURPOSE_MEM0_SEARCH,
+                modality="embedding",
+                model=self._settings.mem0_embedding_model,
+                status="error",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                request_json={"query": q},
+                error_message=str(exc),
+                started_at=started,
+            )
             return []
 
     async def get_all(

@@ -22,6 +22,13 @@ from coco.models.conversation import (
 from coco.models.user import User, UserRole
 from coco.modules.vision.image_cache import look_image_cache
 from coco.modules.vision.schemas import LookFollowUpResponse, LookResponse
+from coco.observability.llm_trace import (
+    PURPOSE_VISION_FOLLOW_UP,
+    PURPOSE_VISION_LOOK,
+    bind_llm_trace,
+    record_llm_trace,
+    reset_llm_trace,
+)
 from coco.providers.qwen_vision import (
     LookResult,
     QwenVisionClient,
@@ -77,11 +84,15 @@ class VisionService:
                 "暂时只支持常见照片格式。请用手机重新拍一张。",
             )
 
-        result = await self._call_model(
-            image_bytes=image_bytes,
-            mime=mime,
-            question=question,
-        )
+        tokens = bind_llm_trace(user_id=user.id)
+        try:
+            result = await self._call_model(
+                image_bytes=image_bytes,
+                mime=mime,
+                question=question,
+            )
+        finally:
+            reset_llm_trace(tokens)
         conversation_id = await self._record_look(
             session,
             user=user,
@@ -140,12 +151,16 @@ class VisionService:
             )
 
         history = await self._load_text_history(session, conversation_id=conversation_id)
-        reply = await self._call_follow_up(
-            image_bytes=cached.image_bytes,
-            mime=cached.mime,
-            history=history,
-            user_text=cleaned,
-        )
+        tokens = bind_llm_trace(user_id=user.id, conversation_id=conversation_id)
+        try:
+            reply = await self._call_follow_up(
+                image_bytes=cached.image_bytes,
+                mime=cached.mime,
+                history=history,
+                user_text=cleaned,
+            )
+        finally:
+            reset_llm_trace(tokens)
 
         next_seq = await self._next_seq(session, conversation_id=conversation_id)
         session.add(
@@ -176,6 +191,13 @@ class VisionService:
     ) -> LookResult:
         key = self._settings.aliyun_api_key
         if key is None or not key.get_secret_value().strip():
+            await record_llm_trace(
+                purpose=PURPOSE_VISION_LOOK,
+                modality="vision",
+                model=self._settings.vision_model,
+                status="skipped",
+                error_message="未配置 API Key，识图降级为看不清",
+            )
             return unclear_look_result()
 
         ext = _ALLOWED_MIME[mime]
@@ -200,6 +222,13 @@ class VisionService:
     ) -> str:
         key = self._settings.aliyun_api_key
         if key is None or not key.get_secret_value().strip():
+            await record_llm_trace(
+                purpose=PURPOSE_VISION_FOLLOW_UP,
+                modality="vision",
+                model=self._settings.vision_model,
+                status="skipped",
+                error_message="未配置 API Key，追问不可用",
+            )
             raise AppError(
                 503,
                 "vision.unavailable",

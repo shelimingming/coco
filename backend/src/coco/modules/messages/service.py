@@ -17,6 +17,7 @@ from coco.modules.messages.schemas import (
     MessagePreviewResponse,
     MessageSendRequest,
 )
+from coco.observability.llm_trace import bind_llm_trace, reset_llm_trace
 from coco.providers.qwen_text import translate_or_passthrough
 
 
@@ -47,12 +48,16 @@ class MessageService:
         if family.child_user_id != user.id or family.status != FamilyStatus.ACTIVE.value:
             raise AppError(400, "message.family_inactive", "家庭尚未完成绑定，不能报平安。")
 
-        result = await translate_or_passthrough(
-            api_key=self._settings.aliyun_api_key,
-            model=self._settings.text_model,
-            text=text,
-            child_name=user.display_name or "孩子",
-        )
+        tokens = bind_llm_trace(user_id=user.id)
+        try:
+            result = await translate_or_passthrough(
+                api_key=self._settings.aliyun_api_key,
+                model=self._settings.text_model,
+                text=text,
+                child_name=user.display_name or "孩子",
+            )
+        finally:
+            reset_llm_trace(tokens)
         return MessagePreviewResponse(
             original_text=text.strip(),
             delivered_text=result.text,

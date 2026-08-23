@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     # 家庭邀请码有效期
     family_invite_ttl_minutes: int = 10
 
+    # 调试：把每次大模型调用写入 llm_traces，供运营后台按用户排查
+    llm_trace_enabled: bool = True
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def _strip_origins(cls, value: object) -> object:

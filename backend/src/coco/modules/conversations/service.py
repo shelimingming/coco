@@ -28,6 +28,7 @@ from coco.modules.conversations.schemas import (
     ConversationItemResponse,
     ConversationListItem,
 )
+from coco.observability.llm_trace import bind_llm_trace, reset_llm_trace
 from coco.providers.mem0_memory import get_mem0_client
 from coco.providers.qwen_text import fallback_conversation_title, title_or_fallback
 
@@ -287,9 +288,10 @@ async def append_tool_call(
 
 
 async def _refine_conversation_title(
-    conversation_id: UUID, *, transcript: str, preview: str
+    conversation_id: UUID, *, transcript: str, preview: str, user_id: UUID | None = None
 ) -> None:
     """后台用 LLM 覆盖兜底标题；失败不影响已结束的会话。"""
+    tokens = bind_llm_trace(user_id=user_id, conversation_id=conversation_id)
     try:
         settings = get_settings()
         title_result = await title_or_fallback(
@@ -309,6 +311,8 @@ async def _refine_conversation_title(
             await session.commit()
     except Exception:
         logger.exception("conversation_title_refine_failed id=%s", conversation_id)
+    finally:
+        reset_llm_trace(tokens)
 
 
 def _messages_for_mem0(items: list[ConversationItem]) -> list[dict[str, str]]:
@@ -334,6 +338,7 @@ async def _extract_memories_from_conversation(
     """后台把本通对话交给 Mem0 自动抽取；失败只打日志。"""
     if not messages:
         return
+    tokens = bind_llm_trace(user_id=user_id, conversation_id=conversation_id)
     try:
         await get_mem0_client().add_from_messages(
             user_id=str(user_id),
@@ -345,6 +350,8 @@ async def _extract_memories_from_conversation(
             conversation_id,
             user_id,
         )
+    finally:
+        reset_llm_trace(tokens)
 
 
 async def end_conversation(conversation_id: UUID, *, status: str) -> None:
@@ -379,6 +386,7 @@ async def end_conversation(conversation_id: UUID, *, status: str) -> None:
                 conversation_id,
                 transcript=transcript,
                 preview=preview,
+                user_id=user_id,
             ),
             name=f"conversation-title-{conversation_id}",
         )

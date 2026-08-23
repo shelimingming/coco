@@ -13,6 +13,7 @@ import base64
 import contextlib
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -49,6 +50,15 @@ from coco.modules.voice.prompts import (
     build_companion_instructions,
 )
 from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
+from coco.observability.llm_trace import (
+    PURPOSE_VISION_INJECT,
+    PURPOSE_VOICE_SESSION,
+    PURPOSE_VOICE_TOOL,
+    PURPOSE_VOICE_TURN,
+    bind_llm_trace,
+    record_llm_trace,
+    reset_llm_trace,
+)
 from coco.providers.qwen_realtime import (
     QwenAudioRealtimeClient,
     RealtimeProviderError,
@@ -84,6 +94,15 @@ class _SeqCounter:
     def next(self) -> int:
         self._value += 1
         return self._value
+
+
+def _voice_tool_names() -> list[str]:
+    names: list[str] = []
+    for item in VOICE_TOOL_DEFINITIONS:
+        fn = item.get("function")
+        if isinstance(fn, dict) and isinstance(fn.get("name"), str):
+            names.append(fn["name"])
+    return names
 
 
 def _client_event(type_: str, **payload: Any) -> dict[str, Any]:
@@ -315,6 +334,7 @@ async def run_realtime_bridge(
     vendor: QwenAudioRealtimeClient | None = None
     conversation_id: UUID | None = None
     end_status = ConversationStatus.CLOSED.value
+    tokens = None
     try:
         if not settings.realtime_available and client_factory is None:
             await _send_json(
@@ -329,8 +349,10 @@ async def run_realtime_bridge(
             return
 
         conversation_id = await start_conversation(user_id)
+        tokens = bind_llm_trace(user_id=user_id, conversation_id=conversation_id)
         seq = _SeqCounter()
 
+        instructions: str | None = None
         if client_factory is None:
             # 默认路径：注入记忆后再连百炼
             instructions = await _load_companion_instructions(user_id)
@@ -344,6 +366,17 @@ async def run_realtime_bridge(
                 await maybe_client if asyncio.iscoroutine(maybe_client) else maybe_client,
             )
         vendor = active_vendor
+        await record_llm_trace(
+            purpose=PURPOSE_VOICE_SESSION,
+            modality="realtime",
+            model=settings.realtime_model,
+            status="ok",
+            request_json={
+                "instructions": instructions,
+                "voice": settings.realtime_voice,
+                "tools": _voice_tool_names(),
+            },
+        )
         # 通话作用域：提醒/分享待确认草稿（点卡或语音二选一）
         pending_store = PendingActionStore()
         await _send_json(websocket, _client_event("session.ready"))
@@ -417,6 +450,8 @@ async def run_realtime_bridge(
     finally:
         if conversation_id is not None:
             await end_conversation(conversation_id, status=end_status)
+        if tokens is not None:
+            reset_llm_trace(tokens)
         if vendor is not None:
             with contextlib.suppress(Exception):
                 await vendor.close()
@@ -588,6 +623,14 @@ async def _inject_vision_from_client(
         )
     except Exception:
         logger.exception("realtime_vision_inject_failed")
+        await record_llm_trace(
+            purpose=PURPOSE_VISION_INJECT,
+            modality="realtime",
+            model=get_settings().realtime_model,
+            status="error",
+            request_json={"scene_description": scene.strip(), "source": source_str},
+            error_message="识图结果注入 Realtime 失败",
+        )
         await _send_json(
             websocket,
             _client_event(
@@ -597,6 +640,13 @@ async def _inject_vision_from_client(
             ),
         )
         return
+    await record_llm_trace(
+        purpose=PURPOSE_VISION_INJECT,
+        modality="realtime",
+        model=get_settings().realtime_model,
+        status="ok",
+        request_json={"scene_description": scene.strip(), "source": source_str},
+    )
     await _send_json(
         websocket,
         _client_event(
@@ -751,6 +801,8 @@ async def _handle_function_call(
         arguments = raw_args
 
     # 长连接不长期占库连接：每次工具调用新开短生命周期 session
+    started = datetime.now(UTC)
+    t0 = time.perf_counter()
     factory = get_session_factory()
     async with factory() as session:
         fresh_user = await session.get(User, user_id)
@@ -767,6 +819,20 @@ async def _handle_function_call(
                 name=name,
                 arguments=arguments,
             )
+    try:
+        parsed_output: Any = json.loads(output)
+    except json.JSONDecodeError:
+        parsed_output = output
+    await record_llm_trace(
+        purpose=PURPOSE_VOICE_TOOL,
+        modality="realtime",
+        model=settings.realtime_model,
+        status="ok",
+        latency_ms=int((time.perf_counter() - t0) * 1000),
+        request_json={"name": name, "arguments": arguments},
+        response_json={"output": parsed_output},
+        started_at=started,
+    )
 
     # need_confirmation → 推大卡；语音确认成功 → 收卡（防双通道重复）
     if name in CONFIRMABLE_KINDS:
@@ -859,6 +925,7 @@ async def _forward_vendor_events(
 ) -> None:
     assistant_text = ""
     final_sent = False
+    last_user_text = ""
     # 工具已写回、等待本轮 response.done 后再 create 二轮（避免 in-progress 冲突）
     needs_tool_followup = False
     try:
@@ -919,6 +986,15 @@ async def _forward_vendor_events(
                                 kind=ConversationItemKind.ASSISTANT.value,
                                 text=text,
                             )
+                        await record_llm_trace(
+                            purpose=PURPOSE_VOICE_TURN,
+                            modality="realtime",
+                            model=settings.realtime_model,
+                            status="ok",
+                            request_json={"user": last_user_text},
+                            response_json={"assistant": text},
+                        )
+                        last_user_text = ""
                         await _send_json(websocket, mapped_done)
                     assistant_text = ""
                 with contextlib.suppress(Exception):
@@ -952,9 +1028,19 @@ async def _forward_vendor_events(
                         kind=ConversationItemKind.ASSISTANT.value,
                         text=text,
                     )
+                await record_llm_trace(
+                    purpose=PURPOSE_VOICE_TURN,
+                    modality="realtime",
+                    model=settings.realtime_model,
+                    status="ok",
+                    request_json={"user": last_user_text},
+                    response_json={"assistant": text},
+                )
+                last_user_text = ""
                 assistant_text = ""
             elif mapped.get("type") == "user.final":
                 text = str(mapped.get("text") or "").strip()
+                last_user_text = text
                 if conversation_id is not None and text:
                     await append_utterance(
                         conversation_id,
