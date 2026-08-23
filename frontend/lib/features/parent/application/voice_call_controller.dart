@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/audio/mic_pcm_stream.dart';
@@ -15,7 +16,8 @@ import '../domain/voice_call_transcript.dart';
 import 'coco_companion_controller.dart';
 
 /// 父母端实时通话状态机：连接 → 听 → 想 → 说；小狗姿态仅倾听 / 说话。
-class VoiceCallController extends StateNotifier<VoiceCallState> {
+class VoiceCallController extends StateNotifier<VoiceCallState>
+    with WidgetsBindingObserver {
   VoiceCallController({
     required this.ref,
     required this._readAccessToken,
@@ -29,6 +31,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
        super(const VoiceCallState()) {
     // 构造期注入播放结束回调，用于恢复麦克风上行。
     _player.onDrained = _onPlaybackDrained;
+    // 监听来电 / 切后台等音频焦点丢失，进入明确中断态
+    WidgetsBinding.instance.addObserver(this);
   }
 
   final Ref ref;
@@ -199,6 +203,45 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
     state = state.copyWith(
       phase: VoiceCallPhase.listening,
       assistantCaption: '',
+    );
+    _syncPose(VoiceCallPhase.listening);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      // 播报中被来电/系统音打断：立即停播并提示；倾听中仅暂停上行
+      if (this.state.phase == VoiceCallPhase.speaking) {
+        unawaited(_onAudioInterrupted());
+      } else if (this.state.isActive) {
+        _mic.suppress = true;
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      if (_started &&
+          this.state.isActive &&
+          this.state.phase != VoiceCallPhase.speaking) {
+        _mic.suppress = false;
+      }
+    }
+  }
+
+  /// 音频被系统抢占后的明确中断态：停播、恢复听，不挂断会话。
+  Future<void> _onAudioInterrupted() async {
+    if (!_started || !state.isActive) return;
+    try {
+      await _socket.cancelResponse();
+    } catch (_) {}
+    await _player.clear();
+    _mic.suppress = false;
+    final spoken = _assistantAccum.trim();
+    if (spoken.isNotEmpty) {
+      _appendTranscript(VoiceCallTranscriptRole.assistant, spoken);
+    }
+    _assistantAccum = '';
+    state = state.copyWith(
+      phase: VoiceCallPhase.listening,
+      assistantCaption: '刚才被系统声音打断了。您可以继续说，或点结束。',
     );
     _syncPose(VoiceCallPhase.listening);
   }
@@ -432,6 +475,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_teardown(resetToIdle: false));
     unawaited(_mic.dispose());
     unawaited(_player.dispose());

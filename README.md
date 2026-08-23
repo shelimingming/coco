@@ -15,8 +15,11 @@
 - Flutter 3.44+ / Dart 3.12+
 - PostgreSQL（本地已有 `coco` 库即可）
 - Xcode + iOS 26 模拟器（部署目标 iOS 26）
+- Android：Android Studio / SDK（`minSdk` 26）；国内真机 USB 调试，不依赖 GMS
 
 ## 一键启动（推荐）
+
+### iOS
 
 ```bash
 ./scripts/dev_ios.sh
@@ -24,6 +27,20 @@
 
 依次完成：生成 `backend/.env` / `admin/.env` → 数据库预检 → `uv sync` → `alembic upgrade head` → 启动用户 API（8000）与运营后台（8001）并等健康检查 → 启动 iOS 26 模拟器 → `flutter run`。
 服务已在跑时可加 `--reuse-backend` 复用；`flutter run` 退出时脚本会顺手关掉自己拉起的服务。
+
+### Android
+
+```bash
+# 模拟器（API 走 10.0.2.2）
+./scripts/dev_android.sh
+
+# USB / 局域网真机
+./scripts/dev_android.sh --usb
+```
+
+常用参数与 iOS 脚本类似（`--list` / `--lan` / `--backend-only` / `--app-only` / `--reuse-backend`）。详见 [`frontend/README.md`](frontend/README.md)。
+
+### iOS 常用参数
 
 常用参数：
 
@@ -82,22 +99,25 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 - 默认开发账号见 `admin/.env.example`
 - 说明：[`doc/admin.md`](doc/admin.md)
 
-## 前端（iOS 模拟器）
+## 前端（iOS / Android）
 
 ```bash
 cd frontend
 flutter pub get
 flutter run -d "iPhone 17 Pro"
+# 或 Android：flutter run -d <android-id>
 ```
 
-默认 API：`http://127.0.0.1:8000`。覆盖方式：
+一键：`./scripts/dev_ios.sh` / `./scripts/dev_android.sh`。
+
+默认 API：`http://127.0.0.1:8000`（Android 模拟器用 `http://10.0.2.2:8000`）。覆盖方式：
 
 ```bash
 flutter run -d "iPhone 17 Pro" \
   --dart-define=COCO_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-真机请改成 Mac 局域网 IP。
+真机请改成 Mac 局域网 IP，后端需 `--host 0.0.0.0`。
 
 ## Web（本地）
 

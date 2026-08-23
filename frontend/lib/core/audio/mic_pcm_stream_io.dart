@@ -37,12 +37,18 @@ class IoMicPcmStream implements MicPcmStream {
       throw const MicPcmException('麦克风还没有允许使用。您可以到手机设置里允许，然后再点我。刚才没有录下任何声音。');
     }
     try {
-      // iosConfig 默认带 defaultToSpeaker，保证外放；须在播放器 setup 之后调用。
+      // iOS：iosConfig 默认带 defaultToSpeaker，保证外放；须在播放器 setup 之后调用。
+      // Android：speakerphone + voiceCommunication，避免走听筒并利于回声抑制。
       final stream = await _recorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
+          androidConfig: AndroidRecordConfig(
+            audioSource: AndroidAudioSource.voiceCommunication,
+            speakerphone: true,
+            audioManagerMode: AudioManagerMode.modeInCommunication,
+          ),
         ),
       );
       _subscription = stream.listen(

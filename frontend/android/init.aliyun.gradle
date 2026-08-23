@@ -1,0 +1,14 @@
+// 本机访问 repo.maven.apache.org 会被劫持且返回 404；插件 buildscript 仍会声明 mavenCentral()。
+// 此 init 脚本清空并只走阿里云 / Google，避免 PKIX 与空仓库。
+allprojects { project ->
+    buildscript {
+        repositories {
+            clear()
+            maven { url "https://maven.aliyun.com/repository/google" }
+            maven { url "https://maven.aliyun.com/repository/public" }
+            maven { url "https://maven.aliyun.com/repository/central" }
+            maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+            google()
+        }
+    }
+}

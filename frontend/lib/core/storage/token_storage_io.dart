@@ -2,13 +2,17 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'token_storage.dart';
 
-TokenStorageBackend createTokenStorageBackend() =>
-    SecureTokenStorageBackend();
+TokenStorageBackend createTokenStorageBackend() => SecureTokenStorageBackend();
 
 /// iOS/Android：系统钥匙串 / Keystore。
 class SecureTokenStorageBackend implements TokenStorageBackend {
   SecureTokenStorageBackend({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            // v11 默认 AES-GCM + Keystore；显式 AndroidOptions 便于国内 ROM 排查
+            aOptions: AndroidOptions(),
+          );
 
   final FlutterSecureStorage _storage;
 

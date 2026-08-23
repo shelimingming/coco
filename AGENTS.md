@@ -27,7 +27,7 @@ MVP 核心：语音陪伴、日常提醒、关怀摘要同步、子女今日状�
 
 ## 技术基线
 
-- 客户端：Flutter，Riverpod，go_router，Dio；首发 iOS 26。
+- 客户端：Flutter，Riverpod，go_router，Dio；首发 iOS 26，同步支持 Android（国内真机，无 GMS）。
 - 后端：FastAPI，SQLAlchemy 2 async，Alembic，uv；库 `coco`，schema `coco`。
 - 鉴权：手机号验证码；JWT access + opaque refresh。
 - AI / ASR / TTS：必须经服务端适配层，客户端不存供应商密钥。

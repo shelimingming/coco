@@ -18,6 +18,24 @@ class IoLocalNotificationService implements LocalNotificationService {
       FlutterLocalNotificationsPlugin();
   bool _ready = false;
 
+  static const _defaultChannel = AndroidNotificationDetails(
+    'coco_default',
+    '可可通知',
+    channelDescription: '提醒、报平安与关怀消息',
+    importance: Importance.high,
+    priority: Priority.high,
+    enableVibration: true,
+  );
+
+  static const _reminderChannel = AndroidNotificationDetails(
+    'coco_reminders',
+    '日常提醒',
+    channelDescription: '到点提醒（本地定时，无需推送证书）',
+    importance: Importance.high,
+    priority: Priority.high,
+    enableVibration: true,
+  );
+
   @override
   final Set<String> scheduledReminderIds = {};
 
@@ -37,6 +55,8 @@ class IoLocalNotificationService implements LocalNotificationService {
     const init = InitializationSettings(iOS: ios, macOS: ios, android: android);
     await _plugin.initialize(settings: init);
 
+    await _ensureAndroidChannels();
+
     await _plugin
         .resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin
@@ -44,13 +64,42 @@ class IoLocalNotificationService implements LocalNotificationService {
         ?.requestPermissions(alert: true, badge: true, sound: true);
 
     // Android 13+ 运行时通知权限（当前工程可无 android 目录，调用安全）
-    await _plugin
+    final androidPlugin = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
+        >();
+    await androidPlugin?.requestNotificationsPermission();
+    // Android 12+ 精确闹钟：退后台到点提醒依赖 AlarmManager
+    await androidPlugin?.requestExactAlarmsPermission();
 
     _ready = true;
+  }
+
+  /// 显式创建渠道，避免部分 ROM 首次 show 时通道未就绪。
+  Future<void> _ensureAndroidChannels() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android == null) return;
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'coco_default',
+        '可可通知',
+        description: '提醒、报平安与关怀消息',
+        importance: Importance.high,
+        enableVibration: true,
+      ),
+    );
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'coco_reminders',
+        '日常提醒',
+        description: '到点提醒（本地定时，无需推送证书）',
+        importance: Importance.high,
+        enableVibration: true,
+      ),
+    );
   }
 
   @override
@@ -61,11 +110,12 @@ class IoLocalNotificationService implements LocalNotificationService {
           IOSFlutterLocalNotificationsPlugin
         >()
         ?.requestPermissions(alert: true, badge: true, sound: true);
-    final android = await _plugin
+    final androidPlugin = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
+        >();
+    final android = await androidPlugin?.requestNotificationsPermission();
+    await androidPlugin?.requestExactAlarmsPermission();
     return (ios ?? true) && (android ?? true);
   }
 
@@ -83,13 +133,7 @@ class IoLocalNotificationService implements LocalNotificationService {
         presentBadge: true,
         presentSound: true,
       ),
-      android: AndroidNotificationDetails(
-        'coco_default',
-        '可可通知',
-        channelDescription: '提醒、报平安与关怀消息',
-        importance: Importance.high,
-        priority: Priority.high,
-      ),
+      android: _defaultChannel,
     );
     await _plugin.show(
       id: id,
@@ -105,6 +149,18 @@ class IoLocalNotificationService implements LocalNotificationService {
     Iterable<LocalReminderSchedule> reminders,
   ) async {
     await ensureInitialized();
+    // 排程前再确认精确闹钟，避免用户此前拒绝后永远静默失败
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android != null) {
+      final canExact = await android.canScheduleExactNotifications();
+      if (canExact != true) {
+        await android.requestExactAlarmsPermission();
+      }
+    }
+
     await cancelAll();
     scheduledReminderIds.clear();
     final now = tz.TZDateTime.now(tz.local);
@@ -125,19 +181,13 @@ class IoLocalNotificationService implements LocalNotificationService {
         scheduledDate: when,
         title: '日常提醒',
         body: '到「${reminder.title}」时间了。已经做过了吗？',
-        notificationDetails: NotificationDetails(
-          iOS: const DarwinNotificationDetails(
+        notificationDetails: const NotificationDetails(
+          iOS: DarwinNotificationDetails(
             presentAlert: true,
             presentBadge: true,
             presentSound: true,
           ),
-          android: AndroidNotificationDetails(
-            'coco_reminders',
-            '日常提醒',
-            channelDescription: '到点提醒（本地定时，无需推送证书）',
-            importance: Importance.high,
-            priority: Priority.high,
-          ),
+          android: _reminderChannel,
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         payload: 'reminder:${reminder.id}',

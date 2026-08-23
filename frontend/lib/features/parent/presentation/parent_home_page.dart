@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
@@ -64,6 +65,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   bool _showGreetingBubble = false;
 
   Timer? _greetingBubbleTimer;
+
+  /// 再按一次退出：记录上次系统返回时间
+  DateTime? _lastBackAt;
 
   /// 识图已注入语音，等可可开口后收起照片面板
   bool _awaitingVisionHandoff = false;
@@ -266,197 +270,238 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         ? _bottomCopySlotWhenTranscript
         : _bottomCopySlotHeight;
 
-    return Scaffold(
-      backgroundColor: CocoColors.parentBackground,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 上半：场景图 + 可可；底边渐变接到纯色区，不再露地板图
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.asset(
-                  palette.backgroundAsset,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  excludeFromSemantics: true,
+    return PopScope(
+      // 通话中拦截返回；首页再按一次才退出，避免老人误触杀进程
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (inCall) {
+          final end = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('结束说话？'),
+              content: const Text('现在返回会结束这次对话。您刚才说的话没有额外保存。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('继续说'),
                 ),
-                if (blurBackground)
-                  Positioned.fill(
-                    child: ClipRect(
-                      child: BackdropFilter(
-                        // 识图态按交付：sigma≈16 + 暖白遮罩；「字」面板略加深
-                        filter: ImageFilter.blur(
-                          sigmaX: lookSession ? 16 : 14,
-                          sigmaY: lookSession ? 16 : 14,
-                        ),
-                        child: ColoredBox(
-                          color: lookSession
-                              ? CocoColors.parentBackground.withValues(
-                                  alpha: 0.4,
-                                )
-                              : CocoColors.neutral950.withValues(alpha: 0.18),
-                        ),
-                      ),
-                    ),
-                  ),
-                // 场景到底栏：透明 → 暖米色，交界处有渐变感
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 140,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          CocoColors.parentBackground.withValues(alpha: 0),
-                          CocoColors.parentBackground,
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                SafeArea(
-                  bottom: false,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          CocoSpace.s6,
-                          CocoSpace.s3,
-                          CocoSpace.s5,
-                          CocoSpace.s2,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                greeting,
-                                style: TextStyle(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.2,
-                                  color: palette.text,
-                                ),
-                              ),
-                            ),
-                            // 「字」全局偏好：通话或识图会话都可切换
-                            if (inCall || lookSession) ...[
-                              ParentCaptionToggle(
-                                palette: palette,
-                                visible: _captionVisible,
-                                onPressed: () {
-                                  setState(
-                                    () => _captionVisible = !_captionVisible,
-                                  );
-                                },
-                              ),
-                              const SizedBox(width: CocoSpace.s3),
-                            ],
-                            TextButton(
-                              onPressed: (inCall || lookAnalyzing)
-                                  ? null
-                                  : () => context.push('/parent/functions'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: palette.link,
-                                disabledForegroundColor: palette.link
-                                    .withValues(alpha: 0.4),
-                                textStyle: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                minimumSize: const Size(56, 56),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: CocoSpace.s2,
-                                ),
-                              ),
-                              child: const Text('更多'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: CocoSpace.s6,
-                          ),
-                          child: _buildCenter(
-                            callState: callState,
-                            callController: callController,
-                            companionPose: companionPose,
-                            palette: palette,
-                            showTranscript: showTranscript,
-                            voicePending: voicePending,
-                            pendingSuggestion: pendingSuggestion,
-                            pendingReminder: pendingReminder,
-                            pendingChildStatus: pendingChildStatus,
-                            inCall: inCall,
-                            lookState: lookState,
-                            captionVisible: _captionVisible,
-                            userName: name,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: const Text('结束'),
                 ),
               ],
             ),
-          ),
-          // 下半：纯色底（不是图片），放引导文案与工具栏
-          ColoredBox(
-            color: CocoColors.parentBackground,
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+          );
+          if (end == true && context.mounted) {
+            await callController.stop();
+          }
+          return;
+        }
+        final now = DateTime.now();
+        if (_lastBackAt != null &&
+            now.difference(_lastBackAt!) < const Duration(seconds: 2)) {
+          SystemNavigator.pop();
+          return;
+        }
+        _lastBackAt = now;
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('再按一次返回键退出可可')));
+      },
+      child: Scaffold(
+        backgroundColor: CocoColors.parentBackground,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 上半：场景图 + 可可；底边渐变接到纯色区，不再露地板图
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  // 闲置/通话状态文案槽；开「字」时压矮，把垂直空间还给聊天列表
-                  SizedBox(
-                    height: bottomCopyHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        CocoSpace.s6,
-                        0,
-                        CocoSpace.s6,
-                        CocoSpace.s3,
+                  Image.asset(
+                    palette.backgroundAsset,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                    excludeFromSemantics: true,
+                  ),
+                  if (blurBackground)
+                    Positioned.fill(
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          // 识图态按交付：sigma≈16 + 暖白遮罩；「字」面板略加深
+                          filter: ImageFilter.blur(
+                            sigmaX: lookSession ? 16 : 14,
+                            sigmaY: lookSession ? 16 : 14,
+                          ),
+                          child: ColoredBox(
+                            color: lookSession
+                                ? CocoColors.parentBackground.withValues(
+                                    alpha: 0.4,
+                                  )
+                                : CocoColors.neutral950.withValues(alpha: 0.18),
+                          ),
+                        ),
                       ),
-                      child: _buildBottomCopy(
-                        inCall: inCall,
-                        voicePending: voicePending,
-                        pendingSuggestion: pendingSuggestion,
-                        pendingReminder: pendingReminder,
-                        pendingChildStatus: pendingChildStatus,
-                        callState: callState,
-                        palette: palette,
-                        hideStatusCopy: showTranscript,
+                    ),
+                  // 场景到底栏：透明 → 暖米色，交界处有渐变感
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 140,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            CocoColors.parentBackground.withValues(alpha: 0),
+                            CocoColors.parentBackground,
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  ParentHomeToolBar(
-                    palette: palette,
-                    inCall: inCall,
-                    // 分析中禁用眼前/手机，减轻一屏多主操作
-                    visionToolsEnabled: !lookAnalyzing,
-                    onTalkPressed: _onTalkPressed,
-                    onFrontPressed: () {
-                      unawaited(_runLookAndHandoff(LookSource.camera));
-                    },
-                    onPhonePressed: () => _showVisionPlaceholder('看手机'),
-                    onPhotoPressed: () {
-                      unawaited(_runLookAndHandoff(LookSource.album));
-                    },
+                  SafeArea(
+                    bottom: false,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            CocoSpace.s6,
+                            CocoSpace.s3,
+                            CocoSpace.s5,
+                            CocoSpace.s2,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  greeting,
+                                  style: TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.2,
+                                    color: palette.text,
+                                  ),
+                                ),
+                              ),
+                              // 「字」全局偏好：通话或识图会话都可切换
+                              if (inCall || lookSession) ...[
+                                ParentCaptionToggle(
+                                  palette: palette,
+                                  visible: _captionVisible,
+                                  onPressed: () {
+                                    setState(
+                                      () => _captionVisible = !_captionVisible,
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: CocoSpace.s3),
+                              ],
+                              TextButton(
+                                onPressed: (inCall || lookAnalyzing)
+                                    ? null
+                                    : () => context.push('/parent/functions'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: palette.link,
+                                  disabledForegroundColor: palette.link
+                                      .withValues(alpha: 0.4),
+                                  textStyle: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  minimumSize: const Size(56, 56),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: CocoSpace.s2,
+                                  ),
+                                ),
+                                child: const Text('更多'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: CocoSpace.s6,
+                            ),
+                            child: _buildCenter(
+                              callState: callState,
+                              callController: callController,
+                              companionPose: companionPose,
+                              palette: palette,
+                              showTranscript: showTranscript,
+                              voicePending: voicePending,
+                              pendingSuggestion: pendingSuggestion,
+                              pendingReminder: pendingReminder,
+                              pendingChildStatus: pendingChildStatus,
+                              inCall: inCall,
+                              lookState: lookState,
+                              captionVisible: _captionVisible,
+                              userName: name,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
+            // 下半：纯色底（不是图片），放引导文案与工具栏
+            ColoredBox(
+              color: CocoColors.parentBackground,
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 闲置/通话状态文案槽；开「字」时压矮，把垂直空间还给聊天列表
+                    SizedBox(
+                      height: bottomCopyHeight,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          CocoSpace.s6,
+                          0,
+                          CocoSpace.s6,
+                          CocoSpace.s3,
+                        ),
+                        child: _buildBottomCopy(
+                          inCall: inCall,
+                          voicePending: voicePending,
+                          pendingSuggestion: pendingSuggestion,
+                          pendingReminder: pendingReminder,
+                          pendingChildStatus: pendingChildStatus,
+                          callState: callState,
+                          palette: palette,
+                          hideStatusCopy: showTranscript,
+                        ),
+                      ),
+                    ),
+                    ParentHomeToolBar(
+                      palette: palette,
+                      inCall: inCall,
+                      // 分析中禁用眼前/手机，减轻一屏多主操作
+                      visionToolsEnabled: !lookAnalyzing,
+                      onTalkPressed: _onTalkPressed,
+                      onFrontPressed: () {
+                        unawaited(_runLookAndHandoff(LookSource.camera));
+                      },
+                      onPhonePressed: () => _showVisionPlaceholder('看手机'),
+                      onPhotoPressed: () {
+                        unawaited(_runLookAndHandoff(LookSource.album));
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -529,7 +574,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   void _showVisionPlaceholder(String label) {
     // Web 无法实现看手机；原生端仍用即将支持的占位提示。
     final message = kIsWeb
-        ? '"看手机"功能web端无法实现，请使用IOS体验完整功能'
+        ? '"看手机"功能在网页端无法使用，请用手机 App 体验完整功能'
         : '$label即将支持，您可以先用「看照片」。';
     ScaffoldMessenger.of(
       context,

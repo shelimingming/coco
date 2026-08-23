@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/theme.dart';
+import '../core/theme/tokens.dart';
 import '../core/widgets/web_iphone_shell.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/domain/models.dart';
@@ -12,6 +14,9 @@ import 'router.dart';
 
 class CocoApp extends ConsumerWidget {
   const CocoApp({super.key});
+
+  /// 父母端系统字号上限，避免超大字体撑破首页主按钮。
+  static const double _parentTextScaleCap = 1.4;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,24 +30,51 @@ class CocoApp extends ConsumerWidget {
     // 全局挂载通知轮询：登录后前台拉未读并弹本地系统通知
     ref.watch(notificationPollerProvider);
 
-    return MaterialApp.router(
-      title: '可可',
-      debugShowCheckedModeBanner: false,
-      locale: const Locale('zh', 'CN'),
-      supportedLocales: const [Locale('zh', 'CN')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      theme: role == UserRole.child ? CocoTheme.child() : CocoTheme.parent(),
-      routerConfig: router,
-      builder: (context, child) {
-        final content = child ?? const SizedBox.shrink();
-        if (!kIsWeb) return content;
-        // 桌面浏览器用 iPhone 外壳包裹，便于对照真机比例预览
-        return WebIphoneShell(child: content);
-      },
+    final isChild = role == UserRole.child;
+    final scaffoldBg = isChild
+        ? CocoColors.childBackground
+        : CocoColors.parentBackground;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      // 边到边：透明状态栏 + 深色图标，适配暖米 / 青绿浅色底
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: scaffoldBg,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: MaterialApp.router(
+        title: '可可',
+        debugShowCheckedModeBanner: false,
+        locale: const Locale('zh', 'CN'),
+        supportedLocales: const [Locale('zh', 'CN')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        theme: isChild ? CocoTheme.child() : CocoTheme.parent(),
+        routerConfig: router,
+        builder: (context, child) {
+          var content = child ?? const SizedBox.shrink();
+          if (!isChild) {
+            // 父母端夹紧系统字号，最大字号下仍可读且主操作可达
+            final mq = MediaQuery.of(context);
+            final capped = mq.textScaler.clamp(
+              minScaleFactor: 1,
+              maxScaleFactor: _parentTextScaleCap,
+            );
+            content = MediaQuery(
+              data: mq.copyWith(textScaler: capped),
+              child: content,
+            );
+          }
+          if (!kIsWeb) return content;
+          // 桌面浏览器用 iPhone 外壳包裹，便于对照真机比例预览
+          return WebIphoneShell(child: content);
+        },
+      ),
     );
   }
 }

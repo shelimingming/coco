@@ -17,10 +17,12 @@ abstract final class CocoTheme {
 
     return ThemeData(
       useMaterial3: true,
+      // 跟随各厂商中文字体，避免锁死 Roboto 导致中文 fallback 杂乱
+      fontFamily: 'sans-serif',
       colorScheme: colorScheme,
       scaffoldBackgroundColor: CocoColors.parentBackground,
       typography: Typography.material2021(),
-      textTheme: _parentTextTheme,
+      textTheme: _parentTextTheme.apply(fontFamily: 'sans-serif'),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           // 胶囊主按钮：对齐 DESIGN ElderPrimaryAction
@@ -84,10 +86,11 @@ abstract final class CocoTheme {
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'sans-serif',
       colorScheme: colorScheme,
       scaffoldBackgroundColor: CocoColors.childBackground,
       typography: Typography.material2021(),
-      textTheme: _childTextTheme,
+      textTheme: _childTextTheme.apply(fontFamily: 'sans-serif'),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(52),
@@ -116,7 +119,10 @@ abstract final class CocoTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(CocoRadius.md),
-          borderSide: const BorderSide(color: CocoColors.childPrimary, width: 2),
+          borderSide: const BorderSide(
+            color: CocoColors.childPrimary,
+            width: 2,
+          ),
         ),
       ),
       appBarTheme: const AppBarTheme(

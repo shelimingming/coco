@@ -1,55 +1,80 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/tokens.dart';
 
 /// 子女端底部三栏：近况 / 报平安 / 家庭，三项同权（图标+文字）。
-class ChildShell extends StatelessWidget {
+class ChildShell extends StatefulWidget {
   const ChildShell({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
 
   @override
+  State<ChildShell> createState() => _ChildShellState();
+}
+
+class _ChildShellState extends State<ChildShell> {
+  DateTime? _lastBackAt;
+
+  @override
   Widget build(BuildContext context) {
-    final index = navigationShell.currentIndex;
-    return Scaffold(
-      body: navigationShell,
-      bottomNavigationBar: Material(
-        color: CocoColors.childSurface,
-        elevation: 8,
-        shadowColor: CocoColors.neutral950.withValues(alpha: 0.08),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 64,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _NavItem(
-                    iconAsset: 'assets/icons/child/icon-nav-status.svg',
-                    label: '近况',
-                    selected: index == 0,
-                    onTap: () => _go(0),
+    final index = widget.navigationShell.currentIndex;
+    return PopScope(
+      // 首页再按一次退出，避免误触直接杀进程
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final now = DateTime.now();
+        if (_lastBackAt != null &&
+            now.difference(_lastBackAt!) < const Duration(seconds: 2)) {
+          SystemNavigator.pop();
+          return;
+        }
+        _lastBackAt = now;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('再按一次返回键退出可可')));
+      },
+      child: Scaffold(
+        body: widget.navigationShell,
+        bottomNavigationBar: Material(
+          color: CocoColors.childSurface,
+          elevation: 8,
+          shadowColor: CocoColors.neutral950.withValues(alpha: 0.08),
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 64,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _NavItem(
+                      iconAsset: 'assets/icons/child/icon-nav-status.svg',
+                      label: '近况',
+                      selected: index == 0,
+                      onTap: () => _go(0),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: _NavItem(
-                    iconAsset: 'assets/icons/child/icon-nav-peace.svg',
-                    label: '报平安',
-                    selected: index == 1,
-                    onTap: () => _go(1),
+                  Expanded(
+                    child: _NavItem(
+                      iconAsset: 'assets/icons/child/icon-nav-peace.svg',
+                      label: '报平安',
+                      selected: index == 1,
+                      onTap: () => _go(1),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: _NavItem(
-                    iconAsset: 'assets/icons/child/icon-nav-family.svg',
-                    label: '家庭',
-                    selected: index == 2,
-                    onTap: () => _go(2),
+                  Expanded(
+                    child: _NavItem(
+                      iconAsset: 'assets/icons/child/icon-nav-family.svg',
+                      label: '家庭',
+                      selected: index == 2,
+                      onTap: () => _go(2),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -58,9 +83,9 @@ class ChildShell extends StatelessWidget {
   }
 
   void _go(int index) {
-    navigationShell.goBranch(
+    widget.navigationShell.goBranch(
       index,
-      initialLocation: index == navigationShell.currentIndex,
+      initialLocation: index == widget.navigationShell.currentIndex,
     );
   }
 }
