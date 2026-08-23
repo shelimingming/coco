@@ -48,6 +48,4 @@ def test_sanitize_child_status_relay_rejects_first_person() -> None:
 
 def test_sanitize_child_status_relay_keeps_third_person() -> None:
     ok = "小林已经吃过饭了，让您放心"
-    assert (
-        sanitize_child_status_relay(ok, original="吃过饭了", child_name="小林") == ok
-    )
+    assert sanitize_child_status_relay(ok, original="吃过饭了", child_name="小林") == ok
