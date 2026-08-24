@@ -71,8 +71,12 @@ from coco.security import decode_access_token
 logger = logging.getLogger(__name__)
 
 # 写回模型：屏幕已出卡，禁止连环「对吗」
+# 默认口播与大卡主按钮对齐：提醒是「点击创建」，告诉家人是「告诉家人」
 _NEED_CONFIRM_UI_HINT = (
-    "屏幕已弹出确认大卡。只需简短说一句：请点一下确认，或者说好。不要连环追问，不要声称已办妥。"
+    "屏幕已弹出确认大卡。只需简短说一句：请点一下点击创建，或者说好。不要连环追问，不要声称已办妥。"
+)
+_NEED_CONFIRM_SHARE_HINT = (
+    "屏幕已弹出确认大卡。只需简短说一句：请点一下告诉家人，或者说好。不要连环追问，不要声称已办妥。"
 )
 _SCREEN_CONFIRMED_PROMPT = (
     "用户已在屏幕上确认该操作，业务已办妥。"
@@ -506,7 +510,7 @@ def _build_pending_display(
     return {}
 
 
-def _enrich_need_confirmation_output(raw_output: str) -> str:
+def _enrich_need_confirmation_output(raw_output: str, *, kind: str | None = None) -> str:
     try:
         parsed = json.loads(raw_output)
     except json.JSONDecodeError:
@@ -514,7 +518,12 @@ def _enrich_need_confirmation_output(raw_output: str) -> str:
     if not isinstance(parsed, dict) or parsed.get("status") != "need_confirmation":
         return raw_output
     parsed["ui"] = "confirmation_card_shown"
-    parsed["hint"] = _NEED_CONFIRM_UI_HINT
+    # 口播与屏幕按钮一致，避免老人听到「确认」却看到「告诉家人」
+    parsed["hint"] = (
+        _NEED_CONFIRM_SHARE_HINT
+        if kind == "share_to_child"
+        else _NEED_CONFIRM_UI_HINT
+    )
     return json.dumps(parsed, ensure_ascii=False)
 
 
@@ -893,7 +902,7 @@ async def _sync_pending_after_tool(
             websocket,
             _client_event("action.pending", **action.to_client_payload()),
         )
-        return _enrich_need_confirmation_output(output)
+        return _enrich_need_confirmation_output(output, kind=name)
 
     if status == "error":
         return output

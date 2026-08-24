@@ -310,9 +310,10 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         final text = event.text;
         if (text != null && text.isNotEmpty) {
           _appendTranscript(VoiceCallTranscriptRole.user, text);
+          // 已写入 transcript，清空 caption，避免「字」面板在可可说完后又叠一句「您」
           state = state.copyWith(
             phase: VoiceCallPhase.thinking,
-            userCaption: text,
+            userCaption: '',
           );
           _syncPose(VoiceCallPhase.thinking);
         }
@@ -347,6 +348,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
           _appendTranscript(VoiceCallTranscriptRole.assistant, text);
           state = state.copyWith(
             phase: VoiceCallPhase.speaking,
+            userCaption: '',
             assistantCaption: text,
           );
         }

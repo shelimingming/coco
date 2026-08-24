@@ -78,13 +78,22 @@ class VoiceCallState {
           out[out.length - 1] = last.copyWith(text: user);
         }
       } else if (phase == VoiceCallPhase.listening) {
-        // 仅倾听中合并半句；thinking/speaking 时 caption 只是上一轮残留
-        out.add(
-          VoiceCallTranscriptEntry(
-            role: VoiceCallTranscriptRole.user,
-            text: user,
-          ),
-        );
+        // 倾听中才展示半句；若上一句「您」已落定且文字相同，不再插一条
+        VoiceCallTranscriptEntry? lastUser;
+        for (final entry in out.reversed) {
+          if (entry.role == VoiceCallTranscriptRole.user) {
+            lastUser = entry;
+            break;
+          }
+        }
+        if (lastUser?.text != user) {
+          out.add(
+            VoiceCallTranscriptEntry(
+              role: VoiceCallTranscriptRole.user,
+              text: user,
+            ),
+          );
+        }
       }
     }
 

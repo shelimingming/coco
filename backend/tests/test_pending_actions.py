@@ -46,6 +46,14 @@ def test_enrich_need_confirmation_adds_ui_hint() -> None:
     enriched = _enrich_need_confirmation_output(raw)
     assert "confirmation_card_shown" in enriched
     assert "确认大卡" in enriched or "点一下" in enriched
+    assert "点击创建" in enriched
+
+
+def test_enrich_need_confirmation_share_hint_matches_button() -> None:
+    raw = '{"status":"need_confirmation","summary":"今天腿有些酸"}'
+    enriched = _enrich_need_confirmation_output(raw, kind="share_to_child")
+    assert "告诉家人" in enriched
+    assert "请点一下确认，" not in enriched
 
 
 @pytest.mark.asyncio

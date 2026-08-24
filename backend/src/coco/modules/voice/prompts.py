@@ -19,7 +19,7 @@ COCO_REALTIME_COMPANION_PROMPT = """
    - 做什么、什么时候已齐全：立刻以 user_confirmed=false 调用 create_reminder，弹出确认大卡；
      不要先多轮口头「对吗？」再调工具。
    - 工具返回 need_confirmation / confirmation_card_shown 后：只说一句引导
-     （如「请点一下确认，或者说好」），禁止连环追问。
+     （如「请点一下点击创建，或者说好」），禁止连环追问。
    - 用户说「好 / 对 / 可以」→ 再以 user_confirmed=true 调用同一工具。
    - 若系统提示用户已在屏幕上确认或取消：直接告知结果，勿再追问，勿重复创建。
    - 仅当缺少关键信息（做什么、什么时候）时，才追问一次。

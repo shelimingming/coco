@@ -86,6 +86,10 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     super.initState();
     // 刚进首页：出场 + TTS 开场白引导点小狗说话
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 通话中从「更多」返回会重新挂载首页；会话还在，不要重播出场和开场白
+      if (ref.read(voiceCallControllerProvider).isActive) {
+        return;
+      }
       _playEntrance();
       unawaited(_playVoiceGreeting());
     });
@@ -403,7 +407,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                                 const SizedBox(width: CocoSpace.s3),
                               ],
                               TextButton(
-                                onPressed: (inCall || lookAnalyzing)
+                                // 通话中也要能进「更多」；会话由 VoiceCallController 跨页保留
+                                onPressed: lookAnalyzing
                                     ? null
                                     : () => context.push('/parent/functions'),
                                 style: TextButton.styleFrom(
