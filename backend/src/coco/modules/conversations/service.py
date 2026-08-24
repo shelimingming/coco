@@ -49,7 +49,6 @@ def tool_display_summary(tool_name: str, arguments: dict[str, Any], result: dict
         return "可可回想了记住的事"
 
     if tool_name == "save_memory":
-        # 旧通话可能仍有写记忆工具记录
         content = str(arguments.get("content") or result.get("content") or "").strip()
         return f"帮你记住：{content}" if content else "帮你记住了一件事"
 

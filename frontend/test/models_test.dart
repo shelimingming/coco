@@ -101,6 +101,17 @@ void main() {
       expect(memory.id, 'm1');
       expect(memory.content, '喜欢晚饭后散步');
       expect(memory.createdAt, isNotNull);
+      expect(memory.categoryLabel, '其他');
+    });
+
+    test('maps category labels', () {
+      final memory = Memory.fromJson({
+        'id': 'm2',
+        'content': '女儿叫小林',
+        'category': 'FAMILY',
+        'source': 'VOICE',
+      });
+      expect(memory.categoryLabel, '家人');
     });
   });
 

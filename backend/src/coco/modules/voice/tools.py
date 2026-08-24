@@ -1,7 +1,7 @@
 """Realtime Function Calling：工具 Schema 与分发。
 
 提醒/分享写操作须带 user_confirmed；false 时不落库并返回 need_confirmation。
-长期记忆由通话结束后 Mem0 自动抽取；通话中可用 recall_memory 按需检索。
+用户主动要求记住时用 save_memory 写入显式表；通话中可用 recall_memory 检索。
 """
 
 from __future__ import annotations
@@ -80,6 +80,35 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "user_confirmed": {"type": "boolean"},
                 },
                 "required": ["user_confirmed"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_memory",
+            "description": (
+                "仅当用户主动要求记住时调用（帮我记住、记一下、别忘了、记下来）。"
+                "闲聊里的习惯/口味交给通话后自动整理，不要偷偷保存。"
+                "已知记忆已有近似内容时不要重复调用。"
+                "临时安排、药量、诊断、验证码不要记。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "要记住的短陈述句，一两句即可",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["PROFILE", "FAMILY", "PREFERENCE", "ROUTINE"],
+                        "description": (
+                            "PROFILE 关于我；FAMILY 家人；PREFERENCE 喜好；ROUTINE 日常习惯"
+                        ),
+                    },
+                },
+                "required": ["content", "category"],
             },
         },
     },
@@ -219,9 +248,29 @@ async def dispatch_voice_tool(
             )
             return _serialize(result)
 
+        if name == "save_memory":
+            result = await MemoryService().create_from_voice(
+                session,
+                user=user,
+                content=str(arguments.get("content", "")),
+                category=str(arguments.get("category", "")),
+            )
+            return _serialize(
+                {
+                    "status": "ok",
+                    "id": result.id,
+                    "content": result.content,
+                    "category": result.category,
+                }
+            )
+
         if name == "recall_memory":
             query = str(arguments.get("query", "")).strip()
-            items = await MemoryService().search_for_user(user=user, query=query)
+            items = await MemoryService().search_for_user(
+                session,
+                user=user,
+                query=query,
+            )
             return _serialize(
                 {
                     "status": "ok",

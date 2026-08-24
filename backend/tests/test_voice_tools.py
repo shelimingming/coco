@@ -82,19 +82,37 @@ async def test_recall_memory_searches() -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_memory_tool_removed() -> None:
+async def test_save_memory_persists() -> None:
     settings = Settings(_env_file=None, environment="test")
     session = MagicMock()
-    result = await dispatch_voice_tool(
-        session=session,
-        settings=settings,
-        user=_parent(),
-        name="save_memory",
-        arguments={"content": "喜欢吃面", "category": "PREFERENCE"},
-    )
+    parent = _parent()
+    now = datetime.now(UTC)
+
+    with patch("coco.modules.voice.tools.MemoryService") as svc_cls:
+        svc = svc_cls.return_value
+        svc.create_from_voice = AsyncMock(
+            return_value=MemoryResponse(
+                id="mem-new",
+                content="喜欢吃面",
+                category="PREFERENCE",
+                source="VOICE",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        result = await dispatch_voice_tool(
+            session=session,
+            settings=settings,
+            user=parent,
+            name="save_memory",
+            arguments={"content": "喜欢吃面", "category": "PREFERENCE"},
+        )
+
     payload = json.loads(result)
-    assert payload["status"] == "error"
-    assert "未知工具" in payload["message"]
+    assert payload["status"] == "ok"
+    assert payload["content"] == "喜欢吃面"
+    assert payload["category"] == "PREFERENCE"
+    svc.create_from_voice.assert_awaited_once()
 
 
 @pytest.mark.asyncio

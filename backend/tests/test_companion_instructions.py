@@ -17,7 +17,9 @@ def test_empty_memories() -> None:
     assert "不可承诺已经通知家人" in text
     assert "自动整理" in text
     assert "recall_memory" in text
-    assert "不要询问「要记住吗？」" in text
+    assert "save_memory" in text
+    assert "不要问「要记住吗？」" in text
+    assert "好，我记住了" in text
     # 提醒：先出卡；关怀：先追问再汇总，同意后才出分享卡
     assert "user_confirmed=false" in text
     assert "确认大卡" in text

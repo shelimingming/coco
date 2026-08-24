@@ -176,7 +176,7 @@ async def _active_bound_child_name(session: AsyncSession, user: User) -> str | N
 
 
 async def _load_companion_instructions(user_id: UUID) -> str:
-    """建连前加载姓名、绑定子女与 Mem0 记忆，拼进系统提示。"""
+    """建连前加载姓名、绑定子女与记忆（显式表优先，Mem0 补足），拼进系统提示。"""
     factory = get_session_factory()
     async with factory() as session:
         user = await session.get(User, user_id)
@@ -186,8 +186,9 @@ async def _load_companion_instructions(user_id: UUID) -> str:
         child_name = await _active_bound_child_name(session, user)
         settings = get_settings()
         try:
-            # Mem0 get_all；失败返回空列表，不阻断建连
+            # 显式记忆优先，不足再用 Mem0；失败返回空列表，不阻断建连
             memory_texts = await MemoryService().contents_for_inject(
+                session,
                 user_id=str(user.id),
                 limit=settings.mem0_inject_limit,
             )
@@ -519,11 +520,7 @@ def _enrich_need_confirmation_output(raw_output: str, *, kind: str | None = None
         return raw_output
     parsed["ui"] = "confirmation_card_shown"
     # 口播与屏幕按钮一致，避免老人听到「确认」却看到「告诉家人」
-    parsed["hint"] = (
-        _NEED_CONFIRM_SHARE_HINT
-        if kind == "share_to_child"
-        else _NEED_CONFIRM_UI_HINT
-    )
+    parsed["hint"] = _NEED_CONFIRM_SHARE_HINT if kind == "share_to_child" else _NEED_CONFIRM_UI_HINT
     return json.dumps(parsed, ensure_ascii=False)
 
 
