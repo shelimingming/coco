@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -24,9 +26,12 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
   // 与交付稿一致；自定义最多 60 字
   static const _presets = ['吃过饭了', '在忙，一切都好', '已经到家', '准备休息'];
   static const _maxChars = 60;
+  static const _customPreviewDelay = Duration(milliseconds: 600);
 
   final _customController = TextEditingController();
   final _focusNode = FocusNode();
+  Timer? _customPreviewDebounce;
+  int _previewRequestVersion = 0;
   String? _selectedPreset;
   MessagePreview? _preview;
   _ComposeBusy? _busy;
@@ -36,6 +41,7 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
 
   @override
   void dispose() {
+    _customPreviewDebounce?.cancel();
     _customController.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -43,6 +49,8 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
 
   Future<void> _selectPreset(String text) async {
     if (_isBusy) return;
+    _customPreviewDebounce?.cancel();
+    _previewRequestVersion++;
     setState(() {
       _selectedPreset = text;
       _customController.text = text;
@@ -66,19 +74,20 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
       });
       return;
     }
+    final requestVersion = ++_previewRequestVersion;
     setState(() {
       _busy = _ComposeBusy.preview;
       _error = null;
     });
     try {
       final preview = await ref.read(messagesApiProvider).preview(cleaned);
-      if (!mounted) return;
+      if (!mounted || requestVersion != _previewRequestVersion) return;
       setState(() {
         _preview = preview;
         _busy = null;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _previewRequestVersion) return;
       setState(() {
         _busy = null;
         _preview = null;
@@ -89,7 +98,37 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
     }
   }
 
+  void _onCustomChanged(String value) {
+    final cleaned = value.trim();
+    _customPreviewDebounce?.cancel();
+    _previewRequestVersion++;
+    setState(() {
+      if (_selectedPreset != null && cleaned != _selectedPreset) {
+        _selectedPreset = null;
+      }
+      if (_preview != null && cleaned != _preview!.originalText) {
+        _preview = null;
+      }
+      if (_busy == _ComposeBusy.preview) {
+        _busy = null;
+      }
+      _error = null;
+    });
+
+    if (cleaned.isEmpty || cleaned.characters.length > _maxChars) return;
+    _customPreviewDebounce = Timer(_customPreviewDelay, () {
+      if (!mounted || _customController.text.trim() != cleaned) return;
+      _previewText(cleaned);
+    });
+  }
+
+  void _previewCustomTextNow() {
+    _customPreviewDebounce?.cancel();
+    _previewText(_customController.text);
+  }
+
   Future<void> _send() async {
+    _customPreviewDebounce?.cancel();
     final preview = _preview;
     if (preview == null) {
       await _previewText(_customController.text);
@@ -109,6 +148,7 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
       ref.invalidate(familyMessagesProvider);
       if (!mounted) return;
       setState(() {
+        _previewRequestVersion++;
         _busy = null;
         _selectedPreset = null;
         _customController.clear();
@@ -220,22 +260,10 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
                   _EditableMessageCard(
                     controller: _customController,
                     focusNode: _focusNode,
-                    enabled: !_isBusy,
+                    enabled: _busy != _ComposeBusy.send,
                     maxChars: _maxChars,
-                    onChanged: (value) {
-                      // 编辑后清掉旧预览，避免转述与原文不一致
-                      setState(() {
-                        if (_selectedPreset != null &&
-                            value.trim() != _selectedPreset) {
-                          _selectedPreset = null;
-                        }
-                        if (_preview != null &&
-                            value.trim() != _preview!.originalText) {
-                          _preview = null;
-                        }
-                      });
-                    },
-                    onSubmit: () => _previewText(_customController.text),
+                    onChanged: _onCustomChanged,
+                    onSubmit: _previewCustomTextNow,
                   ),
                   const SizedBox(height: CocoSpace.s6),
                   Text('可可将这样转述', style: theme.textTheme.titleMedium),
