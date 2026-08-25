@@ -3,18 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="可可双端演示：长辈与子女同屏对照">
-  <title>可可(AI关怀助手)· 双端演示</title>
+  <meta name="description" content="可可｜连接异地银发家庭的 AI 关怀助手。记住生活小事、提醒重要事项、看清眼前问题、连接远方家人。">
+  <title>可可｜连接异地银发家庭的 AI 关怀助手</title>
   <link rel="icon" type="image/png" href="favicon.png"/>
   <style>
+    /* 色值对齐 DESIGN：深中性正文、暖米色底；主色只作小标记，不当大标题字 */
     :root {
       --bg: #f3efe9;
+      --cream: #fff8ed;
       --ink: #26231f;
       --muted: #5d574f;
+      --line: #cfc8be;
       --parent: #c85f36;
       --child: #28786b;
       --frame: #ffffff;
-      --shadow: rgba(0, 0, 0, 0.08);
+      --shadow: rgba(38, 35, 31, 0.1);
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --space-8: 32px;
     }
 
     * { box-sizing: border-box; }
@@ -23,8 +32,8 @@
       margin: 0;
       height: 100%;
       background:
-        radial-gradient(1200px 600px at 20% -10%, #fff8ed 0%, transparent 55%),
-        radial-gradient(1000px 500px at 90% 10%, #e6f2f0 0%, transparent 50%),
+        radial-gradient(1200px 560px at 12% -8%, var(--cream) 0%, transparent 58%),
+        radial-gradient(900px 420px at 92% 0%, #e6f2f0 0%, transparent 52%),
         var(--bg);
       color: var(--ink);
       font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
@@ -35,38 +44,89 @@
       min-height: 100%;
       display: flex;
       flex-direction: column;
-      padding: 20px 24px 28px;
-      gap: 16px;
+      padding: clamp(16px, 2.4vw, 28px) clamp(20px, 3vw, 40px) 24px;
+      gap: var(--space-6);
     }
 
+    /* 左标题 + 能力句，右演示说明 */
     header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-4) var(--space-8);
+      align-items: start;
+      padding-bottom: var(--space-5);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      min-width: 0;
+    }
+
+    h1 {
+      margin: 0;
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: baseline;
+      font-size: clamp(1.25rem, 1rem + 0.8vw, 1.5rem);
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .mark {
+      letter-spacing: 0.12em;
+    }
+
+    .sep {
+      margin: 0 0.4em;
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    .position {
+      font-size: 0.95em;
+      font-weight: 500;
+    }
+
+    .caps {
       display: flex;
       flex-wrap: wrap;
       align-items: baseline;
-      justify-content: space-between;
-      gap: 8px 20px;
-    }
-
-    header h1 {
-      margin: 0;
-      font-size: 22px;
-      font-weight: 650;
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--muted);
+      font-size: 0.875rem;
+      font-weight: 500;
+      line-height: 1.6;
       letter-spacing: 0.02em;
     }
 
-    header p {
+    .caps li {
+      display: flex;
+      align-items: baseline;
+    }
+
+    .caps li:not(:last-child)::after {
+      content: "·";
+      margin: 0 0.7em;
+      color: var(--line);
+      font-weight: 400;
+    }
+
+    .note {
       margin: 0;
       color: var(--muted);
-      font-size: 14px;
+      font-size: 0.75rem;
       line-height: 1.5;
-      max-width: 42em;
+      text-align: right;
+      padding-top: 6px;
     }
 
     .stage {
       flex: 1;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
+      gap: var(--space-6);
       min-height: 0;
       align-items: stretch;
     }
@@ -74,7 +134,7 @@
     .panel {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: var(--space-3);
       min-width: 0;
       min-height: 0;
     }
@@ -82,14 +142,15 @@
     .label {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 15px;
+      gap: var(--space-2);
+      font-size: 0.875rem;
       font-weight: 600;
+      letter-spacing: 0.06em;
     }
 
     .dot {
-      width: 10px;
-      height: 10px;
+      width: 8px;
+      height: 8px;
       border-radius: 999px;
     }
 
@@ -106,14 +167,72 @@
       overflow: hidden;
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 800px) {
+      .page {
+        padding: 16px 20px 20px;
+        gap: 16px;
+      }
+
+      header {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        padding-bottom: 14px;
+      }
+
+      /* 窄屏标题锁同一行，字号随宽度缩小，避免「可可｜」单独换行 */
+      h1 {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: baseline;
+        font-size: clamp(0.8125rem, 3.7vw, 1.0625rem);
+        white-space: nowrap;
+      }
+
+      .sep {
+        display: inline;
+        margin: 0 0.28em;
+      }
+
+      .mark {
+        flex-shrink: 0;
+        font-size: 1.12em;
+        letter-spacing: 0.06em;
+      }
+
+      .position {
+        font-size: 1em;
+        font-weight: 500;
+        color: var(--muted);
+      }
+
+      /* 四项能力两列左对齐，不要撑满宽导致中间一块空 */
+      .caps {
+        display: grid;
+        grid-template-columns: max-content max-content;
+        justify-content: start;
+        gap: 8px 28px;
+        margin-top: 12px;
+        font-size: 0.8125rem;
+      }
+
+      .caps li:not(:last-child)::after {
+        content: none;
+        margin: 0;
+      }
+
+      .note {
+        text-align: left;
+        padding-top: 0;
+        font-size: 0.6875rem;
+      }
+
       .stage {
         grid-template-columns: 1fr;
       }
 
       .frame {
-        min-height: 640px;
-        height: 78vh;
+        min-height: 560px;
+        height: 72vh;
       }
     }
   </style>
@@ -122,8 +241,18 @@
   <!-- 同域双 iframe + presentation_slot，登录态写入隔离的 localStorage key -->
   <div class="page">
     <header>
-      <h1>可可(AI关怀助手)· 双端演示</h1>
-      <p>web端仅用于演示，完整功能使用IOS端</p>
+      <div class="brand">
+        <h1>
+          <span class="mark">可可</span><span class="sep" aria-hidden="true">｜</span><span class="position">连接异地银发家庭的 AI 关怀助手</span>
+        </h1>
+        <ul class="caps">
+          <li>记住生活小事</li>
+          <li>提醒重要事项</li>
+          <li>看清眼前问题</li>
+          <li>连接远方家人</li>
+        </ul>
+      </div>
+      <p class="note">网页仅供演示 · 完整功能请用 APP</p>
     </header>
     <div class="stage">
       <section class="panel" aria-label="长辈端">
