@@ -20,7 +20,7 @@ class HistoryPage extends ConsumerWidget {
     final async = ref.watch(conversationListProvider);
 
     return CocoScaffold(
-      title: '历史记录',
+      title: '历史对话',
       leading: ParentBackButton(onPressed: () => context.pop()),
       leadingWidth: 104,
       bottom: ParentHomeButton(onPressed: () => context.go('/parent')),
@@ -32,7 +32,7 @@ class HistoryPage extends ConsumerWidget {
             Text(
               error is ApiException
                   ? error.message
-                  : '历史记录加载失败。您可以再试一次，数据没有丢失。',
+                  : '历史对话加载失败。您可以再试一次，数据没有丢失。',
               style: theme.textTheme.bodyLarge,
             ),
             const Spacer(),

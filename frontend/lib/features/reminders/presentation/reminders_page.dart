@@ -7,6 +7,7 @@ import '../../../core/notifications/local_notifications.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_loading.dart';
+import '../../../core/widgets/coco_safe_area.dart';
 import '../application/reminders_providers.dart';
 import '../data/reminders_api.dart';
 import '../domain/models.dart';
@@ -21,7 +22,7 @@ class RemindersPage extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: CocoColors.parentBackground,
-      body: SafeArea(
+      body: CocoSafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -128,13 +129,14 @@ class RemindersPage extends ConsumerWidget {
           ],
         ),
       ),
-      bottomNavigationBar: SafeArea(
+      bottomNavigationBar: CocoSafeArea(
+        top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(
             CocoSpace.s6,
             CocoSpace.s2,
             CocoSpace.s6,
-            CocoSpace.s5,
+            CocoSpace.s3,
           ),
           child: ParentHomeButton(onPressed: () => context.go('/parent')),
         ),
@@ -299,7 +301,7 @@ class _RemindersAppBar extends StatelessWidget {
               child: ParentBackButton(onPressed: onBack),
             ),
             const Text(
-              '提醒',
+              '提醒事项',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w700,

@@ -1,4 +1,6 @@
+import 'package:coco/core/widgets/coco_button.dart';
 import 'package:coco/core/widgets/coco_safe_area.dart';
+import 'package:coco/core/widgets/coco_scaffold.dart';
 import 'package:coco/core/widgets/web_iphone_shell.dart';
 import 'package:coco/features/auth/presentation/role_selection_page.dart';
 import 'package:flutter/material.dart';
@@ -104,5 +106,35 @@ void main() {
     final bubble = tester.getRect(find.text('您好，我是AI关怀助手可可'));
     final island = tester.getRect(find.byKey(WebIphoneShell.islandKey));
     expect(bubble.top, greaterThanOrEqualTo(island.bottom));
+  });
+
+  testWidgets('CocoScaffold 有标题和底栏时不再叠出顶底大块留白', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WebIphoneShell(
+          child: CocoScaffold(
+            title: '历史对话',
+            bottom: ParentHomeButton(onPressed: () {}),
+            body: const Text('第一条记录'),
+          ),
+        ),
+      ),
+    );
+
+    final title = tester.getRect(find.text('历史对话'));
+    final first = tester.getRect(find.text('第一条记录'));
+    final home = tester.getRect(find.text('回去找可可'));
+    final island = tester.getRect(find.byKey(WebIphoneShell.islandKey));
+
+    // AppBar 已在刘海下，正文紧挨标题，不能再空出一块挡住首条
+    expect(title.top, greaterThanOrEqualTo(island.bottom));
+    expect(first.top - title.bottom, lessThan(48));
+
+    // 底栏只留 Home Indicator，不能再叠一层顶安全区把按钮顶得很高
+    expect(home.height, lessThan(80));
+    expect(first.bottom, lessThan(home.top));
   });
 }

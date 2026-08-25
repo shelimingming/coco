@@ -26,16 +26,21 @@ class CocoScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasAppBar = title != null;
+    final hasBottom = bottom != null;
     return Scaffold(
-      appBar: title == null
-          ? null
-          : AppBar(
+      appBar: hasAppBar
+          ? AppBar(
               title: Text(title!),
               leading: leading,
               leadingWidth: leadingWidth,
               actions: actions,
-            ),
+            )
+          : null,
+      // AppBar 已吃掉刘海；底栏负责 Home Indicator。两边再 SafeArea 会多出一块留白挡住正文。
       body: CocoSafeArea(
+        top: !hasAppBar,
+        bottom: !hasBottom,
         child: Padding(
           padding:
               padding ??
@@ -46,19 +51,20 @@ class CocoScaffold extends StatelessWidget {
           child: body,
         ),
       ),
-      bottomNavigationBar: bottom == null
-          ? null
-          : CocoSafeArea(
+      bottomNavigationBar: hasBottom
+          ? CocoSafeArea(
+              top: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
                   CocoSpace.s6,
                   CocoSpace.s2,
                   CocoSpace.s6,
-                  CocoSpace.s5,
+                  CocoSpace.s3,
                 ),
                 child: bottom,
               ),
-            ),
+            )
+          : null,
     );
   }
 }

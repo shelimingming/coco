@@ -60,19 +60,28 @@ class CocoSafeArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final min = CocoSafeInsets.minimumOf(context);
-    // SafeArea.minimum 在对应 side=false 时仍会生效，必须按开关清掉保底
+    final applied = EdgeInsets.only(
+      left: left ? min.left : 0,
+      top: top ? min.top : 0,
+      right: right ? min.right : 0,
+      bottom: bottom ? min.bottom : 0,
+    );
     return SafeArea(
       left: left,
       top: top,
       right: right,
       bottom: bottom,
-      minimum: EdgeInsets.only(
-        left: left ? min.left : 0,
-        top: top ? min.top : 0,
-        right: right ? min.right : 0,
-        bottom: bottom ? min.bottom : 0,
+      minimum: applied,
+      // 本层已避开的边不再传给子孙，避免 AppBar / 底栏后再叠一块 59
+      child: CocoSafeInsets(
+        minimum: EdgeInsets.only(
+          left: left ? 0 : min.left,
+          top: top ? 0 : min.top,
+          right: right ? 0 : min.right,
+          bottom: bottom ? 0 : min.bottom,
+        ),
+        child: child,
       ),
-      child: child,
     );
   }
 }

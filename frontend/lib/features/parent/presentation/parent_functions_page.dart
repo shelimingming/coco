@@ -14,17 +14,17 @@ class ParentFunctionsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final entries = <_MoreEntry>[
       const _MoreEntry(
-        label: '提醒',
+        label: '提醒事项',
         iconAsset: 'assets/icons/parent/icon-more-reminder.svg',
         route: '/parent/reminders',
       ),
       const _MoreEntry(
-        label: '可可记得的我',
+        label: '备忘录',
         iconAsset: 'assets/icons/parent/icon-more-memory.svg',
         route: '/parent/memories',
       ),
       const _MoreEntry(
-        label: '历史记录',
+        label: '历史对话',
         iconAsset: 'assets/icons/parent/icon-more-history.svg',
         route: '/parent/history',
       ),

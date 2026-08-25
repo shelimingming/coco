@@ -11,7 +11,7 @@ import '../application/memories_providers.dart';
 import '../data/memories_api.dart';
 import '../domain/models.dart';
 
-/// 父母端「我记住的事」（DESIGN 9.6 E06）。
+/// 父母端备忘录：用户主动让可可记住的显式记忆（DESIGN 9.6 E06）。
 class MemoriesPage extends ConsumerWidget {
   const MemoriesPage({super.key});
 
@@ -21,7 +21,7 @@ class MemoriesPage extends ConsumerWidget {
     final async = ref.watch(memoriesListProvider);
 
     return CocoScaffold(
-      title: '我记住的事',
+      title: '备忘录',
       leading: ParentBackButton(onPressed: () => context.pop()),
       leadingWidth: 104,
       bottom: ParentHomeButton(onPressed: () => context.go('/parent')),
