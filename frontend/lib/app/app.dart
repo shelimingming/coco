@@ -60,24 +60,37 @@ class CocoApp extends ConsumerWidget {
         builder: (context, child) {
           var content = child ?? const SizedBox.shrink();
           if (!isChild) {
-            // 父母端夹紧系统字号，最大字号下仍可读且主操作可达
-            final mq = MediaQuery.of(context);
-            final capped = mq.textScaler.clamp(
-              minScaleFactor: 1,
-              maxScaleFactor: _parentTextScaleCap,
-            );
-            content = MediaQuery(
-              data: mq.copyWith(textScaler: capped),
-              child: content,
-            );
             // 到点浮层盖在任意父母页上，不绑死在首页
             content = ReminderOverlayHost(child: content);
+            // 必须包在外壳内侧：用当前 MediaQuery 只改字号。
+            // 若用 builder 的桌面 MediaQuery，会把 iPhone 外壳的安全区盖成 0，顶底文字贴边被裁。
+            content = _ParentTextScaleCap(child: content);
           }
           if (!kIsWeb) return content;
           // 桌面浏览器用 iPhone 外壳包裹，便于对照真机比例预览
           return WebIphoneShell(child: content);
         },
       ),
+    );
+  }
+}
+
+/// 父母端字号上限：复制最近的 MediaQuery，只改 textScaler。
+class _ParentTextScaleCap extends StatelessWidget {
+  const _ParentTextScaleCap({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final capped = mq.textScaler.clamp(
+      minScaleFactor: 1,
+      maxScaleFactor: CocoApp._parentTextScaleCap,
+    );
+    return MediaQuery(
+      data: mq.copyWith(textScaler: capped),
+      child: child,
     );
   }
 }
