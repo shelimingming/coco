@@ -99,7 +99,7 @@ class ReminderConfirmCard extends StatelessWidget {
                   ),
                   const SizedBox(height: CocoSpace.s5),
                   CocoPrimaryButton(
-                    label: '吃过了 / 做完了',
+                    label: '完成了',
                     loading: busy,
                     loadingLabel: '正在确认…',
                     onPressed: busy ? null : onConfirm,
