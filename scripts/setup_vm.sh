@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Coco 虚机首次装机（无 Docker）：swap + Postgres + uv + Nginx + systemd 骨架。
+# Coco 虚机首次装机（无 Docker）：swap + uv + Nginx + systemd 骨架。
+# 默认还装本机 Postgres；--skip-db 则跳过，改用本机 backend/.env 的云库。
 # 装完后请再跑：./scripts/deploy_vm.sh
 #
 # 用法：
 #   ./scripts/setup_vm.sh
+#   ./scripts/setup_vm.sh --skip-db          # 不装本机 Postgres，连云库
 #   ./scripts/setup_vm.sh --host 1.2.3.4
 #   ./scripts/setup_vm.sh --user root
 #
 # 环境变量（可选）：
 #   COCO_DEPLOY_HOST / COCO_DEPLOY_USER / COCO_DEPLOY_SSH_OPTS / COCO_DEPLOY_IDENTITY
-#   COCO_DB_PASSWORD  远端 Postgres 用户 coco 的密码（默认 coco_demo_password）
+#   COCO_DB_PASSWORD  远端本机 Postgres 用户 coco 的密码（默认 coco_demo_password；--skip-db 时忽略）
 
 set -Eeuo pipefail
 
@@ -29,6 +31,7 @@ if [[ -n "${DEPLOY_IDENTITY}" ]]; then
 fi
 
 DB_PASSWORD="${COCO_DB_PASSWORD:-coco_demo_password}"
+SKIP_DB=0
 REMOTE_ROOT="/opt/coco"
 
 if [[ -t 1 ]]; then
@@ -52,6 +55,7 @@ parse_args() {
     --host) DEPLOY_HOST="${2:?}"; shift 2 ;;
     --user) DEPLOY_USER="${2:?}"; shift 2 ;;
     --identity) DEPLOY_IDENTITY="${2:?}"; SSH_OPTS="${COCO_DEPLOY_SSH_OPTS:--o StrictHostKeyChecking=accept-new} -i ${DEPLOY_IDENTITY}"; shift 2 ;;
+    --skip-db) SKIP_DB=1; shift ;;
     -h | --help)
       awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
       exit 0
@@ -71,47 +75,78 @@ scp_to() {
   scp ${SSH_OPTS} "$1" "${DEPLOY_USER}@${DEPLOY_HOST}:$2"
 }
 
-# 从本机 backend/.env 取百炼 Key（不打印）；无则留空
+# 从本机 backend/.env 取云库 URL / 鉴权密钥 / 百炼 Key（不打印）
 build_remote_env() {
   local out="$1"
   python3 - <<PY
 from pathlib import Path
-src = Path("${ROOT_DIR}/backend/.env")
-key = ""
-if src.is_file():
-    for line in src.read_text().splitlines():
-        if line.startswith("COCO_ALIYUN_API_KEY="):
-            key = line.split("=", 1)[1].strip()
-            break
-pwd = """${DB_PASSWORD}"""
-text = f"""COCO_ENVIRONMENT=development
-COCO_LOG_LEVEL=INFO
-COCO_DATABASE_URL=postgresql+asyncpg://coco:{pwd}@127.0.0.1:5432/coco
-COCO_AUTH_SIGNING_KEY=demo-signing-key-change-me-0123456789abcdef
-COCO_AUTH_HASH_PEPPER=demo-pepper-change-me-0123456789abcdef12
-COCO_AUTH_ISSUER=coco-backend
-COCO_AUTH_AUDIENCE=coco-web
-COCO_ACCESS_TOKEN_TTL_SECONDS=3600
-COCO_REFRESH_TOKEN_TTL_DAYS=30
-COCO_SMS_PROVIDER=dev
-COCO_DEV_SMS_CODE=246810
-COCO_OTP_TTL_SECONDS=300
-COCO_OTP_MAX_ATTEMPTS=5
-COCO_OTP_REQUEST_LIMIT_PER_HOUR=20
-COCO_CORS_ALLOWED_ORIGINS=*
-COCO_WEB_STATIC_DIR=/opt/coco/web
-COCO_ALIYUN_API_KEY={key}
-COCO_ALIYUN_REGION=cn-beijing
-COCO_REALTIME_MODEL=qwen-audio-3.0-realtime-plus
-COCO_REALTIME_VOICE=longanqian
-COCO_TEXT_MODEL=qwen-plus
-COCO_VISION_MODEL=qwen3.7-plus
-COCO_ASR_MODEL=qwen-audio-3.0-asr-flash
-COCO_TTS_MODEL=qwen-audio-3.0-tts-flash
-COCO_TTS_VOICE=longanhuan
-"""
-Path("${out}").write_text(text)
-print("env_ready", "with_key" if key else "no_key")
+import sys
+
+def env_map(path: Path) -> dict[str, str]:
+    data: dict[str, str] = {}
+    if not path.is_file():
+        return data
+    for line in path.read_text().splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#") or "=" not in raw:
+            continue
+        key, value = raw.split("=", 1)
+        data[key] = value.strip()
+    return data
+
+src = env_map(Path("${ROOT_DIR}/backend/.env"))
+skip_db = "${SKIP_DB}" == "1"
+key = src.get("COCO_ALIYUN_API_KEY", "")
+# 与云库共用同一套用户表时，pepper / signing key 必须和本机一致
+signing = src.get(
+    "COCO_AUTH_SIGNING_KEY",
+    "demo-signing-key-change-me-0123456789abcdef",
+)
+pepper = src.get(
+    "COCO_AUTH_HASH_PEPPER",
+    "demo-pepper-change-me-0123456789abcdef12",
+)
+if skip_db:
+    db = src.get("COCO_DATABASE_URL", "")
+    if not db:
+        print("skip-db 需要本机 backend/.env 里已有 COCO_DATABASE_URL", file=sys.stderr)
+        sys.exit(1)
+    if "127.0.0.1" in db or "localhost" in db:
+        print("skip-db 时 COCO_DATABASE_URL 不能指向本机 Postgres", file=sys.stderr)
+        sys.exit(1)
+else:
+    pwd = """${DB_PASSWORD}"""
+    db = f"postgresql+asyncpg://coco:{pwd}@127.0.0.1:5432/coco"
+
+lines = [
+    "COCO_ENVIRONMENT=development",
+    "COCO_LOG_LEVEL=INFO",
+    f"COCO_DATABASE_URL={db}",
+    f"COCO_AUTH_SIGNING_KEY={signing}",
+    f"COCO_AUTH_HASH_PEPPER={pepper}",
+    "COCO_AUTH_ISSUER=coco-backend",
+    "COCO_AUTH_AUDIENCE=coco-web",
+    "COCO_ACCESS_TOKEN_TTL_SECONDS=3600",
+    "COCO_REFRESH_TOKEN_TTL_DAYS=30",
+    "COCO_SMS_PROVIDER=dev",
+    "COCO_DEV_SMS_CODE=246810",
+    "COCO_OTP_TTL_SECONDS=300",
+    "COCO_OTP_MAX_ATTEMPTS=5",
+    "COCO_OTP_REQUEST_LIMIT_PER_HOUR=20",
+    "COCO_CORS_ALLOWED_ORIGINS=*",
+    "COCO_WEB_STATIC_DIR=/opt/coco/web",
+    f"COCO_ALIYUN_API_KEY={key}",
+    "COCO_ALIYUN_REGION=cn-beijing",
+    "COCO_REALTIME_MODEL=qwen-audio-3.0-realtime-plus",
+    "COCO_REALTIME_VOICE=longanqian",
+    "COCO_TEXT_MODEL=qwen-plus",
+    "COCO_VISION_MODEL=qwen3.7-plus",
+    "COCO_ASR_MODEL=qwen-audio-3.0-asr-flash",
+    "COCO_TTS_MODEL=qwen-audio-3.0-tts-flash",
+    "COCO_TTS_VOICE=longanhuan",
+]
+Path("${out}").write_text("\n".join(lines) + "\n")
+print("env_ready", "with_key" if key else "no_key", "cloud_db" if skip_db else "local_db")
 PY
 }
 
@@ -139,11 +174,15 @@ main() {
   info "上传远端 .env"
   scp_to "${ENV_TMP}" /tmp/coco.env
 
-  info "远端装机（Postgres / uv / Nginx / systemd）"
+  if (( SKIP_DB )); then
+    info "远端装机（跳过 Postgres，连云库 / uv / Nginx / systemd）"
+  else
+    info "远端装机（Postgres / uv / Nginx / systemd）"
+  fi
   # DB 密码经环境注入远端脚本，避免写进仓库
   # shellcheck disable=SC2086
   ssh ${SSH_OPTS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
-    "DB_PASSWORD=$(printf '%q' "${DB_PASSWORD}") REMOTE_ROOT=$(printf '%q' "${REMOTE_ROOT}") bash -s" <<'REMOTE'
+    "DB_PASSWORD=$(printf '%q' "${DB_PASSWORD}") SKIP_DB=$(printf '%q' "${SKIP_DB}") REMOTE_ROOT=$(printf '%q' "${REMOTE_ROOT}") bash -s" <<'REMOTE'
 set -Eeuo pipefail
 export PATH="/root/.local/bin:/usr/local/bin:/usr/bin:$PATH"
 # 国产镜像：清华 PyPI + npmmirror Python 构建
@@ -174,8 +213,16 @@ fi
 free -m | head -2
 
 echo "▸ 系统包"
-dnf install -y postgresql-server postgresql nginx curl tar gzip which ca-certificates rsync
+# 只装缺的包；已有的 curl/python3 不要再 dnf install，否则会把 openssl 升到 3.5 并弄挂 sshd
+PKGS=(nginx)
+if [[ "${SKIP_DB:-0}" != "1" ]]; then
+  PKGS+=(postgresql-server postgresql)
+fi
+dnf install -y "${PKGS[@]}"
 
+if [[ "${SKIP_DB:-0}" == "1" ]]; then
+  echo "▸ 跳过本机 Postgres，使用云库"
+else
 echo "▸ 初始化 Postgres"
 if [[ ! -f /var/lib/pgsql/data/PG_VERSION ]]; then
   postgresql-setup --initdb || /usr/bin/postgresql-setup --initdb || true
@@ -218,6 +265,7 @@ sed -i -E 's/^#?work_mem.*/work_mem = 4MB/' "${PG_CONF}" || true
 systemctl restart postgresql
 sleep 2
 PGPASSWORD="${DB_PASSWORD}" psql -h 127.0.0.1 -U coco -d coco -c 'SELECT 1'
+fi
 
 echo "▸ 安装 uv"
 if ! command -v uv >/dev/null 2>&1; then
@@ -240,6 +288,29 @@ if [[ ! -f "${BACKEND_DIR}/pyproject.toml" ]]; then
 fi
 
 echo "▸ systemd coco（127.0.0.1:8000）"
+if [[ "${SKIP_DB:-0}" == "1" ]]; then
+cat > /etc/systemd/system/coco.service <<'UNIT'
+[Unit]
+Description=Coco demo (API + Web)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/coco/backend
+EnvironmentFile=/opt/coco/.env
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin
+Environment=UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+Environment=UV_PYTHON_INSTALL_MIRROR=https://cdn.npmmirror.com/binaries/python-build-standalone
+ExecStart=/root/.local/bin/uv run --python 3.12 uvicorn coco.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+MemoryMax=800M
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+else
 cat > /etc/systemd/system/coco.service <<'UNIT'
 [Unit]
 Description=Coco demo (API + Web)
@@ -261,6 +332,7 @@ MemoryMax=800M
 [Install]
 WantedBy=multi-user.target
 UNIT
+fi
 
 systemctl daemon-reload
 systemctl enable coco.service
@@ -382,6 +454,35 @@ PY
 nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
+
+if [[ "${SKIP_DB:-0}" == "1" ]]; then
+  echo "▸ 探测云库 TCP"
+  python3 - <<'PY'
+from pathlib import Path
+import socket
+import sys
+import urllib.parse
+
+url = ""
+for line in Path("/opt/coco/.env").read_text().splitlines():
+    if line.startswith("COCO_DATABASE_URL="):
+        url = line.split("=", 1)[1].strip()
+        break
+if not url:
+    sys.exit("missing COCO_DATABASE_URL")
+raw = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+parsed = urllib.parse.urlparse(raw)
+host = parsed.hostname
+port = parsed.port or 5432
+print(f"tcp {host}:{port}")
+try:
+    sock = socket.create_connection((host, port), timeout=8)
+    sock.close()
+except OSError as exc:
+    sys.exit(f"无法连云库 {host}:{port}：{exc}（检查 RDS 白名单是否含本机公网 IP）")
+print("tcp_ok")
+PY
+fi
 
 rm -f /tmp/coco.env
 echo "▸ SETUP_OK"

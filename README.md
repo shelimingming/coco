@@ -135,8 +135,11 @@ flutter run -d "iPhone 17 Pro" \
 私钥放在 `scripts/coco-vm.key`（已 gitignore）。默认主机 `106.13.110.85`，对外 **80**。
 
 ```bash
-# 首次：Postgres + Nginx + systemd 骨架
+# 首次：Nginx + systemd 骨架（默认同时装本机 Postgres）
 ./scripts/setup_vm.sh
+
+# 用云库、不装本机 Postgres（读取本机 backend/.env 的 COCO_DATABASE_URL）
+./scripts/setup_vm.sh --skip-db
 
 # 同步代码 / 构建 Web / 迁移 / 重启
 ./scripts/deploy_vm.sh                 # 前后端
