@@ -22,17 +22,9 @@ class MemoriesPage extends ConsumerWidget {
 
     return CocoScaffold(
       title: '我记住的事',
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: CocoSpace.s3),
-          child: Center(
-            child: ParentChipButton(
-              label: '返回',
-              onPressed: () => context.pop(),
-            ),
-          ),
-        ),
-      ],
+      leading: ParentBackButton(onPressed: () => context.pop()),
+      leadingWidth: 104,
+      bottom: ParentHomeButton(onPressed: () => context.go('/parent')),
       body: async.when(
         loading: () => const CocoPageLoading(),
         error: (error, _) => Column(
@@ -65,10 +57,6 @@ class MemoriesPage extends ConsumerWidget {
                   ),
                 ),
                 const Spacer(),
-                CocoSecondaryButton(
-                  label: '回去找可可说话',
-                  onPressed: () => context.go('/parent'),
-                ),
               ],
             );
           }

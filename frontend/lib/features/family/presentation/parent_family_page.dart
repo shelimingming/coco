@@ -56,17 +56,9 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
 
     return CocoScaffold(
       title: '邀请子女',
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: CocoSpace.s3),
-          child: Center(
-            child: ParentChipButton(
-              label: '返回',
-              onPressed: () => context.pop(),
-            ),
-          ),
-        ),
-      ],
+      leading: ParentBackButton(onPressed: () => context.pop()),
+      leadingWidth: 104,
+      bottom: ParentHomeButton(onPressed: () => context.go('/parent')),
       body: familyAsync.when(
         loading: () => const CocoPageLoading(),
         error: (error, _) => _ErrorBody(
@@ -92,11 +84,6 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: CocoColors.neutral700,
                   ),
-                ),
-                const Spacer(),
-                CocoSecondaryButton(
-                  label: '返回',
-                  onPressed: () => context.pop(),
                 ),
               ],
             );
