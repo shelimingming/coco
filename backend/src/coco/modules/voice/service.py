@@ -30,6 +30,7 @@ from coco.errors import AppError
 from coco.models.auth import AuthSession
 from coco.models.conversation import ConversationItemKind, ConversationStatus
 from coco.models.family import FamilyStatus
+from coco.models.reminder import EscalationPolicy
 from coco.models.user import User, UserRole, UserStatus
 from coco.modules.conversations.service import (
     append_tool_call,
@@ -39,6 +40,7 @@ from coco.modules.conversations.service import (
 )
 from coco.modules.family.service import get_family
 from coco.modules.memories.service import MemoryService
+from coco.modules.reminders.service import infer_escalation_policy
 from coco.modules.voice.pending_actions import (
     CONFIRMABLE_KINDS,
     PendingActionStore,
@@ -496,11 +498,16 @@ def _build_pending_display(
         if len(schedule_time) >= 5 and schedule_time[2] == ":":
             schedule_time = schedule_time[:5]
         title = str(arguments.get("title") or tool_result.get("title") or "").strip()
+        will_notify_family = (
+            infer_escalation_policy(title)
+            == EscalationPolicy.FAMILY_AFTER_TWO_UNANSWERED.value
+        )
         return {
             "title": title,
             "schedule_type": schedule_type,
             "schedule_time": schedule_time,
             "repeat_label": "每天" if schedule_type == "DAILY" else "仅一次",
+            "will_notify_family": will_notify_family,
         }
     if kind == "share_to_child":
         return {

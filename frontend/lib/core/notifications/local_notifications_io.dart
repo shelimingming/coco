@@ -180,7 +180,7 @@ class IoLocalNotificationService implements LocalNotificationService {
         id: id,
         scheduledDate: when,
         title: '日常提醒',
-        body: '到「${reminder.title}」时间了。已经做过了吗？',
+        body: '可可有一条提醒',
         notificationDetails: const NotificationDetails(
           iOS: DarwinNotificationDetails(
             presentAlert: true,
@@ -190,7 +190,9 @@ class IoLocalNotificationService implements LocalNotificationService {
           android: _reminderChannel,
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        payload: 'reminder:${reminder.id}',
+        payload: reminder.occurrenceId == null
+            ? 'reminder:${reminder.id}'
+            : 'occurrence:${reminder.occurrenceId}',
       );
       scheduled.add(reminder.id);
     }

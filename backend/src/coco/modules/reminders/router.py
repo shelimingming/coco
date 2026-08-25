@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from coco.config import Settings, get_settings
 from coco.deps import CurrentUserDep, SessionDep
 from coco.modules.reminders.schemas import (
-    DelayRequest,
+    OccurrenceRespondRequest,
     OccurrenceResponse,
     ReminderCreateRequest,
     ReminderResponse,
@@ -104,41 +104,17 @@ async def delete_reminder(
     return await service.delete(session, user=user, reminder_id=reminder_id)
 
 
-@router.post(
-    "/{reminder_id}/occurrences/{occurrence_id}/confirm",
-    response_model=None,
-)
-async def confirm_occurrence(
-    reminder_id: UUID,
+@router.post("/occurrences/{occurrence_id}/response", response_model=None)
+async def respond_to_occurrence(
     occurrence_id: UUID,
+    body: OccurrenceRespondRequest,
     session: SessionDep,
     user: CurrentUserDep,
     service: ReminderService = Depends(get_reminder_service),
 ) -> OccurrenceResponse | dict:
-    return await service.confirm_occurrence(
+    return await service.respond_to_occurrence(
         session,
         user=user,
-        reminder_id=reminder_id,
-        occurrence_id=occurrence_id,
-    )
-
-
-@router.post(
-    "/{reminder_id}/occurrences/{occurrence_id}/delay",
-    response_model=OccurrenceResponse,
-)
-async def delay_occurrence(
-    reminder_id: UUID,
-    occurrence_id: UUID,
-    body: DelayRequest,
-    session: SessionDep,
-    user: CurrentUserDep,
-    service: ReminderService = Depends(get_reminder_service),
-) -> OccurrenceResponse:
-    return await service.delay_occurrence(
-        session,
-        user=user,
-        reminder_id=reminder_id,
         occurrence_id=occurrence_id,
         body=body,
     )

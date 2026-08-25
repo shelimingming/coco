@@ -25,7 +25,10 @@ class ReminderConfirmCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reminderName = _reminderNameFromBody(notification.body);
+    final reminderName =
+        notification.reminderTitle?.trim().isNotEmpty == true
+        ? notification.reminderTitle!.trim()
+        : _reminderNameFromBody(notification.body);
     final rows = <(String, String)>[
       if (reminderName != null) ('提醒什么', reminderName),
       ('说明', _promptFromBody(notification.body)),
@@ -156,10 +159,10 @@ class ReminderConfirmCard extends StatelessWidget {
 
   static String _promptFromBody(String body) {
     // 正文固定句式，拆成短问句放「说明」，避免与事项名重复
-    if (body.contains('还没有确认')) {
+    if (body.contains('还没有确认') || body.contains('没有确认')) {
       return '刚才提醒过了，已经做过了吗？';
     }
-    if (body.contains('已经做过了吗')) {
+    if (body.contains('已经做过了吗') || body.contains('可可有一条提醒')) {
       return '已经做过了吗？';
     }
     return body.trim();

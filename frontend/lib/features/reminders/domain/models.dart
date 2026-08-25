@@ -64,7 +64,13 @@ class ReminderOccurrence {
     required this.id,
     required this.reminderId,
     required this.dueAt,
-    required this.state,
+    required this.deliveryState,
+    required this.responseStatus,
+    this.reminderRevision = 1,
+    this.titleSnapshot = '',
+    this.snoozeUntil,
+    this.attemptCount = 0,
+    this.responseSource = 'NONE',
     this.firstNotifiedAt,
     this.secondNotifiedAt,
     this.confirmedAt,
@@ -74,23 +80,37 @@ class ReminderOccurrence {
   final String id;
   final String reminderId;
   final DateTime dueAt;
-  final String state;
+  final String deliveryState;
+  final String responseStatus;
+  final int reminderRevision;
+  final String titleSnapshot;
+  final DateTime? snoozeUntil;
+  final int attemptCount;
+  final String responseSource;
   final DateTime? firstNotifiedAt;
   final DateTime? secondNotifiedAt;
   final DateTime? confirmedAt;
   final DateTime? escalatedAt;
 
   bool get isOpen =>
-      state == 'WAITING' ||
-      state == 'FIRST_REMINDER' ||
-      state == 'SECOND_REMINDER';
+      deliveryState == 'PENDING' ||
+      deliveryState == 'NOTIFIED_1' ||
+      deliveryState == 'NOTIFIED_2';
 
   factory ReminderOccurrence.fromJson(Map<String, dynamic> json) {
     return ReminderOccurrence(
       id: json['id'] as String,
       reminderId: json['reminder_id'] as String,
       dueAt: DateTime.parse(json['due_at'] as String),
-      state: json['state'] as String,
+      deliveryState: json['delivery_state'] as String? ?? 'PENDING',
+      responseStatus: json['response_status'] as String? ?? 'NONE',
+      reminderRevision: json['reminder_revision'] as int? ?? 1,
+      titleSnapshot: json['title_snapshot'] as String? ?? '',
+      snoozeUntil: json['snooze_until'] == null
+          ? null
+          : DateTime.parse(json['snooze_until'] as String),
+      attemptCount: json['attempt_count'] as int? ?? 0,
+      responseSource: json['response_source'] as String? ?? 'NONE',
       firstNotifiedAt: json['first_notified_at'] == null
           ? null
           : DateTime.parse(json['first_notified_at'] as String),

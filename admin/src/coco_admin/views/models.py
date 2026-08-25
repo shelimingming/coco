@@ -317,7 +317,8 @@ class ReminderOccurrenceAdmin(ReadOnlyModelView, model=ReminderOccurrence):
     column_list = [
         ReminderOccurrence.reminder_id,
         ReminderOccurrence.due_at,
-        ReminderOccurrence.state,
+        ReminderOccurrence.delivery_state,
+        ReminderOccurrence.response_status,
         ReminderOccurrence.first_notified_at,
         ReminderOccurrence.second_notified_at,
         ReminderOccurrence.confirmed_at,
@@ -326,7 +327,8 @@ class ReminderOccurrenceAdmin(ReadOnlyModelView, model=ReminderOccurrence):
     column_labels = {
         ReminderOccurrence.reminder_id: "提醒",
         ReminderOccurrence.due_at: "到期时间",
-        ReminderOccurrence.state: "状态",
+        ReminderOccurrence.delivery_state: "投递进展",
+        ReminderOccurrence.response_status: "用户反馈",
         ReminderOccurrence.first_notified_at: "首次通知",
         ReminderOccurrence.second_notified_at: "二次通知",
         ReminderOccurrence.confirmed_at: "确认时间",
@@ -337,17 +339,29 @@ class ReminderOccurrenceAdmin(ReadOnlyModelView, model=ReminderOccurrence):
     column_formatters_detail = {ReminderOccurrence.reminder_id: format_reminder_title_detail}
     column_filters = [
         StaticValuesFilter(
-            ReminderOccurrence.state,
+            ReminderOccurrence.delivery_state,
             values=[
-                ("WAITING", "等待"),
-                ("FIRST_REMINDER", "首次提醒"),
-                ("SECOND_REMINDER", "二次提醒"),
-                ("DONE", "已确认"),
-                ("ESCALATED", "已升级"),
+                ("PENDING", "待提示"),
+                ("NOTIFIED_1", "已提示一次"),
+                ("NOTIFIED_2", "已提示两次"),
+                ("CLOSED", "已关闭"),
+            ],
+        ),
+        StaticValuesFilter(
+            ReminderOccurrence.response_status,
+            values=[
+                ("NONE", "无"),
+                ("COMPLETED_SELF_REPORTED", "自述完成"),
+                ("SKIPPED_SELF_REPORTED", "本次跳过"),
+                ("SNOOZED", "已延后"),
+                ("UNANSWERED", "无回应"),
             ],
         ),
     ]
-    column_sortable_list = [ReminderOccurrence.due_at, ReminderOccurrence.state]
+    column_sortable_list = [
+        ReminderOccurrence.due_at,
+        ReminderOccurrence.delivery_state,
+    ]
     column_default_sort = [(ReminderOccurrence.due_at, True)]
 
 

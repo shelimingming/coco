@@ -10,6 +10,7 @@ import '../core/widgets/web_iphone_shell.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/domain/models.dart';
 import '../features/notifications/application/notification_poller.dart';
+import '../features/reminders/presentation/widgets/reminder_overlay_host.dart';
 import 'router.dart';
 
 class CocoApp extends ConsumerWidget {
@@ -69,6 +70,8 @@ class CocoApp extends ConsumerWidget {
               data: mq.copyWith(textScaler: capped),
               child: content,
             );
+            // 到点浮层盖在任意父母页上，不绑死在首页
+            content = ReminderOverlayHost(child: content);
           }
           if (!kIsWeb) return content;
           // 桌面浏览器用 iPhone 外壳包裹，便于对照真机比例预览

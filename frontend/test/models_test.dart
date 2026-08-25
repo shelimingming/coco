@@ -143,6 +143,30 @@ void main() {
     });
   });
 
+  group('ReminderOccurrence.fromJson', () {
+    test('parses dual delivery and response fields', () {
+      final occ = ReminderOccurrence.fromJson({
+        'id': 'o1',
+        'reminder_id': 'r1',
+        'due_at': '2026-08-09T12:00:00Z',
+        'delivery_state': 'NOTIFIED_1',
+        'response_status': 'NONE',
+        'reminder_revision': 1,
+        'title_snapshot': '吃药',
+        'snooze_until': null,
+        'attempt_count': 1,
+        'response_source': 'NONE',
+        'first_notified_at': '2026-08-09T12:00:00Z',
+        'second_notified_at': null,
+        'confirmed_at': null,
+        'escalated_at': null,
+      });
+      expect(occ.isOpen, isTrue);
+      expect(occ.deliveryState, 'NOTIFIED_1');
+      expect(occ.responseStatus, 'NONE');
+    });
+  });
+
   group('filterUnseenNotificationIds', () {
     test('dedupes seen ids', () {
       final unseen = filterUnseenNotificationIds(

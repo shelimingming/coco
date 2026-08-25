@@ -6,7 +6,7 @@ import enum
 import uuid
 from datetime import datetime, time
 
-from sqlalchemy import DateTime, ForeignKey, String, Time
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Time
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,12 +34,41 @@ class ReminderCreatedSource(enum.StrEnum):
     CHILD = "CHILD"
 
 
-class OccurrenceState(enum.StrEnum):
-    WAITING = "WAITING"
-    FIRST_REMINDER = "FIRST_REMINDER"
-    SECOND_REMINDER = "SECOND_REMINDER"
-    DONE = "DONE"
-    ESCALATED = "ESCALATED"
+class TimingMode(enum.StrEnum):
+    """只影响通话中何时开口；本期服务端一律按 EXACT 投递。"""
+
+    EXACT = "EXACT"
+    FLEXIBLE = "FLEXIBLE"
+
+
+class EscalationPolicy(enum.StrEnum):
+    NONE = "NONE"
+    FAMILY_AFTER_TWO_UNANSWERED = "FAMILY_AFTER_TWO_UNANSWERED"
+
+
+class DeliveryState(enum.StrEnum):
+    """调度器拥有：系统提示到第几次。"""
+
+    PENDING = "PENDING"
+    NOTIFIED_1 = "NOTIFIED_1"
+    NOTIFIED_2 = "NOTIFIED_2"
+    CLOSED = "CLOSED"
+
+
+class ResponseStatus(enum.StrEnum):
+    """用户拥有：老人怎么回应。UNANSWERED 仅由超时路径写入。"""
+
+    NONE = "NONE"
+    COMPLETED_SELF_REPORTED = "COMPLETED_SELF_REPORTED"
+    SKIPPED_SELF_REPORTED = "SKIPPED_SELF_REPORTED"
+    SNOOZED = "SNOOZED"
+    UNANSWERED = "UNANSWERED"
+
+
+class ResponseSource(enum.StrEnum):
+    VOICE = "VOICE"
+    BUTTON = "BUTTON"
+    NONE = "NONE"
 
 
 class Reminder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -78,10 +107,27 @@ class Reminder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
         index=True,
     )
+    timing_mode: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=TimingMode.EXACT.value,
+    )
+    allowed_delay_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=15,
+    )
+    escalation_policy: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=EscalationPolicy.NONE.value,
+    )
+    # 改计划时加一；occurrence 冻结当时值，提示前比对
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class ReminderOccurrence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """一次到点对应一条记录，状态机落在此表避免每日提醒历史被覆盖。"""
+    """一次到点对应一条记录；投递进展与用户反馈拆成两个正交字段。"""
 
     __tablename__ = "reminder_occurrences"
 
@@ -92,11 +138,27 @@ class ReminderOccurrence(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    state: Mapped[str] = mapped_column(
+    delivery_state: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-        default=OccurrenceState.WAITING.value,
+        default=DeliveryState.PENDING.value,
         index=True,
+    )
+    response_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=ResponseStatus.NONE.value,
+    )
+    reminder_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    title_snapshot: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    snooze_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    response_source: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=ResponseSource.NONE.value,
     )
     first_notified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

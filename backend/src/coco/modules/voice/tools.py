@@ -17,12 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from coco.config import Settings
 from coco.errors import AppError
 from coco.models.care import CareSource
-from coco.models.reminder import ReminderCreatedSource
+from coco.models.reminder import ReminderCreatedSource, ResponseSource, ResponseStatus
 from coco.models.user import User
 from coco.modules.care.schemas import CareShareCreateRequest
 from coco.modules.care.service import CareService
 from coco.modules.memories.service import MemoryService
-from coco.modules.reminders.schemas import ReminderCreateRequest
+from coco.modules.reminders.schemas import OccurrenceRespondRequest, ReminderCreateRequest
 from coco.modules.reminders.service import ReminderService
 
 logger = logging.getLogger(__name__)
@@ -234,16 +234,17 @@ async def dispatch_voice_tool(
                         }
                     )
                 target = open_items[0]
-                reminder_id = target.reminder_id
                 occurrence_id = target.id
             else:
-                reminder_id = UUID(str(reminder_id_raw))
                 occurrence_id = UUID(str(occurrence_id_raw))
-            result = await reminder_service.confirm_occurrence(
+            result = await reminder_service.respond_to_occurrence(
                 session,
                 user=user,
-                reminder_id=reminder_id,
                 occurrence_id=occurrence_id,
+                body=OccurrenceRespondRequest(
+                    status=ResponseStatus.COMPLETED_SELF_REPORTED.value,
+                    source=ResponseSource.VOICE.value,
+                ),
                 user_confirmed=user_confirmed,
             )
             return _serialize(result)

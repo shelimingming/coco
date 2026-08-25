@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from coco.config import Settings
@@ -14,7 +14,7 @@ from coco.errors import AppError
 from coco.models.care import CareShare, CareSource
 from coco.models.family import FamilyStatus
 from coco.models.notification import Notification, NotificationType
-from coco.models.reminder import OccurrenceState, Reminder, ReminderOccurrence
+from coco.models.reminder import DeliveryState, Reminder, ReminderOccurrence, ResponseStatus
 from coco.models.user import User, UserRole
 from coco.modules.care.schemas import (
     CareShareCreateRequest,
@@ -23,6 +23,17 @@ from coco.modules.care.schemas import (
     ChildTodayResponse,
 )
 from coco.modules.family.service import require_family
+
+
+def _legacy_display_state(occ: ReminderOccurrence) -> str:
+    """子女端仍展示旧枚举值，避免破坏现有卡片文案。"""
+    if occ.escalated_at is not None:
+        return "ESCALATED"
+    if occ.delivery_state == DeliveryState.NOTIFIED_2.value:
+        return "SECOND_REMINDER"
+    if occ.delivery_state == DeliveryState.NOTIFIED_1.value:
+        return "FIRST_REMINDER"
+    return occ.delivery_state
 
 
 def _to_response(share: CareShare) -> CareShareResponse:
@@ -175,12 +186,18 @@ class CareService:
                 Reminder.user_id == family.parent_user_id,
                 ReminderOccurrence.due_at >= day_start,
                 ReminderOccurrence.due_at < day_end,
-                ReminderOccurrence.state.in_(
-                    [
-                        OccurrenceState.FIRST_REMINDER.value,
-                        OccurrenceState.SECOND_REMINDER.value,
-                        OccurrenceState.ESCALATED.value,
-                    ]
+                or_(
+                    ReminderOccurrence.delivery_state.in_(
+                        [
+                            DeliveryState.NOTIFIED_1.value,
+                            DeliveryState.NOTIFIED_2.value,
+                        ]
+                    ),
+                    and_(
+                        ReminderOccurrence.delivery_state == DeliveryState.CLOSED.value,
+                        ReminderOccurrence.response_status
+                        == ResponseStatus.UNANSWERED.value,
+                    ),
                 ),
             )
             .order_by(ReminderOccurrence.due_at.desc())
@@ -188,12 +205,12 @@ class CareService:
         reminder_items: list[ChildTodayReminderItem] = []
         has_escalated = False
         for occ, reminder in occ_result.all():
-            if occ.state == OccurrenceState.ESCALATED.value:
+            if occ.escalated_at is not None:
                 has_escalated = True
             reminder_items.append(
                 ChildTodayReminderItem(
                     title=reminder.title,
-                    state=occ.state,
+                    state=_legacy_display_state(occ),
                     due_at=occ.due_at,
                 )
             )

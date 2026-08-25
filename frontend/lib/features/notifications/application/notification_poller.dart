@@ -9,6 +9,7 @@ import '../../auth/domain/models.dart';
 import '../../care/application/care_providers.dart';
 import '../../reminders/application/reminders_providers.dart';
 import '../../reminders/data/reminders_api.dart';
+import '../../reminders/domain/models.dart';
 import '../data/notifications_api.dart';
 import '../domain/models.dart';
 
@@ -182,9 +183,11 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
               if (!skipBanner) {
                 await local.show(
                   id: item.id.hashCode & 0x7fffffff,
-                  title: item.title,
-                  body: item.body,
-                  payload: 'notification:${item.id}',
+                  title: '可可有一条提醒',
+                  body: '可可有一条提醒',
+                  payload: item.occurrenceId == null
+                      ? 'notification:${item.id}'
+                      : 'occurrence:${item.occurrenceId}',
                 );
               }
             }
@@ -224,44 +227,60 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
     }
   }
 
-  Future<void> confirmPendingReminder() async {
+  Future<ReminderOccurrence?> confirmPendingReminder() async {
     final pending = state.pendingReminder;
-    if (pending == null) return;
+    if (pending == null) return null;
     final reminderId = pending.reminderId;
     final occurrenceId = pending.occurrenceId;
     if (reminderId == null || occurrenceId == null) {
       await dismissPendingReminder(markRead: true);
-      return;
+      return null;
     }
-    await _ref
+    final occ = await _ref
         .read(remindersApiProvider)
-        .confirm(reminderId: reminderId, occurrenceId: occurrenceId);
-    await _ref
-        .read(localNotificationServiceProvider)
-        .cancelReminder(reminderId);
-    await dismissPendingReminder(markRead: true);
-  }
-
-  Future<void> delayPendingReminder({int minutes = 30}) async {
-    final pending = state.pendingReminder;
-    if (pending == null) return;
-    final reminderId = pending.reminderId;
-    final occurrenceId = pending.occurrenceId;
-    if (reminderId == null || occurrenceId == null) {
-      await dismissPendingReminder(markRead: true);
-      return;
-    }
-    await _ref
-        .read(remindersApiProvider)
-        .delay(
-          reminderId: reminderId,
+        .respond(
           occurrenceId: occurrenceId,
-          minutes: minutes,
+          status: 'COMPLETED_SELF_REPORTED',
         );
     await _ref
         .read(localNotificationServiceProvider)
         .cancelReminder(reminderId);
+    await _rescheduleLocal();
     await dismissPendingReminder(markRead: true);
+    return occ;
+  }
+
+  Future<ReminderOccurrence?> delayPendingReminder({int minutes = 30}) async {
+    final pending = state.pendingReminder;
+    if (pending == null) return null;
+    final reminderId = pending.reminderId;
+    final occurrenceId = pending.occurrenceId;
+    if (reminderId == null || occurrenceId == null) {
+      await dismissPendingReminder(markRead: true);
+      return null;
+    }
+    final occ = await _ref
+        .read(remindersApiProvider)
+        .respond(
+          occurrenceId: occurrenceId,
+          status: 'SNOOZED',
+          snoozeMinutes: minutes,
+        );
+    await _ref
+        .read(localNotificationServiceProvider)
+        .cancelReminder(reminderId);
+    await _rescheduleLocal(
+      snoozeOverride: occ.snoozeUntil == null
+          ? null
+          : LocalReminderSchedule(
+              id: reminderId,
+              title: pending.title,
+              nextTriggerAt: occ.snoozeUntil!,
+              occurrenceId: occ.id,
+            ),
+    );
+    await dismissPendingReminder(markRead: true);
+    return occ;
   }
 
   Future<void> acceptPendingSuggestion() async {
@@ -274,6 +293,7 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
     }
     await _ref.read(remindersApiProvider).acceptSuggestion(reminderId);
     _ref.invalidate(remindersListProvider);
+    await _rescheduleLocal();
     await dismissPendingSuggestion(markRead: true);
   }
 
@@ -298,6 +318,14 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
       await _ref.read(notificationsApiProvider).markRead(pending.id);
     } catch (_) {}
     state = state.copyWith(clearPendingChildStatus: true);
+  }
+
+  Future<void> _rescheduleLocal({LocalReminderSchedule? snoozeOverride}) {
+    return rescheduleLocalReminders(
+      api: _ref.read(remindersApiProvider),
+      local: _ref.read(localNotificationServiceProvider),
+      snoozeOverride: snoozeOverride,
+    );
   }
 
   Future<void> dismissPendingReminder({bool markRead = false}) async {

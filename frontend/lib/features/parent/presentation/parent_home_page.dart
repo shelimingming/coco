@@ -32,7 +32,6 @@ import 'widgets/parent_home_look_panel.dart';
 import 'widgets/parent_home_palette.dart';
 import 'widgets/parent_home_tool_bar.dart';
 import 'widgets/parent_pending_action_card.dart';
-import 'widgets/reminder_confirm_card.dart';
 import 'widgets/reminder_suggestion_card.dart';
 
 /// 父母端首页：全屏白天场景，说话原地进对话；默认只语音，开「字」才看本通文字。
@@ -221,9 +220,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     final pollerState = ref.watch(notificationPollerProvider);
     final pendingSuggestion = pollerState.pendingSuggestion;
     final pendingReminder = pollerState.pendingReminder;
-    // 一屏一事：建议确认 > 到点完成 > 报平安
-    final pendingChildStatus =
-        pendingSuggestion == null && pendingReminder == null
+    // 到点卡改由全局浮层承接；首页仍处理建议与报平安
+    final pendingChildStatus = pendingSuggestion == null
         ? pollerState.pendingChildStatus
         : null;
     final voicePending = inCall && callState.pendingAction != null;
@@ -264,7 +262,6 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     final showingConfirmCard =
         voicePending ||
         (!inCall && pendingSuggestion != null) ||
-        (!inCall && pendingReminder != null) ||
         (!inCall && pendingChildStatus != null);
     // 「字」开、识图、或确认大卡时虚化场景
     final blurBackground = showTranscript || lookSession || showingConfirmCard;
@@ -442,7 +439,6 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                               showTranscript: showTranscript,
                               voicePending: voicePending,
                               pendingSuggestion: pendingSuggestion,
-                              pendingReminder: pendingReminder,
                               pendingChildStatus: pendingChildStatus,
                               inCall: inCall,
                               lookState: lookState,
@@ -697,7 +693,6 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required bool showTranscript,
     required bool voicePending,
     required AppNotification? pendingSuggestion,
-    required AppNotification? pendingReminder,
     required AppNotification? pendingChildStatus,
     required bool inCall,
     required LookState lookState,
@@ -712,9 +707,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     if (lookSession &&
         callState.phase != VoiceCallPhase.error &&
         !voicePending &&
-        (pendingSuggestion == null &&
-            pendingReminder == null &&
-            pendingChildStatus == null)) {
+        (pendingSuggestion == null && pendingChildStatus == null)) {
       final errorText = lookState.phase == LookPhase.error
           ? [
               if (lookState.errorTitle != null) lookState.errorTitle!,
@@ -802,25 +795,6 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
             return ref
                 .read(notificationPollerProvider.notifier)
                 .rejectPendingSuggestion();
-          }),
-        ),
-      );
-    }
-
-    if (!inCall && pendingReminder != null) {
-      return SingleChildScrollView(
-        child: ReminderConfirmCard(
-          notification: pendingReminder,
-          busy: _actionBusy,
-          onConfirm: () => _runAction(() {
-            return ref
-                .read(notificationPollerProvider.notifier)
-                .confirmPendingReminder();
-          }),
-          onDelay: () => _runAction(() {
-            return ref
-                .read(notificationPollerProvider.notifier)
-                .delayPendingReminder();
           }),
         ),
       );

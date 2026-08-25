@@ -42,18 +42,32 @@ class ReminderResponse(BaseModel):
     created_at: datetime
     suggested_by_user_id: UUID | None = None
     suggested_by_display_name: str | None = None
+    timing_mode: str = "EXACT"
+    allowed_delay_minutes: int = 15
+    escalation_policy: str = "NONE"
+    revision: int = 1
 
 
 class OccurrenceResponse(BaseModel):
     id: UUID
     reminder_id: UUID
     due_at: datetime
-    state: str
+    delivery_state: str
+    response_status: str
+    reminder_revision: int
+    title_snapshot: str
+    snooze_until: datetime | None
+    attempt_count: int
+    response_source: str
     first_notified_at: datetime | None
     second_notified_at: datetime | None
     confirmed_at: datetime | None
     escalated_at: datetime | None
 
 
-class DelayRequest(BaseModel):
-    minutes: int = Field(default=30, ge=5, le=180)
+class OccurrenceRespondRequest(BaseModel):
+    status: str = Field(
+        pattern="^(COMPLETED_SELF_REPORTED|SKIPPED_SELF_REPORTED|SNOOZED|UNANSWERED)$"
+    )
+    snooze_minutes: int | None = Field(default=None, ge=5, le=180)
+    source: str = Field(default="BUTTON", pattern="^(VOICE|BUTTON|NONE)$")

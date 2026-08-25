@@ -27,6 +27,7 @@ class AppNotification {
 
   String? get reminderId => payload['reminder_id']?.toString();
   String? get occurrenceId => payload['occurrence_id']?.toString();
+  String? get reminderTitle => payload['title']?.toString();
   String? get suggestionTitle => payload['title']?.toString();
   String? get suggestionScheduleType => payload['schedule_type']?.toString();
   String? get suggestionScheduleTime => payload['schedule_time']?.toString();

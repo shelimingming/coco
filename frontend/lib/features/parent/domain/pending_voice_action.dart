@@ -21,6 +21,7 @@ class PendingVoiceAction {
     this.summary = '',
     this.urgency = 'LOW',
     this.shareTo = '家人',
+    this.willNotifyFamily = false,
   });
 
   final String draftId;
@@ -32,6 +33,7 @@ class PendingVoiceAction {
   final String summary;
   final String urgency;
   final String shareTo;
+  final bool willNotifyFamily;
 
   factory PendingVoiceAction.fromPayload(Map<String, Object?> payload) {
     final kind = pendingVoiceActionKindFromWire(payload['kind'] as String?);
@@ -54,6 +56,7 @@ class PendingVoiceAction {
       shareTo: (payload['share_to'] as String?)?.trim().isNotEmpty == true
           ? (payload['share_to'] as String).trim()
           : '家人',
+      willNotifyFamily: payload['will_notify_family'] == true,
     );
   }
 }

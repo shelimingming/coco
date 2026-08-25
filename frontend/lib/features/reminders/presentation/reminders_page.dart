@@ -150,6 +150,10 @@ class RemindersPage extends ConsumerWidget {
     try {
       await ref.read(remindersApiProvider).acceptSuggestion(reminder.id);
       ref.invalidate(remindersListProvider);
+      await rescheduleLocalReminders(
+        api: ref.read(remindersApiProvider),
+        local: ref.read(localNotificationServiceProvider),
+      );
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,

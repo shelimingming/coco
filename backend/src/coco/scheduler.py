@@ -17,11 +17,13 @@ from coco.config import Settings
 from coco.models.family import Family, FamilyStatus
 from coco.models.notification import Notification, NotificationType
 from coco.models.reminder import (
-    OccurrenceState,
+    DeliveryState,
+    EscalationPolicy,
     Reminder,
     ReminderOccurrence,
     ReminderScheduleType,
     ReminderStatus,
+    ResponseStatus,
 )
 from coco.modules.reminders.service import compute_next_trigger_at
 
@@ -30,63 +32,86 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class OccurrenceTransition:
-    next_state: str | None
+    next_delivery_state: str | None
+    next_response_status: str | None = None
     notify_parent: bool = False
     notify_child: bool = False
     set_first_notified: bool = False
     set_second_notified: bool = False
     set_escalated: bool = False
+    increment_attempt: bool = False
+    clear_snooze: bool = False
 
 
 def plan_occurrence_transition(
     *,
-    state: str,
+    delivery_state: str,
     now: datetime,
     first_notified_at: datetime | None,
     second_notified_at: datetime | None,
+    snooze_until: datetime | None,
+    reminder_revision: int,
+    current_revision: int,
+    escalation_policy: str,
     second_delay: timedelta,
     escalate_delay: timedelta,
 ) -> OccurrenceTransition:
-    """根据当前状态与时间决定下一步；无变化返回 next_state=None。"""
-    if state == OccurrenceState.WAITING.value:
+    """根据投递进展与时间决定下一步；无变化返回 next_delivery_state=None。"""
+    # 计划已改版：旧 occurrence 直接关闭，不再提示
+    if reminder_revision != current_revision:
         return OccurrenceTransition(
-            next_state=OccurrenceState.FIRST_REMINDER.value,
+            next_delivery_state=DeliveryState.CLOSED.value,
+            next_response_status=ResponseStatus.NONE.value,
+        )
+
+    if delivery_state == DeliveryState.PENDING.value:
+        if snooze_until is not None and snooze_until > now:
+            return OccurrenceTransition(next_delivery_state=None)
+        return OccurrenceTransition(
+            next_delivery_state=DeliveryState.NOTIFIED_1.value,
             notify_parent=True,
             set_first_notified=True,
+            increment_attempt=True,
+            clear_snooze=True,
         )
-    if state == OccurrenceState.FIRST_REMINDER.value:
+    if delivery_state == DeliveryState.NOTIFIED_1.value:
         if first_notified_at is None:
             return OccurrenceTransition(
-                next_state=OccurrenceState.FIRST_REMINDER.value,
+                next_delivery_state=DeliveryState.NOTIFIED_1.value,
                 notify_parent=True,
                 set_first_notified=True,
             )
         if now >= first_notified_at + second_delay:
             return OccurrenceTransition(
-                next_state=OccurrenceState.SECOND_REMINDER.value,
+                next_delivery_state=DeliveryState.NOTIFIED_2.value,
                 notify_parent=True,
                 set_second_notified=True,
+                increment_attempt=True,
             )
-        return OccurrenceTransition(next_state=None)
-    if state == OccurrenceState.SECOND_REMINDER.value:
+        return OccurrenceTransition(next_delivery_state=None)
+    if delivery_state == DeliveryState.NOTIFIED_2.value:
         if second_notified_at is None:
             return OccurrenceTransition(
-                next_state=OccurrenceState.SECOND_REMINDER.value,
+                next_delivery_state=DeliveryState.NOTIFIED_2.value,
                 notify_parent=True,
                 set_second_notified=True,
             )
         if now >= second_notified_at + escalate_delay:
-            return OccurrenceTransition(
-                next_state=OccurrenceState.ESCALATED.value,
-                notify_child=True,
-                set_escalated=True,
+            notify_child = (
+                escalation_policy == EscalationPolicy.FAMILY_AFTER_TWO_UNANSWERED.value
             )
-        return OccurrenceTransition(next_state=None)
-    return OccurrenceTransition(next_state=None)
+            return OccurrenceTransition(
+                next_delivery_state=DeliveryState.CLOSED.value,
+                next_response_status=ResponseStatus.UNANSWERED.value,
+                notify_child=notify_child,
+                set_escalated=notify_child,
+            )
+        return OccurrenceTransition(next_delivery_state=None)
+    return OccurrenceTransition(next_delivery_state=None)
 
 
 async def create_due_occurrences(session: AsyncSession, *, now: datetime) -> int:
-    """为已到点的 ACTIVE 提醒创建 WAITING occurrence，并清空/推进 next_trigger。"""
+    """为已到点的 ACTIVE 提醒创建 PENDING occurrence，并清空/推进 next_trigger。"""
     result = await session.execute(
         select(Reminder)
         .where(
@@ -105,12 +130,15 @@ async def create_due_occurrences(session: AsyncSession, *, now: datetime) -> int
             ReminderOccurrence(
                 reminder_id=reminder.id,
                 due_at=due_at,
-                state=OccurrenceState.WAITING.value,
+                delivery_state=DeliveryState.PENDING.value,
+                response_status=ResponseStatus.NONE.value,
+                reminder_revision=reminder.revision,
+                title_snapshot=reminder.title,
+                attempt_count=0,
             )
         )
-        # 先清空，避免本轮未推进时下一轮重复创建；每日提醒在 escalate/confirm 后再排
+        # 先清空，避免本轮未推进时下一轮重复创建；每日提醒预排下一轮
         if reminder.schedule_type == ReminderScheduleType.DAILY.value:
-            # 预排下一轮，当前 occurrence 独立推进
             reminder.next_trigger_at = compute_next_trigger_at(
                 reminder.schedule_time,
                 schedule_type=reminder.schedule_type,
@@ -137,11 +165,11 @@ async def advance_open_occurrences(
         select(ReminderOccurrence, Reminder)
         .join(Reminder, Reminder.id == ReminderOccurrence.reminder_id)
         .where(
-            ReminderOccurrence.state.in_(
+            ReminderOccurrence.delivery_state.in_(
                 [
-                    OccurrenceState.WAITING.value,
-                    OccurrenceState.FIRST_REMINDER.value,
-                    OccurrenceState.SECOND_REMINDER.value,
+                    DeliveryState.PENDING.value,
+                    DeliveryState.NOTIFIED_1.value,
+                    DeliveryState.NOTIFIED_2.value,
                 ]
             )
         )
@@ -151,49 +179,61 @@ async def advance_open_occurrences(
     changed = 0
     for occ, reminder in rows:
         plan = plan_occurrence_transition(
-            state=occ.state,
+            delivery_state=occ.delivery_state,
             now=now,
             first_notified_at=occ.first_notified_at,
             second_notified_at=occ.second_notified_at,
+            snooze_until=occ.snooze_until,
+            reminder_revision=occ.reminder_revision,
+            current_revision=reminder.revision,
+            escalation_policy=reminder.escalation_policy,
             second_delay=second_delay,
             escalate_delay=escalate_delay,
         )
-        if plan.next_state is None:
+        if plan.next_delivery_state is None:
             continue
 
-        occ.state = plan.next_state
+        occ.delivery_state = plan.next_delivery_state
+        if plan.next_response_status is not None:
+            occ.response_status = plan.next_response_status
         if plan.set_first_notified:
             occ.first_notified_at = now
         if plan.set_second_notified:
             occ.second_notified_at = now
         if plan.set_escalated:
             occ.escalated_at = now
+        if plan.increment_attempt:
+            occ.attempt_count += 1
+        if plan.clear_snooze:
+            occ.snooze_until = None
 
         local_due = occ.due_at.astimezone()
         due_label = local_due.strftime("%H:%M")
+        title = occ.title_snapshot or reminder.title
 
         if plan.notify_parent:
-            if plan.next_state == OccurrenceState.FIRST_REMINDER.value:
-                body = f"到「{reminder.title}」时间了。已经做过了吗？"
+            if plan.next_delivery_state == DeliveryState.NOTIFIED_1.value:
+                body = "可可有一条提醒"
             else:
-                body = f"刚才的「{reminder.title}」提醒还没有确认。已经做过了吗？"
+                body = "可可还有一条提醒没有确认"
             session.add(
                 Notification(
                     user_id=reminder.user_id,
                     type=NotificationType.REMINDER.value,
-                    title="日常提醒",
+                    title="可可有一条提醒",
                     body=body,
                     payload={
                         "reminder_id": str(reminder.id),
                         "occurrence_id": str(occ.id),
-                        "state": occ.state,
+                        "title": title,
+                        "delivery_state": occ.delivery_state,
                     },
                 )
             )
 
         if plan.notify_child:
             # 措辞严格：只能描述未收到确认，不能说「没有吃药」
-            child_body = f"今天 {due_label} 的「{reminder.title}」提醒经过两次提醒后仍未确认。"
+            child_body = f"今天 {due_label} 的「{title}」提醒经过两次提醒后仍未确认。"
             family = await session.scalar(
                 select(Family).where(
                     Family.parent_user_id == reminder.user_id,
@@ -211,11 +251,16 @@ async def advance_open_occurrences(
                         payload={
                             "reminder_id": str(reminder.id),
                             "occurrence_id": str(occ.id),
-                            "state": OccurrenceState.ESCALATED.value,
+                            "delivery_state": DeliveryState.CLOSED.value,
+                            "response_status": ResponseStatus.UNANSWERED.value,
                         },
                     )
                 )
-            # 一次性提醒升级后标记 DONE，避免悬挂
+            # 一次性提醒关闭后标记 DONE，避免悬挂
+            if reminder.schedule_type == ReminderScheduleType.ONCE.value:
+                reminder.status = ReminderStatus.DONE.value
+
+        elif plan.next_delivery_state == DeliveryState.CLOSED.value:
             if reminder.schedule_type == ReminderScheduleType.ONCE.value:
                 reminder.status = ReminderStatus.DONE.value
 

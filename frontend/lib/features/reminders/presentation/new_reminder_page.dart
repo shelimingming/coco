@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/network/api_exception.dart';
+import '../../../core/notifications/local_notifications.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_scaffold.dart';
@@ -59,6 +60,10 @@ class _NewReminderPageState extends ConsumerState<NewReminderPage> {
             scheduleTime: '$hh:$mm:00',
           );
       ref.invalidate(remindersListProvider);
+      await rescheduleLocalReminders(
+        api: ref.read(remindersApiProvider),
+        local: ref.read(localNotificationServiceProvider),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

@@ -14,23 +14,49 @@ from coco.errors import AppError
 from coco.models.family import FamilyStatus
 from coco.models.notification import Notification, NotificationType
 from coco.models.reminder import (
-    OccurrenceState,
+    DeliveryState,
+    EscalationPolicy,
     Reminder,
     ReminderCreatedSource,
     ReminderOccurrence,
     ReminderScheduleType,
     ReminderStatus,
+    ResponseStatus,
+    TimingMode,
 )
 from coco.models.user import User, UserRole
 from coco.modules.family.service import get_family
 from coco.modules.reminders.schemas import (
-    DelayRequest,
+    OccurrenceRespondRequest,
     OccurrenceResponse,
     ReminderCreateRequest,
     ReminderResponse,
     ReminderSuggestionCreateRequest,
     ReminderUpdateRequest,
 )
+
+# 标题命中这些词时，默认两次无回应后通知家人
+_ESCALATION_KEYWORDS = (
+    "吃药",
+    "服药",
+    "用药",
+    "输液",
+    "打针",
+    "复诊",
+    "复查",
+    "检查",
+    "就诊",
+    "胰岛素",
+    "血压",
+    "血糖",
+)
+
+def infer_escalation_policy(title: str) -> str:
+    """按标题关键词推断升级策略；不猜医疗语义之外的类型。"""
+    text = title.strip()
+    if any(keyword in text for keyword in _ESCALATION_KEYWORDS):
+        return EscalationPolicy.FAMILY_AFTER_TWO_UNANSWERED.value
+    return EscalationPolicy.NONE.value
 
 
 def compute_next_trigger_at(
@@ -81,6 +107,10 @@ def _to_response(
         created_at=reminder.created_at,
         suggested_by_user_id=reminder.suggested_by_user_id,
         suggested_by_display_name=suggested_by_display_name,
+        timing_mode=reminder.timing_mode,
+        allowed_delay_minutes=reminder.allowed_delay_minutes,
+        escalation_policy=reminder.escalation_policy,
+        revision=reminder.revision,
     )
 
 
@@ -89,7 +119,13 @@ def _occurrence_response(occ: ReminderOccurrence) -> OccurrenceResponse:
         id=occ.id,
         reminder_id=occ.reminder_id,
         due_at=occ.due_at,
-        state=occ.state,
+        delivery_state=occ.delivery_state,
+        response_status=occ.response_status,
+        reminder_revision=occ.reminder_revision,
+        title_snapshot=occ.title_snapshot,
+        snooze_until=occ.snooze_until,
+        attempt_count=occ.attempt_count,
+        response_source=occ.response_source,
         first_notified_at=occ.first_notified_at,
         second_notified_at=occ.second_notified_at,
         confirmed_at=occ.confirmed_at,
@@ -102,6 +138,16 @@ def _schedule_label(schedule_type: str, schedule_time: time) -> str:
     if schedule_type == ReminderScheduleType.DAILY.value:
         return f"每天 {hhmm}"
     return f"一次 {hhmm}"
+
+
+def _will_notify_family(title: str) -> bool:
+    return infer_escalation_policy(title) == EscalationPolicy.FAMILY_AFTER_TWO_UNANSWERED.value
+
+
+def _close_once_reminder(reminder: Reminder) -> None:
+    if reminder.schedule_type == ReminderScheduleType.ONCE.value:
+        reminder.status = ReminderStatus.DONE.value
+        reminder.next_trigger_at = None
 
 
 class ReminderService:
@@ -140,6 +186,7 @@ class ReminderService:
                 "title": body.title,
                 "schedule_type": body.schedule_type,
                 "schedule_time": body.schedule_time.strftime("%H:%M"),
+                "will_notify_family": _will_notify_family(body.title),
             }
 
         next_at = compute_next_trigger_at(
@@ -147,14 +194,19 @@ class ReminderService:
             schedule_type=body.schedule_type,
             tz_name=self._tz(),
         )
+        title = body.title.strip()
         reminder = Reminder(
             user_id=user.id,
-            title=body.title.strip(),
+            title=title,
             schedule_type=body.schedule_type,
             schedule_time=body.schedule_time,
             status=ReminderStatus.ACTIVE.value,
             created_source=created_source,
             next_trigger_at=next_at,
+            timing_mode=TimingMode.EXACT.value,
+            allowed_delay_minutes=15,
+            escalation_policy=infer_escalation_policy(title),
+            revision=1,
         )
         session.add(reminder)
         await session.commit()
@@ -185,15 +237,20 @@ class ReminderService:
                 "需要先和父母完成家庭绑定，才能设置提醒。",
             )
 
+        title = body.title.strip()
         reminder = Reminder(
             user_id=family.parent_user_id,
-            title=body.title.strip(),
+            title=title,
             schedule_type=body.schedule_type,
             schedule_time=body.schedule_time,
             status=ReminderStatus.PENDING_CONFIRM.value,
             created_source=ReminderCreatedSource.CHILD.value,
             suggested_by_user_id=user.id,
             next_trigger_at=None,
+            timing_mode=TimingMode.EXACT.value,
+            allowed_delay_minutes=15,
+            escalation_policy=infer_escalation_policy(title),
+            revision=1,
         )
         session.add(reminder)
         await session.flush()
@@ -212,6 +269,8 @@ class ReminderService:
                     "schedule_time": reminder.schedule_time.strftime("%H:%M:%S"),
                     "suggested_by_user_id": str(user.id),
                     "suggested_by_display_name": user.display_name,
+                    "will_notify_family": reminder.escalation_policy
+                    == EscalationPolicy.FAMILY_AFTER_TWO_UNANSWERED.value,
                 },
             )
         )
@@ -372,20 +431,28 @@ class ReminderService:
                 "reminder.pending_confirm",
                 "请先确认或拒绝这条建议，确认后再修改。",
             )
+        changed = False
         if body.title is not None:
             reminder.title = body.title.strip()
+            reminder.escalation_policy = infer_escalation_policy(reminder.title)
+            changed = True
         if body.schedule_type is not None:
             reminder.schedule_type = body.schedule_type
+            changed = True
         if body.schedule_time is not None:
             reminder.schedule_time = body.schedule_time
+            changed = True
         if body.status is not None:
             reminder.status = body.status
+            changed = True
         if body.schedule_type is not None or body.schedule_time is not None:
             reminder.next_trigger_at = compute_next_trigger_at(
                 reminder.schedule_time,
                 schedule_type=reminder.schedule_type,
                 tz_name=self._tz(),
             )
+        if changed:
+            reminder.revision += 1
         await session.commit()
         await session.refresh(reminder)
         return await self._to_response_async(session, reminder)
@@ -398,79 +465,66 @@ class ReminderService:
         reminder = await self.get_owned(session, user=user, reminder_id=reminder_id)
         reminder.status = ReminderStatus.DELETED.value
         reminder.next_trigger_at = None
+        reminder.revision += 1
         await session.commit()
         return {"ok": True}
 
-    async def confirm_occurrence(
+    async def respond_to_occurrence(
         self,
         session: AsyncSession,
         *,
         user: User,
-        reminder_id: UUID,
         occurrence_id: UUID,
+        body: OccurrenceRespondRequest,
         user_confirmed: bool = True,
     ) -> OccurrenceResponse | dict:
         if user.role != UserRole.PARENT.value:
-            raise AppError(403, "reminder.parent_required", "只有老人模式可以确认提醒。")
+            raise AppError(403, "reminder.parent_required", "只有老人模式可以回应提醒。")
         if not user_confirmed:
-            return {"status": "need_confirmation", "action": "confirm_reminder"}
+            return {"status": "need_confirmation", "action": "respond_to_reminder"}
 
-        reminder = await self.get_owned(session, user=user, reminder_id=reminder_id)
         occ = await session.get(ReminderOccurrence, occurrence_id)
-        if occ is None or occ.reminder_id != reminder.id:
+        if occ is None:
             raise AppError(404, "reminder.occurrence_not_found", "找不到这条提醒记录。")
-        if occ.state in {OccurrenceState.DONE.value, OccurrenceState.ESCALATED.value}:
+        reminder = await self.get_owned(session, user=user, reminder_id=occ.reminder_id)
+
+        if occ.delivery_state == DeliveryState.CLOSED.value:
             return _occurrence_response(occ)
 
+        status = body.status
+        source = body.source
         now = datetime.now(UTC)
-        occ.state = OccurrenceState.DONE.value
-        occ.confirmed_at = now
 
-        if reminder.schedule_type == ReminderScheduleType.DAILY.value:
-            reminder.next_trigger_at = compute_next_trigger_at(
-                reminder.schedule_time,
-                schedule_type=reminder.schedule_type,
-                tz_name=self._tz(),
-                after=now,
-            )
+        if status == ResponseStatus.COMPLETED_SELF_REPORTED.value:
+            occ.delivery_state = DeliveryState.CLOSED.value
+            occ.response_status = status
+            occ.response_source = source
+            occ.confirmed_at = now
+            occ.snooze_until = None
+            _close_once_reminder(reminder)
+        elif status == ResponseStatus.SKIPPED_SELF_REPORTED.value:
+            occ.delivery_state = DeliveryState.CLOSED.value
+            occ.response_status = status
+            occ.response_source = source
+            occ.confirmed_at = now
+            occ.snooze_until = None
+            _close_once_reminder(reminder)
+        elif status == ResponseStatus.SNOOZED.value:
+            minutes = body.snooze_minutes if body.snooze_minutes is not None else 30
+            occ.delivery_state = DeliveryState.PENDING.value
+            occ.response_status = ResponseStatus.SNOOZED.value
+            occ.response_source = source
+            occ.snooze_until = now + timedelta(minutes=minutes)
+            # 延后只动 occurrence，不改写计划的 next_trigger_at
+        elif status == ResponseStatus.UNANSWERED.value:
+            occ.delivery_state = DeliveryState.CLOSED.value
+            occ.response_status = status
+            occ.response_source = source
+            occ.snooze_until = None
+            _close_once_reminder(reminder)
         else:
-            reminder.status = ReminderStatus.DONE.value
-            reminder.next_trigger_at = None
+            raise AppError(400, "reminder.invalid_response", "这个回应类型还不支持。")
 
-        await session.commit()
-        await session.refresh(occ)
-        return _occurrence_response(occ)
-
-    async def delay_occurrence(
-        self,
-        session: AsyncSession,
-        *,
-        user: User,
-        reminder_id: UUID,
-        occurrence_id: UUID,
-        body: DelayRequest,
-    ) -> OccurrenceResponse:
-        if user.role != UserRole.PARENT.value:
-            raise AppError(403, "reminder.parent_required", "只有老人模式可以延后提醒。")
-        reminder = await self.get_owned(session, user=user, reminder_id=reminder_id)
-        occ = await session.get(ReminderOccurrence, occurrence_id)
-        if occ is None or occ.reminder_id != reminder.id:
-            raise AppError(404, "reminder.occurrence_not_found", "找不到这条提醒记录。")
-        if occ.state in {OccurrenceState.DONE.value, OccurrenceState.ESCALATED.value}:
-            raise AppError(
-                400,
-                "reminder.occurrence_closed",
-                "这条提醒已经结束，不能再延后。",
-            )
-
-        # 延后：把当前 occurrence 标记完成，并重排 next_trigger
-        now = datetime.now(UTC)
-        occ.state = OccurrenceState.DONE.value
-        occ.confirmed_at = now
-        reminder.next_trigger_at = now + timedelta(minutes=body.minutes)
-        # 一次性提醒延后后仍保持 ACTIVE，便于调度再次生成 occurrence
-        if reminder.status == ReminderStatus.DONE.value:
-            reminder.status = ReminderStatus.ACTIVE.value
         await session.commit()
         await session.refresh(occ)
         return _occurrence_response(occ)
@@ -478,17 +532,17 @@ class ReminderService:
     async def list_open_occurrences(
         self, session: AsyncSession, *, user: User
     ) -> list[OccurrenceResponse]:
-        """当前用户尚未结束的到点记录（供语音 confirm 匹配）。"""
+        """当前用户尚未结束的到点记录（供语音 respond 匹配）。"""
         result = await session.execute(
             select(ReminderOccurrence)
             .join(Reminder, Reminder.id == ReminderOccurrence.reminder_id)
             .where(
                 Reminder.user_id == user.id,
-                ReminderOccurrence.state.in_(
+                ReminderOccurrence.delivery_state.in_(
                     [
-                        OccurrenceState.WAITING.value,
-                        OccurrenceState.FIRST_REMINDER.value,
-                        OccurrenceState.SECOND_REMINDER.value,
+                        DeliveryState.PENDING.value,
+                        DeliveryState.NOTIFIED_1.value,
+                        DeliveryState.NOTIFIED_2.value,
                     ]
                 ),
             )

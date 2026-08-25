@@ -32,6 +32,7 @@ class ParentPendingActionCard extends StatelessWidget {
             ('是否重复', _repeatText(action)),
             ('时间', action.scheduleTime.isEmpty ? '—' : action.scheduleTime),
             ('提醒什么', action.title.isEmpty ? '—' : action.title),
+            if (action.willNotifyFamily) ('没回应时', '会告诉家人'),
           ]
         : <(String, String)>[
             ('告诉家人什么', action.summary.isEmpty ? '—' : action.summary),

@@ -111,29 +111,20 @@ class RemindersApi {
     }
   }
 
-  Future<ReminderOccurrence> confirm({
-    required String reminderId,
+  Future<ReminderOccurrence> respond({
     required String occurrenceId,
+    required String status,
+    int? snoozeMinutes,
+    String source = 'BUTTON',
   }) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
-        '/v1/reminders/$reminderId/occurrences/$occurrenceId/confirm',
-      );
-      return ReminderOccurrence.fromJson(asJsonMap(response.data));
-    } on DioException catch (error) {
-      throwApiException(error);
-    }
-  }
-
-  Future<ReminderOccurrence> delay({
-    required String reminderId,
-    required String occurrenceId,
-    int minutes = 30,
-  }) async {
-    try {
-      final response = await _dio.post<Map<String, dynamic>>(
-        '/v1/reminders/$reminderId/occurrences/$occurrenceId/delay',
-        data: {'minutes': minutes},
+        '/v1/reminders/occurrences/$occurrenceId/response',
+        data: {
+          'status': status,
+          'source': source,
+          'snooze_minutes': ?snoozeMinutes,
+        },
       );
       return ReminderOccurrence.fromJson(asJsonMap(response.data));
     } on DioException catch (error) {

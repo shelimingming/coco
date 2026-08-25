@@ -11,11 +11,13 @@ class LocalReminderSchedule {
     required this.id,
     required this.title,
     required this.nextTriggerAt,
+    this.occurrenceId,
   });
 
   final String id;
   final String title;
   final DateTime nextTriggerAt;
+  final String? occurrenceId;
 }
 
 /// 本地系统通知：前台即时弹出 +（原生）退后台定时；Web 用浏览器 Notification。
