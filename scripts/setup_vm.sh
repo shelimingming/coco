@@ -389,13 +389,19 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    location /openapi.json {
+    location = /openapi.json {
         proxy_pass http://coco_app;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    location ~* \.(js|css|wasm|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|otf)$ {
+    # Flutter Web 的 html/js 文件名无内容 hash；禁止长期缓存，否则发版后仍打开旧包。
+    location ~* \.(html|js|css|json)$ {
+        add_header Cache-Control "no-cache, must-revalidate";
+        try_files $uri =404;
+    }
+
+    location ~* \.(wasm|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|otf)$ {
         expires 7d;
         add_header Cache-Control "public";
         try_files $uri =404;
@@ -403,6 +409,7 @@ server {
 
     # 根路径进双端演示页（与 FastAPI 行为一致）
     location = / {
+        add_header Cache-Control "no-cache, must-revalidate";
         try_files /presentation.html /index.html =404;
     }
 

@@ -112,16 +112,62 @@ build_web() {
     cd "${FRONTEND_DIR}"
     flutter pub get
     # 一体同源：浏览器请求当前域名的 /v1
-    flutter build web --release --dart-define=COCO_API_BASE_URL=
+    # none：不注册离线 Service Worker，避免发版后仍拦截成旧资源
+    flutter build web --release --pwa-strategy=none --dart-define=COCO_API_BASE_URL=
   ) || die "flutter build web 失败。"
   [[ -f "${FRONTEND_DIR}/build/web/index.html" ]] || die "缺少 build/web/index.html。"
+  stamp_web_cache_bust
   ok "Web 构建完成"
+}
+
+stamp_web_cache_bust() {
+  # 构建产物带提交号，旧浏览器缓存的无 hash JS 不会挡住新包
+  local ver index presentation sw_src sw_dst
+  ver="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || date +%s)"
+  index="${FRONTEND_DIR}/build/web/index.html"
+  presentation="${FRONTEND_DIR}/build/web/presentation.html"
+  python3 - "${index}" "${presentation}" "${ver}" <<'PY'
+from pathlib import Path
+import sys
+
+index, presentation, ver = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+if index.is_file():
+    text = index.read_text()
+    text = text.replace('src="flutter_bootstrap.js"', f'src="flutter_bootstrap.js?v={ver}"')
+    index.write_text(text)
+if presentation.is_file():
+    text = presentation.read_text()
+    text = text.replace(
+        'src="./index.html?presentation_slot=parent"',
+        f'src="./index.html?presentation_slot=parent&v={ver}"',
+    )
+    text = text.replace(
+        'src="./index.html?presentation_slot=child"',
+        f'src="./index.html?presentation_slot=child&v={ver}"',
+    )
+    presentation.write_text(text)
+PY
+  sw_src="${FRONTEND_DIR}/web/flutter_service_worker.js"
+  sw_dst="${FRONTEND_DIR}/build/web/flutter_service_worker.js"
+  # Flutter --pwa-strategy=none 可能不拷贝该文件；旧客户端仍会请求，必须部署卸载脚本
+  if [[ -f "${sw_src}" ]]; then
+    cp "${sw_src}" "${sw_dst}"
+  fi
 }
 
 sync_web() {
   info "同步 Web → ${REMOTE_ROOT}/web/"
   rsync_to "${FRONTEND_DIR}/build/web/" "${REMOTE_ROOT}/web/"
   ok "Web 已同步"
+}
+
+sync_nginx() {
+  local conf="${SCRIPT_DIR}/Nginx/coco.conf"
+  [[ -f "${conf}" ]] || return 0
+  info "同步 Nginx 配置"
+  rsync_to "${conf}" "/etc/nginx/conf.d/coco.conf"
+  ssh_cmd "nginx -t && systemctl reload nginx" || die "Nginx 配置无效。"
+  ok "Nginx 已重载"
 }
 
 sync_backend() {
@@ -213,6 +259,8 @@ main() {
     build_web
     sync_web
   fi
+
+  sync_nginx
 
   if (( DEPLOY_BACKEND )); then
     sync_backend

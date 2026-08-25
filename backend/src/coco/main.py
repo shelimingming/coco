@@ -57,6 +57,13 @@ def _mount_web_static(app: FastAPI, settings: Settings) -> None:
             return None
         return candidate if candidate.is_file() else None
 
+    def _web_file_response(path: Path) -> FileResponse:
+        # html/js 文件名无内容 hash，禁止长期缓存，否则发版后仍看到旧页
+        headers: dict[str, str] = {}
+        if path.suffix.lower() in {".html", ".js", ".css", ".json"}:
+            headers["Cache-Control"] = "no-cache, must-revalidate"
+        return FileResponse(path, headers=headers)
+
     presentation = root / "presentation.html"
 
     @app.get("/")
@@ -75,8 +82,8 @@ def _mount_web_static(app: FastAPI, settings: Settings) -> None:
             raise HTTPException(status_code=404, detail="Not Found")
         file_path = _safe_file(full_path)
         if file_path is not None:
-            return FileResponse(file_path)
-        return FileResponse(index)
+            return _web_file_response(file_path)
+        return _web_file_response(index)
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):

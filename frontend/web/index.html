@@ -37,6 +37,19 @@
     麦克风需安全上下文（localhost 或 HTTPS）。
     See: https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    // 演示站频繁发版：卸掉旧 PWA Worker 并清 Cache Storage，避免刷新仍吃到旧包。
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (reg) { reg.unregister(); });
+      });
+    }
+    if (window.caches) {
+      caches.keys().then(function (keys) {
+        keys.forEach(function (key) { caches.delete(key); });
+      });
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
