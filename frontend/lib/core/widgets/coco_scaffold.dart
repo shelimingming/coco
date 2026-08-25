@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
+import 'coco_safe_area.dart';
 
 /// 带安全边距的通用页面壳。
 class CocoScaffold extends StatelessWidget {
@@ -34,9 +35,10 @@ class CocoScaffold extends StatelessWidget {
               leadingWidth: leadingWidth,
               actions: actions,
             ),
-      body: SafeArea(
+      body: CocoSafeArea(
         child: Padding(
-          padding: padding ??
+          padding:
+              padding ??
               const EdgeInsets.symmetric(
                 horizontal: CocoSpace.s6,
                 vertical: CocoSpace.s5,
@@ -46,7 +48,7 @@ class CocoScaffold extends StatelessWidget {
       ),
       bottomNavigationBar: bottom == null
           ? null
-          : SafeArea(
+          : CocoSafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
                   CocoSpace.s6,

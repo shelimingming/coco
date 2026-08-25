@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
+import '../../../core/widgets/coco_safe_area.dart';
 
 /// 老人端「更多功能」：低密度列表入口；返回后恢复进入前的首页状态。
 class ParentFunctionsPage extends StatelessWidget {
@@ -36,7 +37,7 @@ class ParentFunctionsPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: CocoColors.parentBackground,
-      body: SafeArea(
+      body: CocoSafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

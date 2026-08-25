@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/tokens.dart';
+import '../../../core/widgets/coco_safe_area.dart';
 import '../domain/models.dart';
 
 /// 首次进入 App 的身份选择：门前场景 + 气泡文案 + 两项选择。
@@ -18,7 +19,7 @@ class RoleSelectionPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final bottomInset = CocoSafeInsets.paddingOf(context).bottom;
 
     return Scaffold(
       backgroundColor: CocoColors.onboardingBackground,
@@ -56,7 +57,7 @@ class RoleSelectionPage extends StatelessWidget {
               ),
             ),
           ),
-          SafeArea(
+          CocoSafeArea(
             bottom: false,
             child: Align(
               alignment: Alignment.topLeft,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/tokens.dart';
+import '../../../../core/widgets/coco_safe_area.dart';
 import '../../../auth/application/auth_controller.dart';
 import '../../../auth/domain/models.dart';
 import '../../../notifications/application/notification_poller.dart';
@@ -55,7 +56,7 @@ class _ReminderOverlayHostState extends ConsumerState<ReminderOverlayHost> {
           Positioned.fill(
             child: Material(
               color: CocoColors.neutral950.withValues(alpha: 0.45),
-              child: SafeArea(
+              child: CocoSafeArea(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
                     CocoSpace.s5,

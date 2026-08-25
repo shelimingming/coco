@@ -9,6 +9,7 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_loading.dart';
+import '../../../core/widgets/coco_safe_area.dart';
 import '../../care/application/care_providers.dart';
 import '../application/messages_providers.dart';
 import '../data/messages_api.dart';
@@ -171,7 +172,7 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final top = MediaQuery.paddingOf(context).top;
+    final top = CocoSafeInsets.paddingOf(context).top;
     final messagesAsync = ref.watch(familyMessagesProvider);
 
     return Scaffold(
@@ -180,7 +181,7 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
         loading: () => const CocoPageLoading(message: '正在加载…'),
         error: (error, _) {
           if (isFamilyNotFound(error)) {
-            return SafeArea(
+            return CocoSafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(CocoSpace.s5),
                 child: Column(
@@ -199,7 +200,7 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
               ),
             );
           }
-          return SafeArea(
+          return CocoSafeArea(
             child: Padding(
               padding: const EdgeInsets.all(CocoSpace.s5),
               child: Column(
@@ -292,7 +293,7 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
                 ],
               ),
             ),
-            SafeArea(
+            CocoSafeArea(
               top: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(

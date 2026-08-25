@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
+import 'coco_safe_area.dart';
 
 /// Web 桌面用的 iPhone 外框：按真机逻辑分辨率等比缩放，避免拉高后底部大块留白。
 class WebIphoneShell extends StatelessWidget {
@@ -10,6 +11,12 @@ class WebIphoneShell extends StatelessWidget {
 
   /// iPhone 15 / 16 Pro 逻辑点尺寸（宽 × 高），与模拟器一致。
   static const Size screenSize = Size(393, 852);
+
+  /// 对齐真机刘海 / Home Indicator；页面 [CocoSafeArea] 在 MediaQuery 被盖掉时仍用此值。
+  static const double topInset = 59;
+  static const double bottomInset = 34;
+
+  static const Key islandKey = ValueKey<String>('webIphoneIsland');
 
   static const double _bezel = 10;
   static const double _frameRadius = 55;
@@ -93,7 +100,17 @@ class _DeviceFrame extends StatelessWidget {
             height: WebIphoneShell.screenSize.height,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(WebIphoneShell._screenRadius),
-              child: MediaQuery(data: _screenMediaQuery(context), child: child),
+              child: MediaQuery(
+                data: _screenMediaQuery(context),
+                // 保底 inset 走 InheritedWidget，不依赖各页读到的 MediaQuery.padding
+                child: CocoSafeInsets(
+                  minimum: const EdgeInsets.only(
+                    top: WebIphoneShell.topInset,
+                    bottom: WebIphoneShell.bottomInset,
+                  ),
+                  child: child,
+                ),
+              ),
             ),
           ),
           // Dynamic Island：接近真机视觉占比
@@ -104,6 +121,7 @@ class _DeviceFrame extends StatelessWidget {
             child: IgnorePointer(
               child: Center(
                 child: Container(
+                  key: WebIphoneShell.islandKey,
                   width: 126,
                   height: 37,
                   decoration: BoxDecoration(
@@ -139,13 +157,16 @@ class _DeviceFrame extends StatelessWidget {
   /// 固定为真机逻辑尺寸与安全区，首页 Expanded 不会被桌面视口拉高。
   MediaQueryData _screenMediaQuery(BuildContext context) {
     final base = MediaQuery.of(context);
-    // 对齐 iPhone 刘海 / Home Indicator 常见安全区
-    const topInset = 59.0;
-    const bottomInset = 34.0;
     return base.copyWith(
       size: WebIphoneShell.screenSize,
-      padding: const EdgeInsets.only(top: topInset, bottom: bottomInset),
-      viewPadding: const EdgeInsets.only(top: topInset, bottom: bottomInset),
+      padding: const EdgeInsets.only(
+        top: WebIphoneShell.topInset,
+        bottom: WebIphoneShell.bottomInset,
+      ),
+      viewPadding: const EdgeInsets.only(
+        top: WebIphoneShell.topInset,
+        bottom: WebIphoneShell.bottomInset,
+      ),
       viewInsets: EdgeInsets.zero,
       devicePixelRatio: 3,
     );

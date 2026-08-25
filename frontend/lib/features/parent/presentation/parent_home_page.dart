@@ -12,6 +12,7 @@ import '../../../core/audio/mp3_bytes_source.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
+import '../../../core/widgets/coco_safe_area.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../look/application/look_controller.dart';
 import '../../look/data/look_api.dart';
@@ -365,7 +366,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                       ),
                     ),
                   ),
-                  SafeArea(
+                  CocoSafeArea(
                     bottom: false,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -456,7 +457,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
             // 下半：纯色底（不是图片），放引导文案与工具栏
             ColoredBox(
               color: CocoColors.parentBackground,
-              child: SafeArea(
+              child: CocoSafeArea(
                 top: false,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

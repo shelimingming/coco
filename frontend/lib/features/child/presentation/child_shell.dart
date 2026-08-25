@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/tokens.dart';
+import '../../../core/widgets/coco_safe_area.dart';
 
 /// 子女端底部三栏：近况 / 报平安 / 家庭，三项同权（图标+文字）。
 class ChildShell extends StatefulWidget {
@@ -43,7 +44,7 @@ class _ChildShellState extends State<ChildShell> {
           color: CocoColors.childSurface,
           elevation: 8,
           shadowColor: CocoColors.neutral950.withValues(alpha: 0.08),
-          child: SafeArea(
+          child: CocoSafeArea(
             top: false,
             child: SizedBox(
               height: 64,

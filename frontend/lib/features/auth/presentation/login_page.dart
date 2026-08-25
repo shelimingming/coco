@@ -8,6 +8,7 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/web/presentation_slot.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_loading.dart';
+import '../../../core/widgets/coco_safe_area.dart';
 import '../application/auth_controller.dart';
 import '../domain/models.dart';
 import 'role_selection_page.dart';
@@ -210,7 +211,7 @@ class _ParentLoginScaffold extends StatelessWidget {
             ),
           ),
           const ColoredBox(color: CocoColors.loginScrim),
-          SafeArea(
+          CocoSafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
                 return SingleChildScrollView(
@@ -293,7 +294,7 @@ class _ChildLoginScaffold extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: CocoColors.childBackground,
-      body: SafeArea(
+      body: CocoSafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(

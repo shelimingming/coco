@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
+import '../../../core/widgets/coco_safe_area.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../care/application/care_providers.dart';
 import '../../care/domain/models.dart';
@@ -43,7 +44,7 @@ class ChildHomePage extends ConsumerWidget {
               onRefresh: () => ref.refresh(childTodayProvider.future),
             );
           }
-          return SafeArea(
+          return CocoSafeArea(
             child: Padding(
               padding: const EdgeInsets.all(CocoSpace.s5),
               child: Column(
@@ -114,7 +115,7 @@ class _StatusHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final top = MediaQuery.paddingOf(context).top;
+    final top = CocoSafeInsets.paddingOf(context).top;
     // 顶部背景 cover，不横向压缩；可可在素材里，不与卡片同层
     return SizedBox(
       height: top + 168,
@@ -715,7 +716,7 @@ class _JoinFamilyGuide extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(CocoSpace.s5),
         children: [
-          SizedBox(height: MediaQuery.paddingOf(context).top),
+          SizedBox(height: CocoSafeInsets.paddingOf(context).top),
           Text('你好，$name', style: theme.textTheme.titleLarge),
           const SizedBox(height: CocoSpace.s3),
           Text(

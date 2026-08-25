@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
+import '../../../core/widgets/coco_safe_area.dart';
 import '../../auth/application/auth_controller.dart';
 import '../application/family_providers.dart';
 
@@ -18,7 +19,7 @@ class ChildFamilyPage extends ConsumerWidget {
     final user = ref.watch(authControllerProvider).user;
     final theme = Theme.of(context);
     final familyAsync = ref.watch(familyInfoProvider);
-    final top = MediaQuery.paddingOf(context).top;
+    final top = CocoSafeInsets.paddingOf(context).top;
 
     return Scaffold(
       backgroundColor: CocoColors.childBackground,
