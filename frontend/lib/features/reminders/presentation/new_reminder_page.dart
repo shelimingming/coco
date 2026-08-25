@@ -83,6 +83,8 @@ class _NewReminderPageState extends ConsumerState<NewReminderPage> {
 
     return CocoScaffold(
       title: '新建提醒',
+      leading: ParentBackButton(onPressed: () => context.pop()),
+      leadingWidth: 104,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

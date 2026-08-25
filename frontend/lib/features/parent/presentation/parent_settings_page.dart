@@ -22,6 +22,9 @@ class ParentSettingsPage extends ConsumerWidget {
 
     return CocoScaffold(
       title: '我的',
+      leading: ParentBackButton(onPressed: () => context.pop()),
+      leadingWidth: 104,
+      bottom: ParentHomeButton(onPressed: () => context.go('/parent')),
       body: familyAsync.when(
         loading: () => const CocoPageLoading(message: '正在加载家庭信息…'),
         error: (error, _) => Column(
@@ -38,8 +41,6 @@ class ParentSettingsPage extends ConsumerWidget {
               label: '再试一次',
               onPressed: () => ref.invalidate(familyInfoProvider),
             ),
-            const SizedBox(height: CocoSpace.s4),
-            CocoSecondaryButton(label: '返回', onPressed: () => context.pop()),
           ],
         ),
         data: (family) => _MyBody(

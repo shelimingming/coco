@@ -81,17 +81,9 @@ class _ParentJoinPageState extends ConsumerState<ParentJoinPage> {
     final theme = Theme.of(context);
     return CocoScaffold(
       title: '加入家庭',
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: CocoSpace.s3),
-          child: Center(
-            child: ParentChipButton(
-              label: '返回',
-              onPressed: () => context.pop(),
-            ),
-          ),
-        ),
-      ],
+      leading: ParentBackButton(onPressed: () => context.pop()),
+      leadingWidth: 104,
+      bottom: ParentHomeButton(onPressed: () => context.go('/parent')),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

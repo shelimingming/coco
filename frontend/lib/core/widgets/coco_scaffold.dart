@@ -11,6 +11,8 @@ class CocoScaffold extends StatelessWidget {
     this.actions,
     this.bottom,
     this.padding,
+    this.leading,
+    this.leadingWidth,
   });
 
   final Widget body;
@@ -18,6 +20,8 @@ class CocoScaffold extends StatelessWidget {
   final List<Widget>? actions;
   final Widget? bottom;
   final EdgeInsetsGeometry? padding;
+  final Widget? leading;
+  final double? leadingWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +30,8 @@ class CocoScaffold extends StatelessWidget {
           ? null
           : AppBar(
               title: Text(title!),
+              leading: leading,
+              leadingWidth: leadingWidth,
               actions: actions,
             ),
       body: SafeArea(

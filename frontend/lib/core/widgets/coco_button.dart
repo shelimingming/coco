@@ -3,6 +3,44 @@ import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 import 'coco_loading.dart';
 
+/// 父母端统一返回入口：大点击区的左箭头 + 文字。
+class ParentBackButton extends StatelessWidget {
+  const ParentBackButton({super.key, required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: CocoColors.neutral950,
+        textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+        minimumSize: const Size(48, 48),
+        padding: const EdgeInsets.symmetric(horizontal: CocoSpace.s2),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.chevron_left_rounded,
+            size: 28,
+            color: CocoColors.neutral950,
+          ),
+          Text(
+            '返回',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+              color: CocoColors.neutral950,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 统一主按钮：加载时保留动作语义文案，外观不灰掉以免转圈看不见。
 class CocoPrimaryButton extends StatelessWidget {
   const CocoPrimaryButton({
@@ -69,32 +107,74 @@ class CocoSecondaryButton extends StatelessWidget {
 
     return OutlinedButton(
       onPressed: loading ? null : onPressed,
-      style: OutlinedButton.styleFrom(
-        minimumSize: minSize,
-        foregroundColor: scheme.primary,
-        disabledForegroundColor: scheme.primary,
-        textStyle: theme.textTheme.labelLarge?.copyWith(
-          color: scheme.primary,
-        ),
-        side: BorderSide(color: scheme.primary),
-        shape: shape,
-      ).copyWith(
-        // 加载中保持主色描边，不退化成中性灰
-        side: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.disabled)) {
-            return BorderSide(
-              color: scheme.primary.withValues(alpha: loading ? 1 : 0.38),
-            );
-          }
-          return BorderSide(color: scheme.primary);
-        }),
-      ),
+      style:
+          OutlinedButton.styleFrom(
+            minimumSize: minSize,
+            foregroundColor: scheme.primary,
+            disabledForegroundColor: scheme.primary,
+            textStyle: theme.textTheme.labelLarge?.copyWith(
+              color: scheme.primary,
+            ),
+            side: BorderSide(color: scheme.primary),
+            shape: shape,
+          ).copyWith(
+            // 加载中保持主色描边，不退化成中性灰
+            side: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.disabled)) {
+                return BorderSide(
+                  color: scheme.primary.withValues(alpha: loading ? 1 : 0.38),
+                );
+              }
+              return BorderSide(color: scheme.primary);
+            }),
+          ),
       child: loading
           ? CocoLoadingLabel(
               label: loadingLabel ?? '请稍候…',
               indicatorColor: scheme.primary,
             )
           : Text(label),
+    );
+  }
+}
+
+/// 父母端深层页面的快速回首页入口。
+class ParentHomeButton extends StatelessWidget {
+  const ParentHomeButton({super.key, required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.center,
+      heightFactor: 1,
+      child: SizedBox(
+        width: 220,
+        height: 56,
+        child: FilledButton.icon(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            backgroundColor: CocoColors.parentPrimarySoft,
+            foregroundColor: CocoColors.parentPrimary,
+            disabledBackgroundColor: CocoColors.parentPrimarySoft.withValues(
+              alpha: 0.5,
+            ),
+            disabledForegroundColor: CocoColors.parentPrimary.withValues(
+              alpha: 0.5,
+            ),
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: CocoSpace.s5),
+            textStyle: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+            ),
+            shape: const StadiumBorder(),
+          ),
+          icon: const Icon(Icons.home_rounded, size: 26),
+          label: const Text('回去找可可'),
+        ),
+      ),
     );
   }
 }

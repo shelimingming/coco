@@ -27,7 +27,10 @@ class RemindersPage extends ConsumerWidget {
           children: [
             _RemindersAppBar(
               onBack: () => context.pop(),
-              onCreate: () => context.push('/parent/reminders/new'),
+              // 空态已经有醒目的「新建提醒」，避免同屏重复主操作。
+              onCreate: async.valueOrNull?.isNotEmpty == true
+                  ? () => context.push('/parent/reminders/new')
+                  : null,
             ),
             Expanded(
               child: async.when(
@@ -42,7 +45,6 @@ class RemindersPage extends ConsumerWidget {
                   if (items.isEmpty) {
                     return _EmptyBody(
                       onCreate: () => context.push('/parent/reminders/new'),
-                      onTalk: () => context.go('/parent'),
                     );
                   }
 
@@ -124,6 +126,17 @@ class RemindersPage extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            CocoSpace.s6,
+            CocoSpace.s2,
+            CocoSpace.s6,
+            CocoSpace.s5,
+          ),
+          child: ParentHomeButton(onPressed: () => context.go('/parent')),
         ),
       ),
     );
@@ -266,7 +279,7 @@ class _RemindersAppBar extends StatelessWidget {
   const _RemindersAppBar({required this.onBack, required this.onCreate});
 
   final VoidCallback onBack;
-  final VoidCallback onCreate;
+  final VoidCallback? onCreate;
 
   @override
   Widget build(BuildContext context) {
@@ -279,13 +292,7 @@ class _RemindersAppBar extends StatelessWidget {
           children: [
             Align(
               alignment: Alignment.centerLeft,
-              child: IconButton(
-                onPressed: onBack,
-                icon: const Icon(Icons.chevron_left_rounded, size: 32),
-                color: CocoColors.neutral950,
-                // 老人端返回区不小于 48
-                style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
-              ),
+              child: ParentBackButton(onPressed: onBack),
             ),
             const Text(
               '提醒',
@@ -296,13 +303,14 @@ class _RemindersAppBar extends StatelessWidget {
                 color: CocoColors.neutral950,
               ),
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: CocoSpace.s2),
-                child: ParentChipButton(label: '新建', onPressed: onCreate),
+            if (onCreate != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: CocoSpace.s2),
+                  child: ParentChipButton(label: '新建', onPressed: onCreate),
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -501,10 +509,9 @@ class _PendingSuggestionCard extends StatelessWidget {
 }
 
 class _EmptyBody extends StatelessWidget {
-  const _EmptyBody({required this.onCreate, required this.onTalk});
+  const _EmptyBody({required this.onCreate});
 
   final VoidCallback onCreate;
-  final VoidCallback onTalk;
 
   @override
   Widget build(BuildContext context) {
@@ -528,7 +535,7 @@ class _EmptyBody extends StatelessWidget {
           ),
           const SizedBox(height: CocoSpace.s3),
           const Text(
-            '可以回去找可可说话，让它帮您记；也可以在这里手动新建。',
+            '可以回去找可可，让可可帮您记；也可以在这里手动新建。',
             style: TextStyle(
               fontSize: 22,
               height: 1.4,
@@ -537,8 +544,6 @@ class _EmptyBody extends StatelessWidget {
           ),
           const Spacer(),
           CocoPrimaryButton(label: '新建提醒', onPressed: onCreate),
-          const SizedBox(height: CocoSpace.s3),
-          CocoSecondaryButton(label: '回去找可可说话', onPressed: onTalk),
         ],
       ),
     );

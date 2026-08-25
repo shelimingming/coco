@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/tokens.dart';
+import '../../../core/widgets/coco_button.dart';
 
 /// 老人端「更多功能」：低密度列表入口；返回后恢复进入前的首页状态。
 class ParentFunctionsPage extends StatelessWidget {
@@ -96,36 +97,7 @@ class _MoreAppBar extends StatelessWidget {
           children: [
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: onBack,
-                style: TextButton.styleFrom(
-                  foregroundColor: CocoColors.neutral950,
-                  textStyle: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  minimumSize: const Size(48, 48),
-                  padding: const EdgeInsets.symmetric(horizontal: CocoSpace.s2),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.chevron_left_rounded,
-                      size: 28,
-                      color: CocoColors.neutral950,
-                    ),
-                    Text(
-                      '返回',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w600,
-                        color: CocoColors.neutral950,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              child: ParentBackButton(onPressed: onBack),
             ),
             const Text(
               '更多功能',
