@@ -41,6 +41,7 @@ from coco.modules.conversations.service import (
 from coco.modules.family.service import get_family
 from coco.modules.memories.service import MemoryService
 from coco.modules.reminders.service import infer_escalation_policy
+from coco.modules.voice.opening import load_opening_brief
 from coco.modules.voice.pending_actions import (
     CONFIRMABLE_KINDS,
     PendingActionStore,
@@ -49,7 +50,9 @@ from coco.modules.voice.pending_actions import (
 )
 from coco.modules.voice.prompts import (
     COCO_REALTIME_COMPANION_PROMPT,
+    OPENING_INJECT_TRIGGER_TEXT,
     build_companion_instructions,
+    build_opening_instructions,
 )
 from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
 from coco.observability.llm_trace import (
@@ -178,7 +181,7 @@ async def _active_bound_child_name(session: AsyncSession, user: User) -> str | N
 
 
 async def _load_companion_instructions(user_id: UUID) -> str:
-    """建连前加载姓名、绑定子女与记忆（显式表优先，Mem0 补足），拼进系统提示。"""
+    """建连前加载姓名、绑定子女、记忆与开场简报，拼进系统提示。"""
     factory = get_session_factory()
     async with factory() as session:
         user = await session.get(User, user_id)
@@ -187,6 +190,7 @@ async def _load_companion_instructions(user_id: UUID) -> str:
         name = user.display_name
         child_name = await _active_bound_child_name(session, user)
         settings = get_settings()
+        memory_texts: list[str] = []
         try:
             # 显式记忆优先，不足再用 Mem0；失败返回空列表，不阻断建连
             memory_texts = await MemoryService().contents_for_inject(
@@ -196,12 +200,18 @@ async def _load_companion_instructions(user_id: UUID) -> str:
             )
         except Exception:
             logger.warning("load_memories_for_voice_failed user_id=%s", user_id, exc_info=True)
-            return build_companion_instructions([], user_name=name, child_name=child_name)
-        return build_companion_instructions(
+        base = build_companion_instructions(
             memory_texts,
             user_name=name,
             child_name=child_name,
         )
+        # 开场简报失败只丢掉主动开口素材，不影响建连
+        try:
+            brief = await load_opening_brief(session, user=user, settings=settings)
+            return f"{base}\n\n{build_opening_instructions(brief)}"
+        except Exception:
+            logger.warning("load_opening_for_voice_failed user_id=%s", user_id, exc_info=True)
+            return base
 
 
 async def create_default_realtime_client(
@@ -257,7 +267,15 @@ def is_recoverable_vendor_error(event: dict[str, Any]) -> bool:
         and ("progress" in text or "cancel" in text)
     ):
         return True
+    # 裸 response.create 时常见：会话尚无 user message；开场失败不应整通挂掉
+    if "no messages" in text or "no user message" in text:
+        return True
     return False
+
+
+def _is_hidden_inject_trigger(text: str) -> bool:
+    """系统注入的触发句，勿当下发 user.final 或写入对话记录。"""
+    return text.strip().startswith("（系统：")
 
 
 def map_vendor_event(
@@ -400,6 +418,12 @@ async def run_realtime_bridge(
             ),
             name="realtime-vendor-forward",
         )
+        # 先挂起转发再主动开口，避免开场音频在转发启动前被丢掉
+        try:
+            # 百炼要求先有 user message；与识图注入同理，补隐藏触发文本
+            await active_vendor.inject_user_text_and_respond(OPENING_INJECT_TRIGGER_TEXT)
+        except Exception:
+            logger.warning("opening_inject_failed user_id=%s", user_id, exc_info=True)
         try:
             await _consume_client_events(
                 websocket,
@@ -499,8 +523,7 @@ def _build_pending_display(
             schedule_time = schedule_time[:5]
         title = str(arguments.get("title") or tool_result.get("title") or "").strip()
         will_notify_family = (
-            infer_escalation_policy(title)
-            == EscalationPolicy.FAMILY_AFTER_TWO_UNANSWERED.value
+            infer_escalation_policy(title) == EscalationPolicy.FAMILY_AFTER_TWO_UNANSWERED.value
         )
         return {
             "title": title,
@@ -1029,6 +1052,10 @@ async def _forward_vendor_events(
             mapped, assistant_text = map_vendor_event(event, assistant_text)
             if mapped is None:
                 continue
+            if mapped.get("type") == "user.final":
+                text = str(mapped.get("text") or "").strip()
+                if _is_hidden_inject_trigger(text):
+                    continue
             if mapped.get("type") == "assistant.final":
                 if final_sent:
                     continue

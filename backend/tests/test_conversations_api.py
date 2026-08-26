@@ -150,6 +150,79 @@ async def test_parent_lists_own_conversations_only(
 
 
 @pytest.mark.asyncio
+async def test_greeting_only_conversations_hidden_from_list(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """仅可可主动开场、用户未说话的会话不出现在历史列表。"""
+    parent_token = await _login(client, _unique_phone(), "parent", "余黎明")
+    parent_id = await _me_id(client, parent_token)
+
+    async with session_factory() as session:
+        greeting_only = Conversation(
+            user_id=parent_id,
+            started_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
+            status=ConversationStatus.CLOSED.value,
+            channel=ConversationChannel.VOICE_REALTIME.value,
+            title="深夜陪聊余黎明",
+        )
+        real_chat = Conversation(
+            user_id=parent_id,
+            started_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
+            status=ConversationStatus.CLOSED.value,
+            channel=ConversationChannel.VOICE_REALTIME.value,
+            title="聊天气",
+        )
+        session.add_all([greeting_only, real_chat])
+        await session.flush()
+        session.add(
+            ConversationItem(
+                conversation_id=greeting_only.id,
+                seq=1,
+                kind=ConversationItemKind.ASSISTANT.value,
+                text="余黎明，深夜我在呢。",
+            )
+        )
+        session.add(
+            ConversationItem(
+                conversation_id=real_chat.id,
+                seq=1,
+                kind=ConversationItemKind.USER.value,
+                text="今天有点累",
+            )
+        )
+        session.add(
+            ConversationItem(
+                conversation_id=real_chat.id,
+                seq=2,
+                kind=ConversationItemKind.ASSISTANT.value,
+                text="那先歇会儿，我陪着您。",
+            )
+        )
+        await session.commit()
+        real_chat_id = real_chat.id
+        greeting_only_id = greeting_only.id
+
+    listed = await client.get(
+        "/v1/conversations",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    assert listed.status_code == 200, listed.text
+    ids = {row["id"] for row in listed.json()}
+    assert str(real_chat_id) in ids
+    assert str(greeting_only_id) not in ids
+
+    # 详情仍可查（深链兼容），只是列表不展示
+    detail = await client.get(
+        f"/v1/conversations/{greeting_only_id}",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    assert detail.status_code == 200, detail.text
+
+
+@pytest.mark.asyncio
 async def test_tool_display_and_persist_helpers(
     session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,

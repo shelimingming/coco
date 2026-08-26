@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from coco.modules.conversations.service import tool_display_summary
+from coco.modules.conversations.service import should_list_in_history, tool_display_summary
+from coco.models.conversation import ConversationItemKind
 
 
 def test_save_memory_summary_compat() -> None:
@@ -28,6 +29,35 @@ def test_create_reminder_and_list() -> None:
     )
     assert tool_display_summary("list_reminders", {}, {}) == "可可查看了你的提醒"
     assert tool_display_summary("list_memories", {}, {}) == "可可查看了你记住的事"
+
+
+def test_should_list_in_history_filters_greeting_only() -> None:
+    class _Item:
+        def __init__(self, kind: str, text: str | None = None) -> None:
+            self.kind = kind
+            self.text = text
+
+    assert not should_list_in_history([])
+    assert not should_list_in_history(
+        [_Item(ConversationItemKind.ASSISTANT.value, "余黎明，深夜我在呢。")]
+    )
+    assert not should_list_in_history(
+        [
+            _Item(ConversationItemKind.ASSISTANT.value, "晚上好，我在这儿呢。"),
+            _Item(ConversationItemKind.ASSISTANT.value, "有什么想聊的吗？"),
+        ]
+    )
+    assert should_list_in_history(
+        [
+            _Item(ConversationItemKind.ASSISTANT.value, "晚上好。"),
+            _Item(ConversationItemKind.USER.value, "嗯"),
+        ]
+    )
+    assert should_list_in_history(
+        [
+            _Item(ConversationItemKind.TOOL.value),
+        ]
+    )
 
 
 def test_share_to_child_summary() -> None:

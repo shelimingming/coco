@@ -105,3 +105,10 @@ def test_vision_context_block_and_merge() -> None:
     assert "绿植" in merged2
     assert "阿司匹林" not in merged2
     assert "系统：用户刚把一张照片" in VISION_INJECT_TRIGGER_TEXT
+
+
+def test_opening_inject_trigger_text() -> None:
+    from coco.modules.voice.prompts import OPENING_INJECT_TRIGGER_TEXT
+
+    assert OPENING_INJECT_TRIGGER_TEXT.startswith("（系统：")
+    assert "陪伴页" in OPENING_INJECT_TRIGGER_TEXT

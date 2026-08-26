@@ -29,7 +29,11 @@
 
     html, body {
       margin: 0;
-      height: 100%;
+      /* 不用 height:100%，避免 iOS 上 flex 子项把滚动锁在视口内 */
+      min-height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       background:
         radial-gradient(1200px 560px at 12% -8%, var(--cream) 0%, transparent 58%),
         radial-gradient(900px 420px at 92% 0%, #e6f2f0 0%, transparent 52%),
@@ -45,6 +49,7 @@
       flex-direction: column;
       padding: clamp(16px, 2.4vw, 28px) clamp(20px, 3vw, 40px) 24px;
       gap: var(--space-6);
+      touch-action: pan-y;
     }
 
     /* 左标题 + 能力句，右演示说明 */
@@ -235,11 +240,32 @@
 
       .stage {
         grid-template-columns: 1fr;
+        flex: none;
       }
 
+      /*
+       * iframe 收窄为真机框宽度（对齐 WebIphoneShell.deviceSize 413×872），
+       * 左右留白落在 iframe 外的 .device 上，触摸才能滚动整页。
+       */
       .device {
-        min-height: 560px;
-        height: 72vh;
+        min-height: 0;
+        height: auto;
+        justify-content: center;
+        align-items: center;
+        touch-action: pan-y;
+      }
+
+      .frame {
+        flex: none;
+        /* 宽高一起算，避免 max-height 压扁后在 iframe 内又出现左右死区 */
+        width: min(
+          calc(100vw - 40px),
+          413px,
+          calc(72vh * 413 / 872)
+        );
+        aspect-ratio: 413 / 872;
+        height: auto;
+        border: 0;
       }
     }
   </style>

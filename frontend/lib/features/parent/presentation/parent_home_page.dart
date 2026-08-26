@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/audio/mp3_bytes_source.dart';
 import '../../../core/network/api_exception.dart';
@@ -34,6 +35,9 @@ import 'widgets/parent_home_palette.dart';
 import 'widgets/parent_home_tool_bar.dart';
 import 'widgets/parent_pending_action_card.dart';
 import 'widgets/reminder_suggestion_card.dart';
+
+/// App 冷启动后是否已自动开通过一次；从子页返回不再自动连。
+bool _parentHomeDidAutoStartThisProcess = false;
 
 /// 父母端首页：全屏白天场景，说话原地进对话；默认只语音，开「字」才看本通文字。
 class ParentHomePage extends ConsumerStatefulWidget {
@@ -84,14 +88,14 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   @override
   void initState() {
     super.initState();
-    // 刚进首页：出场 + TTS 开场白引导点小狗说话
+    // 刚进首页：出场动画与自动建连并行；失败才播本地 TTS
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 通话中从「更多」返回会重新挂载首页；会话还在，不要重播出场和开场白
       if (ref.read(voiceCallControllerProvider).isActive) {
         return;
       }
       _playEntrance();
-      unawaited(_playVoiceGreeting());
+      unawaited(_autoStartOrGreet());
     });
   }
 
@@ -120,8 +124,30 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     });
   }
 
-  /// 每次挂载首页播一次开场白；失败静默，不挡使用。
-  Future<void> _playVoiceGreeting() async {
+  /// 冷启动自动建连；失败再播本地 TTS 兜底。从子页返回不再自动连。
+  Future<void> _autoStartOrGreet() async {
+    if (_parentHomeDidAutoStartThisProcess) {
+      return;
+    }
+    _parentHomeDidAutoStartThisProcess = true;
+    await ref.read(voiceCallControllerProvider.notifier).start();
+    if (!mounted) return;
+    final state = ref.read(voiceCallControllerProvider);
+    if (state.phase == VoiceCallPhase.error) {
+      unawaited(_playVoiceGreeting(allowError: true));
+    }
+  }
+
+  /// 打开系统设置，方便老人去允许麦克风。
+  Future<void> _openAppSettings() async {
+    final uri = Uri.parse('app-settings:');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  /// 本地 TTS 开场白；自动建连失败时作为兜底。失败静默，不挡使用。
+  Future<void> _playVoiceGreeting({bool allowError = false}) async {
     final generation = ++_greetingGeneration;
     final name = ref.read(authControllerProvider).user?.displayName ?? '家人';
     final text = parentHomeVoiceGreeting(name);
@@ -141,7 +167,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     if (wait > Duration.zero) {
       await Future<void>.delayed(wait);
     }
-    if (!_greetingStillActive(generation)) return;
+    if (!_greetingStillActive(generation, allowError: allowError)) return;
 
     _entranceTimer?.cancel();
     // 气泡与 TTS 同步出现；气泡固定 5 秒，不跟音频时长
@@ -150,12 +176,14 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         CocoCompanionPose.speaking;
 
     final raw = await speechFuture;
-    if (!_greetingStillActive(generation)) return;
+    if (!_greetingStillActive(generation, allowError: allowError)) return;
 
     if (raw != null && raw.isNotEmpty) {
       try {
         await _greetingPlayer.setAudioSource(Mp3BytesSource(raw));
-        if (!_greetingStillActive(generation)) return;
+        if (!_greetingStillActive(generation, allowError: allowError)) {
+          return;
+        }
         await _greetingPlayer.play();
       } catch (_) {
         // Web 自动播放策略或播放失败时忽略
@@ -196,10 +224,12 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     }
   }
 
-  bool _greetingStillActive(int generation) {
+  bool _greetingStillActive(int generation, {bool allowError = false}) {
     if (!mounted || generation != _greetingGeneration) return false;
     final call = ref.read(voiceCallControllerProvider);
-    return !call.isActive && call.phase != VoiceCallPhase.error;
+    if (call.isActive) return false;
+    if (!allowError && call.phase == VoiceCallPhase.error) return false;
+    return true;
   }
 
   /// 用户主动开口或离开前打断开场白，避免与 Realtime 叠音。
@@ -754,10 +784,12 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     }
 
     if (callState.phase == VoiceCallPhase.error) {
+      final title = callState.errorTitle ?? '出了点问题';
       return _HomeVoiceError(
-        title: callState.errorTitle ?? '出了点问题',
+        title: title,
         message: callState.errorMessage ?? '请稍后再试。',
         onRetry: callController.retry,
+        onOpenSettings: title == '打不开麦克风' ? _openAppSettings : null,
       );
     }
 
@@ -921,11 +953,13 @@ class _HomeVoiceError extends StatelessWidget {
     required this.title,
     required this.message,
     required this.onRetry,
+    this.onOpenSettings,
   });
 
   final String title;
   final String message;
   final VoidCallback onRetry;
+  final VoidCallback? onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -960,6 +994,10 @@ class _HomeVoiceError extends StatelessWidget {
             ),
             const SizedBox(height: CocoSpace.s5),
             CocoPrimaryButton(label: '再试一次', onPressed: onRetry),
+            if (onOpenSettings != null) ...[
+              const SizedBox(height: CocoSpace.s3),
+              CocoSecondaryButton(label: '去系统设置允许', onPressed: onOpenSettings),
+            ],
           ],
         ),
       ),

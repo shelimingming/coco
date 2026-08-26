@@ -88,6 +88,19 @@ def tool_display_summary(tool_name: str, arguments: dict[str, Any], result: dict
     return f"可可调用了：{tool_name}"
 
 
+def should_list_in_history(items: list[ConversationItem]) -> bool:
+    """历史列表是否展示：仅可可主动打招呼、或完全无内容的会话不展示。"""
+    if not items:
+        return False
+    for item in items:
+        if item.kind == ConversationItemKind.TOOL.value:
+            return True
+        if item.kind == ConversationItemKind.USER.value and (item.text or "").strip():
+            return True
+    # 只剩助手台词（多为进首页自动开场），不算有效对话
+    return False
+
+
 def _preview_from_items(items: list[ConversationItem]) -> str:
     for item in items:
         if item.kind in {ConversationItemKind.USER.value, ConversationItemKind.ASSISTANT.value}:
@@ -170,9 +183,10 @@ class ConversationService:
                 status=c.status,
                 channel=c.channel,
                 title=c.title,
-                preview=_preview_from_items(by_conversation.get(c.id, [])),
+                preview=_preview_from_items(items),
             )
             for c in conversations
+            if should_list_in_history(items := by_conversation.get(c.id, []))
         ]
 
     async def get_for_user(

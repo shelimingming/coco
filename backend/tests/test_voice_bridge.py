@@ -143,6 +143,19 @@ def test_recoverable_vendor_error_for_active_response_conflict() -> None:
     )
 
 
+def test_recoverable_vendor_error_for_empty_conversation_response() -> None:
+    assert is_recoverable_vendor_error(
+        {
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "code": "invalid_value",
+                "message": "Cannot create response: conversation has no messages or no user message.",
+            },
+        }
+    )
+
+
 def test_redact_realtime_event_hides_audio() -> None:
     audio_b64 = base64.b64encode(b"secret-audio").decode("ascii")
     redacted = redact_realtime_event({"type": "response.audio.delta", "delta": audio_b64})

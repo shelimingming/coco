@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from coco.modules.voice.opening import OpeningBrief
+
 # 开场注入记忆的上限，避免撑爆 Realtime 上下文
 _MEMORY_INJECT_MAX_ITEMS = 30
 _MEMORY_INJECT_MAX_CHARS = 1500
@@ -126,6 +128,61 @@ def build_companion_instructions(
     )
 
 
+def build_opening_instructions(brief: OpeningBrief) -> str:
+    """把开场简报写成风格约束 + 事实清单，供模型自己组织第一句话。"""
+    visit = brief.visit_index
+    if visit <= 1:
+        length = "30～45 字，带时段的完整问候"
+        greeting = "先按时段打招呼，再进入正题"
+    elif visit <= 3:
+        length = "15～25 字，省掉寒暄，直接切入"
+        greeting = "不要再完整问好，像熟人再见面一样直接说"
+    else:
+        length = "10 字左右，一句「我在呢」级别"
+        greeting = "极简回应，不要重复待办，不要展开"
+
+    if brief.period == "深夜":
+        tone = "语气最轻、最短；不催促、不提待办，只让对方知道你在"
+    elif brief.period in {"清晨", "傍晚"}:
+        tone = "适合带一句当日提醒类信息，仍要口语、不催促"
+    elif brief.period in {"午间", "夜间"}:
+        tone = "偏关心与闲聊；不要主动追一般待办（到点未确认除外）"
+    else:
+        tone = "自然、口语、像家里的小狗刚凑过来"
+
+    miss_you = ""
+    if brief.days_since_last >= 2:
+        miss_you = (
+            f"距上次通话已 {brief.days_since_last} 天，可先带一句「好几天没聊了」的关切，"
+            "不要夸张成担心出事。"
+        )
+
+    if brief.highlights:
+        facts = "\n".join(f"- {item}" for item in brief.highlights)
+        highlight_block = (
+            "本次最多提 1 条待办（下面按优先级，只说最上面一条；"
+            "第二条仅在对方接话后才提）：\n"
+            f"{facts}"
+        )
+    else:
+        highlight_block = "当前没有必须开口的重要信息，按时段自然打招呼即可。"
+
+    return f"""
+【主动开场】用户刚进入陪伴页，请你先开口，说完立刻停下来听。
+当前时段：{brief.period}。今日第 {visit} 次进入。
+长度：{length}。
+问候：{greeting}。
+语气：{tone}。
+{miss_you}
+{highlight_block}
+
+硬约束：
+1. 一次只提 1 条待办；不诊断、不催促、不承诺救援。
+2. 不整表复述记忆，不要念稿。
+3. 说完立刻停，等用户说话；用户中途开口就让对方先说。
+""".strip()
+
+
 # 读图上下文上限，避免撑爆 Realtime instructions
 _VISION_SCENE_MAX_CHARS = 1200
 
@@ -184,4 +241,10 @@ def merge_instructions_with_vision(
 VISION_INJECT_TRIGGER_TEXT = (
     "（系统：用户刚把一张照片交给你看。请根据当前照片上下文，"
     "用一两句口语说说你看到了什么，然后等用户继续说。）"
+)
+
+# 进首页主动开场：百炼要求先有 user message 才能 response.create
+OPENING_INJECT_TRIGGER_TEXT = (
+    "（系统：用户刚进入陪伴页。请按当前开场约束先开口问候或提醒，"
+    "说完立刻停下来听用户说话。）"
 )
