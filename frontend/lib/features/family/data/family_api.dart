@@ -20,11 +20,23 @@ class FamilyApi {
     }
   }
 
-  Future<FamilyInfo> joinFamily(String code) async {
+  Future<FamilyInvitePreview> previewInvite(String token) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/v1/family/invite/$token',
+        options: Options(extra: {'skipAuth': true}),
+      );
+      return FamilyInvitePreview.fromJson(asJsonMap(response.data));
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
+  Future<FamilyInfo> joinFamily(String token) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/v1/family/join',
-        data: {'code': code},
+        data: {'token': token},
       );
       return FamilyInfo.fromJson(asJsonMap(response.data));
     } on DioException catch (error) {

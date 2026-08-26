@@ -192,8 +192,8 @@ class _ChildMessagesPageState extends ConsumerState<ChildMessagesPage> {
                     Text('请先加入家庭，才能给父母报平安。', style: theme.textTheme.bodyLarge),
                     const Spacer(),
                     CocoPrimaryButton(
-                      label: '去加入家庭',
-                      onPressed: () => context.push('/child/join'),
+                      label: '去邀请父母',
+                      onPressed: () => context.push('/child/family/invite'),
                     ),
                   ],
                 ),

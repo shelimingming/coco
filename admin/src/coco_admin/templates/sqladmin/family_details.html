@@ -26,20 +26,19 @@
         </li>
       </ul>
 
-      <h4>邀请码（最近 {{ aggregate.invites|length }}）</h4>
+      <h4>邀请链接（最近 {{ aggregate.invites|length }}）</h4>
       <div class="table-responsive mb-3">
         <table class="table table-sm">
-          <thead><tr><th>邀请码</th><th>过期</th><th>已使用</th><th>创建</th></tr></thead>
+          <thead><tr><th>链接 token</th><th>已使用</th><th>创建</th></tr></thead>
           <tbody>
           {% for inv in aggregate.invites %}
             <tr>
-              <td><strong>{{ inv.code }}</strong></td>
-              <td>{{ inv.expires_at }}</td>
+              <td><strong>{{ inv.token }}</strong></td>
               <td>{{ inv.consumed_at or "未使用" }}</td>
               <td>{{ inv.created_at }}</td>
             </tr>
           {% else %}
-            <tr><td colspan="4" class="text-secondary">无</td></tr>
+            <tr><td colspan="3" class="text-secondary">无</td></tr>
           {% endfor %}
           </tbody>
         </table>

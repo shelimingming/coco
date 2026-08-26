@@ -238,10 +238,7 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
     }
     final occ = await _ref
         .read(remindersApiProvider)
-        .respond(
-          occurrenceId: occurrenceId,
-          status: 'COMPLETED_SELF_REPORTED',
-        );
+        .respond(occurrenceId: occurrenceId, status: 'COMPLETED_SELF_REPORTED');
     await _ref
         .read(localNotificationServiceProvider)
         .cancelReminder(reminderId);

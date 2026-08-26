@@ -26,12 +26,14 @@ class ApiException implements Exception {
         return '登录已失效，请重新登录。';
       case 'auth.user_disabled':
         return '账号不可用，请联系支持。';
+      case 'auth.role_locked':
+        return '您的账号已绑定家庭，请用正确的身份登录。';
       case 'auth.sms_unavailable':
         return '短信服务暂时不可用，请稍后再试。';
       case 'family.not_found':
         return '还没有绑定家庭。请先完成父母与子女的绑定。';
       case 'family.invalid_invite':
-        return '邀请码无效或已过期。请向家人重新索取。';
+        return '邀请无效或已被使用。请向家人重新索取。';
       case 'family.already_bound':
       case 'family.already_joined':
         return '家庭已经绑定过了，不能重复操作。';

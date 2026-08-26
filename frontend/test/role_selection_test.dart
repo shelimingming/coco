@@ -9,9 +9,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: RoleSelectionPage(
-          onSelected: (role) => selected = role,
-        ),
+        home: RoleSelectionPage(onSelected: (role) => selected = role),
       ),
     );
 

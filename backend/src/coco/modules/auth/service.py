@@ -17,6 +17,7 @@ from coco.modules.auth.schemas import (
     PhoneCodeResponse,
     UserResponse,
 )
+from coco.modules.family.service import assert_login_role_allowed
 from coco.modules.auth.sms import SmsSender, build_sms_sender, resolve_login_code
 from coco.security import (
     create_access_token,
@@ -238,7 +239,8 @@ class AuthService:
         else:
             if user.status != UserStatus.ACTIVE.value:
                 raise AppError(403, "auth.user_disabled", "账号不可用，请联系支持。")
-            # 已注册用户允许本次登录切换当前角色（家庭绑定后续再约束）
+            # 已在家庭中的账号不允许切换角色；新用户或未绑定用户仍可选角色
+            await assert_login_role_allowed(session, user=user, requested_role=role)
             user.role = role.value
             if display_name and display_name.strip():
                 user.display_name = display_name.strip()

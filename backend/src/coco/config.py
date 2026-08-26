@@ -41,7 +41,6 @@ class Settings(BaseSettings):
 
     # Docker 一体部署：指向 Flutter Web 构建目录；空则不托管静态站
     web_static_dir: str | None = None
-
     # 百炼：密钥只留服务端；无 Key 时应用照常启动，实时/文本/识图能力关闭或降级
     # 模型名均可在 .env 用 COCO_REALTIME_MODEL / COCO_TEXT_MODEL / COCO_VISION_MODEL 覆盖
     aliyun_api_key: SecretStr | None = Field(
@@ -80,8 +79,8 @@ class Settings(BaseSettings):
     # MVP 固定本地时区，老人说「晚上八点」按此时区解释
     local_timezone: str = "Asia/Shanghai"
 
-    # 家庭邀请码有效期
-    family_invite_ttl_minutes: int = 10
+    # 公网基址：生成邀请链接；空则回退为相对路径 /invite/{token}
+    public_base_url: str = "https://coco.xyfit.top"
 
     # 调试：把每次大模型调用写入 llm_traces，供运营后台按用户排查
     llm_trace_enabled: bool = True

@@ -33,8 +33,37 @@
 
   <title>可可</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* 微信内 Flutter 首包加载前的原生骨架，避免长时间白屏 */
+    #coco-boot {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #faf6f1;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      color: #1a1a1a;
+      z-index: 9999;
+    }
+    #coco-boot .logo {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: #c85f36;
+    }
+    #coco-boot .hint {
+      font-size: 16px;
+      color: #666;
+    }
+  </style>
 </head>
 <body>
+  <div id="coco-boot" aria-live="polite">
+    <div class="logo">可可</div>
+    <div class="hint">正在打开，请稍候…</div>
+  </div>
   <!--
     麦克风需安全上下文（localhost 或 HTTPS）。
     See: https://docs.flutter.dev/platform-integration/web/initialization
@@ -51,6 +80,11 @@
         keys.forEach(function (key) { caches.delete(key); });
       });
     }
+    // Flutter 就绪后移除首屏骨架
+    window.addEventListener('flutter-first-frame', function () {
+      var boot = document.getElementById('coco-boot');
+      if (boot) boot.remove();
+    });
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>

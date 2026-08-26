@@ -57,10 +57,7 @@ class AuthApi {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/v1/auth/refresh',
-        data: {
-          'refresh_token': refreshToken,
-          'device_id': deviceId,
-        },
+        data: {'refresh_token': refreshToken, 'device_id': deviceId},
         options: Options(extra: {'skipAuth': true}),
       );
       return AuthSession.fromJson(asJsonMap(response.data));
@@ -82,9 +79,7 @@ class AuthApi {
     try {
       await _dio.post<Map<String, dynamic>>(
         '/v1/auth/logout',
-        data: {
-          'refresh_token': ?refreshToken,
-        },
+        data: {'refresh_token': ?refreshToken},
       );
     } on DioException catch (error) {
       throwApiException(error);
