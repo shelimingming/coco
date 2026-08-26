@@ -166,7 +166,8 @@ sync_nginx() {
   [[ -f "${conf}" ]] || return 0
   info "同步 Nginx 配置"
   rsync_to "${conf}" "/etc/nginx/conf.d/coco.conf"
-  ssh_cmd "nginx -t && systemctl reload nginx" || die "Nginx 配置无效。"
+  # 用 nginx -s reload：部分虚机 systemctl reload 会因 PrivateTmp 命名空间失败（status 226）
+  ssh_cmd "nginx -t && nginx -s reload" || die "Nginx 配置无效。"
   ok "Nginx 已重载"
 }
 
