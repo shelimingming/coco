@@ -16,7 +16,6 @@
       --line: #cfc8be;
       --parent: #c85f36;
       --child: #28786b;
-      --frame: #ffffff;
       --shadow: rgba(38, 35, 31, 0.1);
       --space-2: 8px;
       --space-3: 12px;
@@ -157,14 +156,22 @@
     .dot.parent { background: var(--parent); }
     .dot.child { background: var(--child); }
 
-    .frame {
+    /* iframe 只做屏幕槽；iPhone 外框由 Flutter 在 presentation_slot 下强制绘制 */
+    .device {
       flex: 1;
       min-height: 520px;
+      min-width: 0;
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+    }
+
+    .frame {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
       border: 0;
-      border-radius: 20px;
-      background: var(--frame);
-      box-shadow: 0 18px 40px var(--shadow);
-      overflow: hidden;
+      background: transparent;
     }
 
     @media (max-width: 800px) {
@@ -230,7 +237,7 @@
         grid-template-columns: 1fr;
       }
 
-      .frame {
+      .device {
         min-height: 560px;
         height: 72vh;
       }
@@ -257,21 +264,25 @@
     <div class="stage">
       <section class="panel" aria-label="长辈端">
         <div class="label"><span class="dot parent" aria-hidden="true"></span>长辈端</div>
-        <iframe
-          class="frame"
-          title="长辈端"
-          src="./index.html?presentation_slot=parent"
-          allow="microphone; autoplay; clipboard-write"
-        ></iframe>
+        <div class="device">
+          <iframe
+            class="frame"
+            title="长辈端"
+            src="./index.html?presentation_slot=parent"
+            allow="microphone; autoplay; clipboard-write"
+          ></iframe>
+        </div>
       </section>
       <section class="panel" aria-label="子女端">
         <div class="label"><span class="dot child" aria-hidden="true"></span>子女端</div>
-        <iframe
-          class="frame"
-          title="子女端"
-          src="./index.html?presentation_slot=child"
-          allow="microphone; autoplay; clipboard-write"
-        ></iframe>
+        <div class="device">
+          <iframe
+            class="frame"
+            title="子女端"
+            src="./index.html?presentation_slot=child"
+            allow="microphone; autoplay; clipboard-write"
+          ></iframe>
+        </div>
       </section>
     </div>
   </div>

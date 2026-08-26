@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/audio/mic_pcm_stream.dart';
 import '../../../core/audio/pcm_stream_player.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/screen/screen_wake_lock.dart';
 import '../data/realtime_voice_socket.dart';
 import '../domain/coco_companion_pose.dart';
 import '../domain/pending_voice_action.dart';
@@ -25,9 +26,11 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     MicPcmStream? mic,
     PcmStreamPlayer? player,
     RealtimeVoiceSocket? socket,
+    ScreenWakeLock? wakeLock,
   }) : _mic = mic ?? createMicPcmStream(),
        _player = player ?? createPcmStreamPlayer(),
        _socket = socket ?? RealtimeVoiceSocket(),
+       _wakeLock = wakeLock ?? createScreenWakeLock(),
        super(const VoiceCallState()) {
     // 构造期注入播放结束回调，用于恢复麦克风上行。
     _player.onDrained = _onPlaybackDrained;
@@ -41,6 +44,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   final MicPcmStream _mic;
   final PcmStreamPlayer _player;
   final RealtimeVoiceSocket _socket;
+  final ScreenWakeLock _wakeLock;
 
   StreamSubscription<Uint8List>? _micSub;
   StreamSubscription<RealtimeSocketEvent>? _socketSub;
@@ -50,12 +54,17 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   String _assistantAccum = '';
   Completer<bool>? _readyWaiter;
 
+  /// 串行化常亮开关，避免 start / teardown 交错导致挂断后仍亮屏
+  Future<void> _wakeLockChain = Future.value();
+
   Future<void> start() async {
     if (_started || state.isActive) return;
     _started = true;
     _sessionReady = false;
     state = const VoiceCallState(phase: VoiceCallPhase.connecting);
     _syncPose(VoiceCallPhase.connecting);
+    // 须在其它 await 之前申请，Web 的 Wake Lock 依赖这次点击手势
+    await _setWakeLock(true);
 
     final token = _readAccessToken();
     if (token.isEmpty) {
@@ -222,6 +231,10 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
           this.state.isActive &&
           this.state.phase != VoiceCallPhase.speaking) {
         _mic.suppress = false;
+      }
+      // 部分系统回前台后会丢掉常亮标记，通话未结束则重新申请
+      if (_started && this.state.isActive) {
+        unawaited(_setWakeLock(true));
       }
     }
   }
@@ -430,6 +443,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     _sessionReady = false;
     _assistantAccum = '';
     _mic.suppress = false;
+    await _setWakeLock(false);
     _completeReadyWaiter(false);
     _readyTimeout?.cancel();
     _readyTimeout = null;
@@ -444,6 +458,18 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       state = const VoiceCallState();
       _syncPose(VoiceCallPhase.idle);
     }
+  }
+
+  /// 只在通话进行中常亮；挂断 / 出错立刻放开，避免 idle 页一直亮屏耗电。
+  Future<void> _setWakeLock(bool enabled) {
+    _wakeLockChain = _wakeLockChain.catchError((_) {}).then((_) async {
+      if (enabled) {
+        await _wakeLock.enable();
+      } else {
+        await _wakeLock.disable();
+      }
+    });
+    return _wakeLockChain;
   }
 
   void _syncPose(VoiceCallPhase phase) {

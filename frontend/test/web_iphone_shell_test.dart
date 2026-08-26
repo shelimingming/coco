@@ -57,6 +57,42 @@ void main() {
     );
   });
 
+  test('演示页 iframe 即使窄于桌面阈值也套外壳', () {
+    expect(
+      WebIphoneShell.useShellFor(
+        isWeb: true,
+        platform: TargetPlatform.macOS,
+        viewportSize: const Size(390, 700),
+        inPresentationSlot: true,
+      ),
+      isTrue,
+    );
+  });
+
+  test('演示页在手机浏览器里仍套外壳', () {
+    expect(
+      WebIphoneShell.useShellFor(
+        isWeb: true,
+        platform: TargetPlatform.iOS,
+        viewportSize: const Size(390, 844),
+        inPresentationSlot: true,
+      ),
+      isTrue,
+    );
+  });
+
+  test('原生 App 即使带演示标记也不套外壳', () {
+    expect(
+      WebIphoneShell.useShellFor(
+        isWeb: false,
+        platform: TargetPlatform.iOS,
+        viewportSize: const Size(390, 844),
+        inPresentationSlot: true,
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets('外壳内只改字号时仍保留 iPhone 安全区', (tester) async {
     late EdgeInsets padding;
 

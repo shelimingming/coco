@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
+import '../web/presentation_slot.dart';
 import 'coco_safe_area.dart';
 
 /// Web 桌面用的 iPhone 外框：按真机逻辑分辨率等比缩放，避免拉高后底部大块留白。
@@ -30,22 +31,28 @@ class WebIphoneShell extends StatelessWidget {
   static const Size deviceSize = Size(413, 872);
 
   /// 仅电脑浏览器用外壳对照真机比例；手机 / 平板 Web 铺满真实屏幕。
+  /// 双端演示页 iframe 往往窄于 [desktopShortestSide]，仍要套框。
   static bool enabledOf(BuildContext context) {
     return useShellFor(
       isWeb: kIsWeb,
       platform: defaultTargetPlatform,
       viewportSize: MediaQuery.sizeOf(context),
+      inPresentationSlot: readPresentationSlot() != null,
     );
   }
 
   /// 抽出判定方便单测：原生 App、手机 UA、窄视口都不套框。
+  /// [inPresentationSlot] 为演示页 iframe：不受视口和 UA 限制，始终套框。
   @visibleForTesting
   static bool useShellFor({
     required bool isWeb,
     required TargetPlatform platform,
     required Size viewportSize,
+    bool inPresentationSlot = false,
   }) {
     if (!isWeb) return false;
+    // 演示页左右两栏 iframe 接近真机宽，不能当成「手机浏览器铺满」
+    if (inPresentationSlot) return true;
     if (platform == TargetPlatform.iOS || platform == TargetPlatform.android) {
       return false;
     }
@@ -54,7 +61,10 @@ class WebIphoneShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final deskBg = Theme.of(context).scaffoldBackgroundColor;
+    // 演示页桌面底与 presentation.html --bg 同色，iframe 四周不露出另一块底色
+    final deskBg = readPresentationSlot() != null
+        ? CocoColors.neutral100
+        : Theme.of(context).scaffoldBackgroundColor;
 
     return ColoredBox(
       color: deskBg,

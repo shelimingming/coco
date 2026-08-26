@@ -58,6 +58,8 @@ dependencies:
   http_parser: ^4.1.2
   flutter_svg: ^2.3.0
   web: ^1.1.1
+  # 通话中保持屏幕常亮，避免免提对话被系统熄屏打断
+  wakelock_plus: ^1.7.0
 
 dev_dependencies:
   flutter_test:

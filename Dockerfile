@@ -39,7 +39,8 @@ RUN flutter pub get
 COPY frontend/ ./
 # 空字符串 = 与 API 同源（推荐一体部署）；也可构建时传入公网 API 地址
 ARG COCO_API_BASE_URL=
-RUN flutter build web --release --pwa-strategy=none \
+# --no-web-resources-cdn：CanvasKit 不从 gstatic 拉，避免微信内打开白屏
+RUN flutter build web --release --pwa-strategy=none --no-web-resources-cdn \
   --dart-define=COCO_API_BASE_URL=${COCO_API_BASE_URL}
 
 # ---------- 阶段 3：Python 运行时 ----------
