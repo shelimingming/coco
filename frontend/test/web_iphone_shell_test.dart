@@ -7,6 +7,56 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('原生 App 不套 Web 外壳', () {
+    expect(
+      WebIphoneShell.useShellFor(
+        isWeb: false,
+        platform: TargetPlatform.iOS,
+        viewportSize: const Size(1200, 800),
+      ),
+      isFalse,
+    );
+  });
+
+  test('安卓 / iOS 手机浏览器不套外壳', () {
+    const phone = Size(390, 844);
+    expect(
+      WebIphoneShell.useShellFor(
+        isWeb: true,
+        platform: TargetPlatform.android,
+        viewportSize: phone,
+      ),
+      isFalse,
+    );
+    expect(
+      WebIphoneShell.useShellFor(
+        isWeb: true,
+        platform: TargetPlatform.iOS,
+        viewportSize: phone,
+      ),
+      isFalse,
+    );
+  });
+
+  test('电脑宽视口才套外壳，伪装桌面 UA 的窄屏仍铺满', () {
+    expect(
+      WebIphoneShell.useShellFor(
+        isWeb: true,
+        platform: TargetPlatform.macOS,
+        viewportSize: const Size(1440, 900),
+      ),
+      isTrue,
+    );
+    expect(
+      WebIphoneShell.useShellFor(
+        isWeb: true,
+        platform: TargetPlatform.windows,
+        viewportSize: const Size(390, 844),
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets('外壳内只改字号时仍保留 iPhone 安全区', (tester) async {
     late EdgeInsets padding;
 

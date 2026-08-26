@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -66,8 +65,8 @@ class CocoApp extends ConsumerWidget {
             // 若用 builder 的桌面 MediaQuery，会把 iPhone 外壳的安全区盖成 0，顶底文字贴边被裁。
             content = _ParentTextScaleCap(child: content);
           }
-          if (!kIsWeb) return content;
-          // 桌面浏览器用 iPhone 外壳包裹，便于对照真机比例预览
+          // 电脑 Web 套 iPhone 外框预览；手机浏览器铺满，避免套娃小屏
+          if (!WebIphoneShell.enabledOf(context)) return content;
           return WebIphoneShell(child: content);
         },
       ),

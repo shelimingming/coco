@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
@@ -8,6 +9,9 @@ class WebIphoneShell extends StatelessWidget {
   const WebIphoneShell({super.key, required this.child});
 
   final Widget child;
+
+  /// 短于此宽度视为手机视口。手机开「桌面版网站」时 UA 会伪装成电脑，用尺寸再挡一层。
+  static const double desktopShortestSide = 600;
 
   /// iPhone 15 / 16 Pro 逻辑点尺寸（宽 × 高），与模拟器一致。
   static const Size screenSize = Size(393, 852);
@@ -24,6 +28,29 @@ class WebIphoneShell extends StatelessWidget {
 
   /// 含边框的整机尺寸（393+20 × 852+20）。
   static const Size deviceSize = Size(413, 872);
+
+  /// 仅电脑浏览器用外壳对照真机比例；手机 / 平板 Web 铺满真实屏幕。
+  static bool enabledOf(BuildContext context) {
+    return useShellFor(
+      isWeb: kIsWeb,
+      platform: defaultTargetPlatform,
+      viewportSize: MediaQuery.sizeOf(context),
+    );
+  }
+
+  /// 抽出判定方便单测：原生 App、手机 UA、窄视口都不套框。
+  @visibleForTesting
+  static bool useShellFor({
+    required bool isWeb,
+    required TargetPlatform platform,
+    required Size viewportSize,
+  }) {
+    if (!isWeb) return false;
+    if (platform == TargetPlatform.iOS || platform == TargetPlatform.android) {
+      return false;
+    }
+    return viewportSize.shortestSide >= desktopShortestSide;
+  }
 
   @override
   Widget build(BuildContext context) {
