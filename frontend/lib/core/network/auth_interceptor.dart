@@ -19,11 +19,11 @@ class AuthInterceptor extends QueuedInterceptor {
     required AccessTokenReader readAccessToken,
     required AccessTokenWriter writeAccessToken,
     required SessionCleared onSessionCleared,
-  }) : _dio = dio,
-       _tokenStorage = tokenStorage,
-       _readAccessToken = readAccessToken,
-       _writeAccessToken = writeAccessToken,
-       _onSessionCleared = onSessionCleared;
+  })  : _dio = dio,
+        _tokenStorage = tokenStorage,
+        _readAccessToken = readAccessToken,
+        _writeAccessToken = writeAccessToken,
+        _onSessionCleared = onSessionCleared;
 
   final Dio _dio;
   final TokenStorage _tokenStorage;
@@ -73,8 +73,13 @@ class AuthInterceptor extends QueuedInterceptor {
       final deviceId = await _tokenStorage.getOrCreateDeviceId();
       final refreshResponse = await _dio.post<Map<String, dynamic>>(
         '/v1/auth/refresh',
-        data: {'refresh_token': refreshToken, 'device_id': deviceId},
-        options: Options(extra: {_skipAuthKey: true}),
+        data: {
+          'refresh_token': refreshToken,
+          'device_id': deviceId,
+        },
+        options: Options(
+          extra: {_skipAuthKey: true},
+        ),
       );
       final data = refreshResponse.data;
       final access = data?['access_token'] as String?;

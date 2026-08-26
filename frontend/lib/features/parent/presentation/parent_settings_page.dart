@@ -155,7 +155,7 @@ class _MyBody extends StatelessWidget {
         _SectionCard(
           iconAsset: 'assets/icons/parent/icon-my-family.svg',
           title: bound ? '$childName的家庭' : '还没有加入家庭',
-          subtitle: bound ? '已绑定，可以查看家庭信息' : '邀请子女加入家庭',
+          subtitle: bound ? '已绑定，可以查看家庭信息' : '邀请子女，或输入邀请码加入家庭',
           children: bound
               ? [
                   CocoPrimaryButton(
@@ -167,6 +167,11 @@ class _MyBody extends StatelessWidget {
                   CocoPrimaryButton(
                     label: '邀请子女加入',
                     onPressed: () => context.push('/parent/family'),
+                  ),
+                  const SizedBox(height: CocoSpace.s3),
+                  CocoSecondaryButton(
+                    label: '输入邀请码加入',
+                    onPressed: () => context.push('/parent/join'),
                   ),
                 ],
         ),

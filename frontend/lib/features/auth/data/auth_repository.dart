@@ -13,9 +13,9 @@ class AuthRepository {
     required AuthApi api,
     required TokenStorage tokenStorage,
     required SessionTokenHolder tokenHolder,
-  }) : _api = api,
-       _tokenStorage = tokenStorage,
-       _tokenHolder = tokenHolder;
+  })  : _api = api,
+        _tokenStorage = tokenStorage,
+        _tokenHolder = tokenHolder;
 
   final AuthApi _api;
   final TokenStorage _tokenStorage;

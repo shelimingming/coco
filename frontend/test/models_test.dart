@@ -116,26 +116,13 @@ void main() {
   });
 
   group('FamilyInvite', () {
-    test('parses invite link fields', () {
+    test('parses code', () {
       final invite = FamilyInvite.fromJson({
-        'token': 'abc-token',
-        'invite_url': 'https://coco.xyfit.top/invite/abc-token',
+        'code': '123456',
+        'expires_at': '2026-08-09T03:10:00Z',
         'family_id': 'f1',
       });
-      expect(invite.token, 'abc-token');
-      expect(invite.inviteUrl, contains('/invite/'));
-    });
-  });
-
-  group('FamilyInvitePreview', () {
-    test('parses preview', () {
-      final preview = FamilyInvitePreview.fromJson({
-        'inviter_display_name': '张阿姨',
-        'target_role': 'child',
-        'valid': true,
-      });
-      expect(preview.inviterDisplayName, '张阿姨');
-      expect(preview.targetRole, 'child');
+      expect(invite.code, '123456');
     });
   });
 

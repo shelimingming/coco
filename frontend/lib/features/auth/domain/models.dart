@@ -97,7 +97,6 @@ class AuthState {
     this.phone = '',
     this.challenge,
     this.errorMessage,
-    this.inviteFlow = false,
   });
 
   final bool isBootstrapped;
@@ -108,9 +107,6 @@ class AuthState {
   final String phone;
   final PhoneChallenge? challenge;
   final String? errorMessage;
-
-  /// 从邀请链接进入：跳过身份选择，按预览接口给出的角色登录。
-  final bool inviteFlow;
 
   bool get isAuthenticated => user != null;
 
@@ -126,7 +122,6 @@ class AuthState {
     bool clearChallenge = false,
     String? errorMessage,
     bool clearError = false,
-    bool? inviteFlow,
   }) {
     return AuthState(
       isBootstrapped: isBootstrapped ?? this.isBootstrapped,
@@ -137,7 +132,6 @@ class AuthState {
       phone: phone ?? this.phone,
       challenge: clearChallenge ? null : (challenge ?? this.challenge),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
-      inviteFlow: inviteFlow ?? this.inviteFlow,
     );
   }
 }

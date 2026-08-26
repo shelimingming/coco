@@ -226,23 +226,25 @@ class FamilyAdmin(ReadOnlyModelView, model=Family):
 
 
 class FamilyInviteAdmin(ReadOnlyModelView, model=FamilyInvite):
-    name = "家庭邀请链接"
-    name_plural = "家庭邀请链接"
+    name = "家庭邀请码"
+    name_plural = "家庭邀请码"
     icon = "fa-solid fa-ticket"
     category = "核心"
     label_user_attrs = ("inviter_user_id",)
     label_family_attrs = ("family_id",)
     column_list = [
-        FamilyInvite.token,
+        FamilyInvite.code,
         FamilyInvite.family_id,
         FamilyInvite.inviter_user_id,
+        FamilyInvite.expires_at,
         FamilyInvite.consumed_at,
         FamilyInvite.created_at,
     ]
     column_labels = {
-        FamilyInvite.token: "链接 token",
+        FamilyInvite.code: "邀请码",
         FamilyInvite.family_id: "家庭",
         FamilyInvite.inviter_user_id: "邀请人",
+        FamilyInvite.expires_at: "过期时间",
         FamilyInvite.consumed_at: "使用时间",
         FamilyInvite.created_at: "创建时间",
         FamilyInvite.id: "记录 ID",
@@ -255,8 +257,8 @@ class FamilyInviteAdmin(ReadOnlyModelView, model=FamilyInvite):
         FamilyInvite.family_id: format_family_label_detail,
         FamilyInvite.inviter_user_id: format_user_name_detail,
     }
-    column_searchable_list = [FamilyInvite.token]
-    column_sortable_list = [FamilyInvite.created_at, FamilyInvite.consumed_at]
+    column_searchable_list = [FamilyInvite.code]
+    column_sortable_list = [FamilyInvite.created_at, FamilyInvite.expires_at]
     column_default_sort = [(FamilyInvite.created_at, True)]
 
 

@@ -25,7 +25,8 @@ class ReminderConfirmCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reminderName = notification.reminderTitle?.trim().isNotEmpty == true
+    final reminderName =
+        notification.reminderTitle?.trim().isNotEmpty == true
         ? notification.reminderTitle!.trim()
         : _reminderNameFromBody(notification.body);
     final rows = <(String, String)>[

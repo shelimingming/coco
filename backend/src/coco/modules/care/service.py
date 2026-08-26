@@ -90,7 +90,7 @@ class CareService:
             raise AppError(
                 400,
                 "care.no_child",
-                "还没有绑定子女，无法分享。请先让子女通过邀请链接加入家庭。",
+                "还没有绑定子女，无法分享。请先让子女用邀请码加入家庭。",
             )
 
         share = CareShare(

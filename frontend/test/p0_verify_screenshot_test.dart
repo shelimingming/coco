@@ -158,7 +158,9 @@ void main() {
 Future<void> _savePng(WidgetTester tester, Finder finder, String path) async {
   final boundary = tester.renderObject(finder) as RenderRepaintBoundary;
   // widget 测试默认假异步，toImage 必须走 runAsync
-  final image = await tester.runAsync(() => boundary.toImage(pixelRatio: 2));
+  final image = await tester.runAsync(
+    () => boundary.toImage(pixelRatio: 2),
+  );
   if (image == null) {
     fail('截图失败：$path');
   }

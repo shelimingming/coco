@@ -41,21 +41,6 @@ class AuthController extends StateNotifier<AuthState> {
     );
   }
 
-  /// 邀请链接落地页：按后端预览角色直接进入手机号登录，无需再选手动身份。
-  void beginInviteFlow(UserRole role) {
-    state = state.copyWith(
-      selectedRole: role,
-      step: LoginStep.phone,
-      inviteFlow: true,
-      clearChallenge: true,
-      clearError: true,
-    );
-  }
-
-  void endInviteFlow() {
-    state = state.copyWith(inviteFlow: false);
-  }
-
   void backToRole() {
     state = state.copyWith(
       step: LoginStep.role,
@@ -86,7 +71,10 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> verifyCode({required String code, String? displayName}) async {
+  Future<bool> verifyCode({
+    required String code,
+    String? displayName,
+  }) async {
     final challenge = state.challenge;
     if (challenge == null) {
       state = state.copyWith(errorMessage: '请先获取验证码。');
@@ -129,8 +117,7 @@ class AuthController extends StateNotifier<AuthState> {
   }
 }
 
-final authControllerProvider = StateNotifierProvider<AuthController, AuthState>(
-  (ref) {
-    return AuthController(ref.watch(authRepositoryProvider));
-  },
-);
+final authControllerProvider =
+    StateNotifierProvider<AuthController, AuthState>((ref) {
+  return AuthController(ref.watch(authRepositoryProvider));
+});

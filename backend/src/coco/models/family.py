@@ -1,4 +1,4 @@
-"""家庭与邀请链接模型：MVP 固定 1 父母 + 1 主要子女。"""
+"""家庭与邀请码模型：MVP 固定 1 父母 + 1 主要子女。"""
 
 from __future__ import annotations
 
@@ -45,8 +45,8 @@ class Family(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class FamilyInvite(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "family_invites"
 
-    # URL-safe 链接 token，对外分享用
-    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    # 6 位数字邀请码，非敏感，明文存储便于口述
+    code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     inviter_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("coco.users.id", ondelete="CASCADE"),
@@ -57,6 +57,7 @@ class FamilyInvite(UUIDPrimaryKeyMixin, Base):
         ForeignKey("coco.families.id", ondelete="CASCADE"),
         nullable=False,
     )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

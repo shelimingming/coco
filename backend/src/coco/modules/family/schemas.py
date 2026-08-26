@@ -2,30 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from coco.models.user import UserRole
-
 
 class FamilyInviteCreateResponse(BaseModel):
-    token: str
-    invite_url: str
+    code: str
+    expires_at: datetime
     family_id: UUID
 
 
-class FamilyInvitePreviewResponse(BaseModel):
-    """免鉴权预览：被邀请方打开链接时展示。"""
-
-    inviter_display_name: str
-    # 被邀请方应使用的登录角色
-    target_role: UserRole
-    valid: bool = True
-
-
 class FamilyJoinRequest(BaseModel):
-    token: str = Field(min_length=8, max_length=64)
+    code: str = Field(min_length=6, max_length=8)
 
 
 class FamilyResponse(BaseModel):

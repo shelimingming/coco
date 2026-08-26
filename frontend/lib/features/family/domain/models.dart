@@ -1,41 +1,20 @@
 /// 家庭绑定领域模型。
 class FamilyInvite {
   const FamilyInvite({
-    required this.token,
-    required this.inviteUrl,
+    required this.code,
+    required this.expiresAt,
     required this.familyId,
   });
 
-  final String token;
-  final String inviteUrl;
+  final String code;
+  final DateTime expiresAt;
   final String familyId;
 
   factory FamilyInvite.fromJson(Map<String, dynamic> json) {
     return FamilyInvite(
-      token: json['token'] as String,
-      inviteUrl: json['invite_url'] as String,
+      code: json['code'] as String,
+      expiresAt: DateTime.parse(json['expires_at'] as String),
       familyId: json['family_id'] as String,
-    );
-  }
-}
-
-/// 邀请链接预览（免登录）。
-class FamilyInvitePreview {
-  const FamilyInvitePreview({
-    required this.inviterDisplayName,
-    required this.targetRole,
-    this.valid = true,
-  });
-
-  final String inviterDisplayName;
-  final String targetRole;
-  final bool valid;
-
-  factory FamilyInvitePreview.fromJson(Map<String, dynamic> json) {
-    return FamilyInvitePreview(
-      inviterDisplayName: json['inviter_display_name'] as String,
-      targetRole: json['target_role'] as String,
-      valid: json['valid'] as bool? ?? true,
     );
   }
 }

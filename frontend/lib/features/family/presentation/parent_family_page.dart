@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -10,9 +11,8 @@ import '../../../core/widgets/coco_scaffold.dart';
 import '../application/family_providers.dart';
 import '../data/family_api.dart';
 import '../domain/models.dart';
-import 'family_invite_share_panel.dart';
 
-/// 父母端：生成邀请链接，便于微信转发给子女。
+/// 父母端：大字邀请码，便于老人念给子女。
 class ParentFamilyPage extends ConsumerStatefulWidget {
   const ParentFamilyPage({super.key});
 
@@ -44,7 +44,7 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
         _busy = false;
         _error = error is ApiException
             ? error.message
-            : '邀请链接没生成成功。您可以再试一次，数据没有受影响。';
+            : '邀请码没生成成功。您可以再试一次，数据没有受影响。';
       });
     }
   }
@@ -94,22 +94,51 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '生成邀请链接，复制后通过微信发给子女；对方点开链接登录即可加入。',
+                '把下面的邀请码告诉子女，让对方在「子女模式」里输入；也可以让子女生成码，您在设置里输入。',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: CocoColors.neutral700,
                 ),
               ),
-              const SizedBox(height: CocoSpace.s6),
-              if (invite != null)
-                FamilyInviteSharePanel(
-                  invite: invite,
-                  isParent: true,
-                  busy: _busy,
-                  onRegenerate: _generate,
-                )
-              else
+              const SizedBox(height: CocoSpace.s8),
+              if (invite != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(CocoSpace.s6),
+                  decoration: BoxDecoration(
+                    color: CocoColors.parentPrimarySoft,
+                    borderRadius: BorderRadius.circular(CocoRadius.xl),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        invite.code,
+                        style: theme.textTheme.displayLarge?.copyWith(
+                          letterSpacing: 8,
+                          fontWeight: FontWeight.w700,
+                          color: CocoColors.neutral950,
+                        ),
+                      ),
+                      const SizedBox(height: CocoSpace.s3),
+                      Text(
+                        '有效至 ${_formatTime(invite.expiresAt)}',
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: CocoSpace.s4),
+                CocoSecondaryButton(
+                  label: '复制邀请码',
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: invite.code));
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('邀请码已复制。')));
+                  },
+                ),
+              ] else
                 Text(
-                  '点下面按钮生成邀请链接，复制后发给家人即可。',
+                  '点下面按钮生成邀请码。邀请码 10 分钟内有效。',
                   style: theme.textTheme.bodyLarge,
                 ),
               if (_error != null) ...[
@@ -122,18 +151,24 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
                 ),
               ],
               const Spacer(),
-              if (invite == null)
-                CocoPrimaryButton(
-                  label: '生成邀请链接',
-                  loading: _busy,
-                  loadingLabel: '正在生成…',
-                  onPressed: _generate,
-                ),
+              CocoPrimaryButton(
+                label: invite == null ? '生成邀请码' : '重新生成',
+                loading: _busy,
+                loadingLabel: '正在生成…',
+                onPressed: _generate,
+              ),
             ],
           );
         },
       ),
     );
+  }
+
+  String _formatTime(DateTime utc) {
+    final local = utc.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    return '$h:$m';
   }
 }
 

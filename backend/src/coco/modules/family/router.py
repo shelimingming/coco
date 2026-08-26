@@ -8,7 +8,6 @@ from coco.config import Settings, get_settings
 from coco.deps import CurrentUserDep, SessionDep
 from coco.modules.family.schemas import (
     FamilyInviteCreateResponse,
-    FamilyInvitePreviewResponse,
     FamilyJoinRequest,
     FamilyResponse,
 )
@@ -30,16 +29,6 @@ async def create_invite(
     return await service.create_invite(session, user=user)
 
 
-@router.get("/invite/{token}", response_model=FamilyInvitePreviewResponse)
-async def preview_invite(
-    token: str,
-    session: SessionDep,
-    service: FamilyService = Depends(get_family_service),
-) -> FamilyInvitePreviewResponse:
-    """免鉴权：被邀请方打开链接前预览邀请信息。"""
-    return await service.preview_invite(session, token=token)
-
-
 @router.post("/join", response_model=FamilyResponse)
 async def join_family(
     body: FamilyJoinRequest,
@@ -47,7 +36,7 @@ async def join_family(
     user: CurrentUserDep,
     service: FamilyService = Depends(get_family_service),
 ) -> FamilyResponse:
-    return await service.join_family(session, user=user, token=body.token)
+    return await service.join_family(session, user=user, code=body.code)
 
 
 @router.get("", response_model=FamilyResponse)

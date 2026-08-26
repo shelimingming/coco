@@ -44,7 +44,7 @@ async def _bind_family(client: AsyncClient, parent_token: str, child_token: str)
     join = await client.post(
         "/v1/family/join",
         headers={"Authorization": f"Bearer {child_token}"},
-        json={"token": invite.json()["token"]},
+        json={"code": invite.json()["code"]},
     )
     assert join.status_code == 200, join.text
 
