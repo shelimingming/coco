@@ -35,6 +35,21 @@ from coco.modules.voice.router import router as voice_router
 from coco.scheduler import scheduler_loop
 
 
+def _register_invite_short_link(app: FastAPI) -> None:
+    """对外分享用 /i/{code}，302 到 Flutter Web hash 落地页。"""
+
+    @app.get("/i/{code}")
+    async def invite_short_link(code: str) -> RedirectResponse:
+        token = code.strip()
+        # 只接受 6–8 位 URL 安全字符，避免把任意路径转进前端
+        if not (6 <= len(token) <= 8) or any(
+            ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+            for ch in token
+        ):
+            raise HTTPException(status_code=404, detail="Not Found")
+        return RedirectResponse(url=f"/index.html#/invite/{token}", status_code=302)
+
+
 def _mount_web_static(app: FastAPI, settings: Settings) -> None:
     """一体部署时托管 Flutter Web；必须在 API 路由注册之后挂载。"""
     raw = (settings.web_static_dir or "").strip()
@@ -157,6 +172,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(care_router)
     app.include_router(messages_router)
     app.include_router(notifications_router)
+    # 邀请短链必须在 SPA 通配之前；纯 API 部署也可用
+    _register_invite_short_link(app)
     # 静态站最后挂载，避免吞掉 /health、/v1、/docs
     _mount_web_static(app, resolved)
     return app

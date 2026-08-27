@@ -116,13 +116,17 @@ void main() {
   });
 
   group('FamilyInvite', () {
-    test('parses code', () {
+    test('parses invite url', () {
       final invite = FamilyInvite.fromJson({
-        'code': '123456',
-        'expires_at': '2026-08-09T03:10:00Z',
+        'code': 'AbC12-_x',
+        'invite_url': 'http://127.0.0.1:8000/i/AbC12-_x',
+        'target_role': 'child',
+        'inviter_display_name': '小林',
         'family_id': 'f1',
       });
-      expect(invite.code, '123456');
+      expect(invite.code, 'AbC12-_x');
+      expect(invite.inviteUrl, 'http://127.0.0.1:8000/i/AbC12-_x');
+      expect(invite.targetRole, 'child');
     });
   });
 

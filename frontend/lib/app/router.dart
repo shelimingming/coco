@@ -12,9 +12,8 @@ import '../features/child/presentation/child_shell.dart';
 import '../features/child/presentation/child_suggest_reminder_page.dart';
 import '../features/family/presentation/child_family_page.dart';
 import '../features/family/presentation/child_invite_page.dart';
-import '../features/family/presentation/child_join_page.dart';
+import '../features/family/presentation/invite_landing_page.dart';
 import '../features/family/presentation/parent_family_page.dart';
-import '../features/family/presentation/parent_join_page.dart';
 import '../features/history/presentation/history_detail_page.dart';
 import '../features/history/presentation/history_page.dart';
 import '../features/look/presentation/look_page.dart';
@@ -48,6 +47,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final auth = ref.read(authControllerProvider);
       final location = state.matchedLocation;
 
+      if (location.startsWith('/invite/')) {
+        // 邀请落地页自带登录；未 bootstrap 也可停在此页，避免丢掉链接里的 code
+        return null;
+      }
       if (!auth.isBootstrapped) {
         return location == '/splash' ? null : '/splash';
       }
@@ -71,6 +74,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/splash', builder: (context, state) => const SplashPage()),
       GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
       GoRoute(
+        path: '/invite/:code',
+        builder: (context, state) => InviteLandingPage(
+          code: state.pathParameters['code']!,
+        ),
+      ),
+      GoRoute(
         path: '/parent',
         builder: (context, state) => const ParentHomePage(),
         routes: [
@@ -85,10 +94,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'family',
             builder: (context, state) => const ParentFamilyPage(),
-          ),
-          GoRoute(
-            path: 'join',
-            builder: (context, state) => const ParentJoinPage(),
           ),
           GoRoute(
             path: 'reminders',
@@ -131,11 +136,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 path: '/child',
                 builder: (context, state) => const ChildHomePage(),
                 routes: [
-                  GoRoute(
-                    path: 'join',
-                    parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) => const ChildJoinPage(),
-                  ),
                   GoRoute(
                     path: 'attention',
                     parentNavigatorKey: _rootNavigatorKey,

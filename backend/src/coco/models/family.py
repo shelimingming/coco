@@ -17,6 +17,8 @@ class FamilyStatus(enum.StrEnum):
     ACTIVE = "active"
     # 任一方已创建家庭，对侧尚未加入
     PENDING = "pending"
+    # 已解除绑定：保留 family_messages 等历史，用户 id 已清空
+    DISSOLVED = "dissolved"
 
 
 class Family(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -45,7 +47,7 @@ class Family(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class FamilyInvite(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "family_invites"
 
-    # 6 位数字邀请码，非敏感，明文存储便于口述
+    # 8 字符链接令牌（不再口述）；明文存储，永不过期直至绑定成功
     code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     inviter_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

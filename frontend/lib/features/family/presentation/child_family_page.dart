@@ -9,6 +9,7 @@ import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_safe_area.dart';
 import '../../auth/application/auth_controller.dart';
 import '../application/family_providers.dart';
+import 'widgets/unbind_family_button.dart';
 
 /// 子女端家庭 Tab：绑定关系、授权说明、账号与退出。
 class ChildFamilyPage extends ConsumerWidget {
@@ -82,20 +83,15 @@ class ChildFamilyPage extends ConsumerWidget {
                         Text('还没有绑定父母。', style: theme.textTheme.titleMedium),
                         const SizedBox(height: CocoSpace.s2),
                         Text(
-                          '您可以生成邀请码请父母加入，或输入父母给您的邀请码。',
+                          '把邀请链接发给父母，对方点开登录后点「加入家庭」即可完成绑定。',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: CocoColors.neutral700,
                           ),
                         ),
                         const SizedBox(height: CocoSpace.s4),
                         CocoPrimaryButton(
-                          label: '生成邀请码邀请父母',
+                          label: '邀请父母加入',
                           onPressed: () => context.push('/child/family/invite'),
-                        ),
-                        const SizedBox(height: CocoSpace.s3),
-                        CocoSecondaryButton(
-                          label: '输入邀请码加入',
-                          onPressed: () => context.push('/child/join'),
                         ),
                       ],
                     ),
@@ -312,6 +308,11 @@ class _BoundParentCard extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: CocoSpace.s4),
+            UnbindFamilyButton(
+              partnerName: parentName,
+              style: UnbindFamilyButtonStyle.child,
             ),
           ],
         ),

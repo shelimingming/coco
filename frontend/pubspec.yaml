@@ -49,6 +49,7 @@ dependencies:
   # 本地定时提醒（zonedSchedule）需要显式依赖
   timezone: ^0.11.0
   url_launcher: ^6.3.2
+  share_plus: ^13.3.0
   # 帮我看看：系统相机 / 相册选图；截屏相册读最近一张
   image_picker: ^1.1.2
   photo_manager: ^3.7.1

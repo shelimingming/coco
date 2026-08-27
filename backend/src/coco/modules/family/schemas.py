@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -10,8 +10,17 @@ from pydantic import BaseModel, Field
 
 class FamilyInviteCreateResponse(BaseModel):
     code: str
-    expires_at: datetime
+    invite_url: str
+    target_role: str
+    inviter_display_name: str
     family_id: UUID
+
+
+class FamilyInvitePreviewResponse(BaseModel):
+    status: Literal["valid", "consumed", "not_found"]
+    inviter_display_name: str | None = None
+    target_role: str | None = None
+    family_id: UUID | None = None
 
 
 class FamilyJoinRequest(BaseModel):

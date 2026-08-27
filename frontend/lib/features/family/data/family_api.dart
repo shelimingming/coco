@@ -20,6 +20,19 @@ class FamilyApi {
     }
   }
 
+  /// 落地页登录前预览邀请人；无登录态时跳过鉴权刷新。
+  Future<FamilyInvitePreview> previewInvite(String code) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/v1/family/invites/$code',
+        options: Options(extra: {'skipAuth': true}),
+      );
+      return FamilyInvitePreview.fromJson(asJsonMap(response.data));
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
   Future<FamilyInfo> joinFamily(String code) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -36,6 +49,15 @@ class FamilyApi {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/v1/family');
       return FamilyInfo.fromJson(asJsonMap(response.data));
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
+  /// 解除 active 绑定；保留历史留言，只断开用户与 family 关联。
+  Future<void> unbindFamily() async {
+    try {
+      await _dio.post<void>('/v1/family/unbind');
     } on DioException catch (error) {
       throwApiException(error);
     }

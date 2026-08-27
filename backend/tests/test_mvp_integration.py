@@ -7,6 +7,7 @@ import uuid
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 pytestmark = pytest.mark.integration
 
@@ -228,3 +229,147 @@ async def test_join_rejects_same_role(client: AsyncClient) -> None:
     )
     assert wrong_child.status_code == 403
     assert wrong_child.json()["error"]["code"] == "family.parent_required"
+
+
+@pytest.mark.asyncio
+async def test_invite_link_reuses_code_and_preview(client: AsyncClient) -> None:
+    """邀请链接不过期：重复生成复用同一 code，预览免登录，短链可跳转。"""
+    parent_token = await _login(client, _unique_phone(), "parent", "链接爸")
+    headers = {"Authorization": f"Bearer {parent_token}"}
+
+    first = await client.post("/v1/family/invite", headers=headers)
+    assert first.status_code == 200, first.text
+    body = first.json()
+    code = body["code"]
+    assert len(code) == 8
+    assert body["invite_url"].endswith(f"/i/{code}")
+    assert body["target_role"] == "child"
+    assert body["inviter_display_name"] == "链接爸"
+
+    second = await client.post("/v1/family/invite", headers=headers)
+    assert second.status_code == 200
+    assert second.json()["code"] == code
+
+    preview = await client.get(f"/v1/family/invites/{code}")
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["status"] == "valid"
+    assert preview.json()["target_role"] == "child"
+    assert preview.json()["inviter_display_name"] == "链接爸"
+
+    short = await client.get(f"/i/{code}", follow_redirects=False)
+    assert short.status_code == 302
+    assert f"#/invite/{code}" in short.headers["location"]
+
+    child_token = await _login(client, _unique_phone(), "child", "链接子")
+    joined = await client.post(
+        "/v1/family/join",
+        headers={"Authorization": f"Bearer {child_token}"},
+        json={"code": code},
+    )
+    assert joined.status_code == 200, joined.text
+    assert joined.json()["status"] == "active"
+
+    used = await client.get(f"/v1/family/invites/{code}")
+    assert used.status_code == 200
+    assert used.json()["status"] == "consumed"
+
+
+async def _bind_parent_child(client: AsyncClient) -> tuple[str, str]:
+    """父母发邀请、子女加入，返回 (parent_token, child_token)。"""
+    parent_token = await _login(client, _unique_phone(), "parent", "解绑爸")
+    child_token = await _login(client, _unique_phone(), "child", "解绑子")
+    invite = await client.post(
+        "/v1/family/invite",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    assert invite.status_code == 200, invite.text
+    join = await client.post(
+        "/v1/family/join",
+        headers={"Authorization": f"Bearer {child_token}"},
+        json={"code": invite.json()["code"]},
+    )
+    assert join.status_code == 200, join.text
+    assert join.json()["status"] == "active"
+    return parent_token, child_token
+
+
+@pytest.mark.asyncio
+async def test_unbind_active_family(
+    client: AsyncClient,
+    session_factory: async_sessionmaker,
+) -> None:
+    """active 绑定任一方可解除；历史留言保留；解绑后可重新绑定。"""
+    from sqlalchemy import func, select
+
+    from coco.models.care import FamilyMessage
+
+    parent_token, child_token = await _bind_parent_child(client)
+
+    preview = await client.post(
+        "/v1/messages/preview",
+        headers={"Authorization": f"Bearer {child_token}"},
+        json={"text": "解绑测试留言"},
+    )
+    assert preview.status_code == 200, preview.text
+    send = await client.post(
+        "/v1/messages",
+        headers={"Authorization": f"Bearer {child_token}"},
+        json={
+            "original_text": "解绑测试留言",
+            "delivered_text": preview.json()["delivered_text"],
+        },
+    )
+    assert send.status_code == 200, send.text
+
+    async with session_factory() as session:
+        msg_count_before = await session.scalar(select(func.count()).select_from(FamilyMessage))
+
+    unbind = await client.post(
+        "/v1/family/unbind",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    assert unbind.status_code == 204, unbind.text
+
+    for token in (parent_token, child_token):
+        view = await client.get(
+            "/v1/family",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert view.status_code == 404, view.text
+        assert view.json()["error"]["code"] == "family.not_found"
+
+    async with session_factory() as session:
+        msg_count_after = await session.scalar(select(func.count()).select_from(FamilyMessage))
+    assert msg_count_after == msg_count_before
+
+    # 解绑后可重新邀请绑定
+    invite2 = await client.post(
+        "/v1/family/invite",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    assert invite2.status_code == 200, invite2.text
+    rejoin = await client.post(
+        "/v1/family/join",
+        headers={"Authorization": f"Bearer {child_token}"},
+        json={"code": invite2.json()["code"]},
+    )
+    assert rejoin.status_code == 200, rejoin.text
+    assert rejoin.json()["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_unbind_rejects_pending(client: AsyncClient) -> None:
+    """pending（仅发邀请）不可解除绑定。"""
+    parent_token = await _login(client, _unique_phone(), "parent", "待绑爸")
+    invite = await client.post(
+        "/v1/family/invite",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    assert invite.status_code == 200, invite.text
+
+    unbind = await client.post(
+        "/v1/family/unbind",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    assert unbind.status_code == 400, unbind.text
+    assert unbind.json()["error"]["code"] == "family.not_active"

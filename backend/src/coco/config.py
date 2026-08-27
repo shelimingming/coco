@@ -80,8 +80,10 @@ class Settings(BaseSettings):
     # MVP 固定本地时区，老人说「晚上八点」按此时区解释
     local_timezone: str = "Asia/Shanghai"
 
-    # 家庭邀请码有效期
-    family_invite_ttl_minutes: int = 10
+    # 对外短链域名，用于拼邀请链接；生产设为 https://coco.xyfit.top
+    public_base_url: str = "http://127.0.0.1:8000"
+    # 免鉴权预览接口按 IP 限流，避免穷举 8 位码
+    invite_preview_limit_per_hour: int = 30
 
     # 调试：把每次大模型调用写入 llm_traces，供运营后台按用户排查
     llm_trace_enabled: bool = True

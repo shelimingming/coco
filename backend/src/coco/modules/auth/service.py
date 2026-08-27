@@ -5,12 +5,13 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from coco.config import Settings
 from coco.errors import AppError
 from coco.models.auth import AuthSession, PhoneCode, PhoneCodePurpose
+from coco.models.family import Family, FamilyStatus
 from coco.models.user import User, UserRole, UserStatus
 from coco.modules.auth.schemas import (
     AuthSessionResponse,
@@ -238,8 +239,8 @@ class AuthService:
         else:
             if user.status != UserStatus.ACTIVE.value:
                 raise AppError(403, "auth.user_disabled", "账号不可用，请联系支持。")
-            # 已注册用户允许本次登录切换当前角色（家庭绑定后续再约束）
-            user.role = role.value
+            # 已绑定家庭的用户按家庭位置锁定角色，避免点错链接把身份切乱
+            user.role = await self._resolve_login_role(session, user=user, requested=role)
             if display_name and display_name.strip():
                 user.display_name = display_name.strip()
             user.phone_masked = phone_masked
@@ -272,6 +273,27 @@ class AuthService:
             refresh_expires_at=auth_session.expires_at,
             user=self._to_user_response(user),
         )
+
+    async def _resolve_login_role(
+        self, session: AsyncSession, *, user: User, requested: UserRole
+    ) -> str:
+        """已加入 active 家庭则按家庭位置回正角色；未绑定才允许本次切换。"""
+        family = await session.scalar(
+            select(Family).where(
+                Family.status != FamilyStatus.DISSOLVED.value,
+                or_(
+                    Family.parent_user_id == user.id,
+                    Family.child_user_id == user.id,
+                ),
+            )
+        )
+        if family is None or family.status != FamilyStatus.ACTIVE.value:
+            return requested.value
+        if family.parent_user_id == user.id:
+            return UserRole.PARENT.value
+        if family.child_user_id == user.id:
+            return UserRole.CHILD.value
+        return requested.value
 
     @staticmethod
     def _to_user_response(user: User) -> UserResponse:

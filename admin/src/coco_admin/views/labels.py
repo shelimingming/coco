@@ -124,6 +124,18 @@ async def warm_admin_labels(
     return maps
 
 
+def format_invite_code(model: Any, attr: str, request: Request | None = None) -> str:
+    """邀请码永不过期，后台只展示前 3 位，避免整段链接泄露。"""
+    del request
+    raw = getattr(model, attr, None)
+    if not raw:
+        return "—"
+    text = str(raw)
+    if len(text) <= 3:
+        return "***"
+    return f"{text[:3]}…"
+
+
 def format_user_name(model: Any, attr: str, request: Request | None = None) -> str:
     uid = getattr(model, attr, None)
     if uid is None:

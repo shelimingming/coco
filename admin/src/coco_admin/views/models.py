@@ -36,6 +36,7 @@ from coco_admin.views.labels import (
     format_family_label_detail,
     format_reminder_title,
     format_reminder_title_detail,
+    format_invite_code,
     format_user_name,
     format_user_name_detail,
     warm_admin_labels,
@@ -226,8 +227,8 @@ class FamilyAdmin(ReadOnlyModelView, model=Family):
 
 
 class FamilyInviteAdmin(ReadOnlyModelView, model=FamilyInvite):
-    name = "家庭邀请码"
-    name_plural = "家庭邀请码"
+    name = "家庭邀请"
+    name_plural = "家庭邀请"
     icon = "fa-solid fa-ticket"
     category = "核心"
     label_user_attrs = ("inviter_user_id",)
@@ -241,19 +242,21 @@ class FamilyInviteAdmin(ReadOnlyModelView, model=FamilyInvite):
         FamilyInvite.created_at,
     ]
     column_labels = {
-        FamilyInvite.code: "邀请码",
+        FamilyInvite.code: "邀请码（脱敏）",
         FamilyInvite.family_id: "家庭",
         FamilyInvite.inviter_user_id: "邀请人",
-        FamilyInvite.expires_at: "过期时间",
+        FamilyInvite.expires_at: "占位过期",
         FamilyInvite.consumed_at: "使用时间",
         FamilyInvite.created_at: "创建时间",
         FamilyInvite.id: "记录 ID",
     }
     column_formatters = {
+        FamilyInvite.code: format_invite_code,
         FamilyInvite.family_id: format_family_label,
         FamilyInvite.inviter_user_id: format_user_name,
     }
     column_formatters_detail = {
+        FamilyInvite.code: format_invite_code,
         FamilyInvite.family_id: format_family_label_detail,
         FamilyInvite.inviter_user_id: format_user_name_detail,
     }

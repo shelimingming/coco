@@ -26,14 +26,14 @@
         </li>
       </ul>
 
-      <h4>邀请码（最近 {{ aggregate.invites|length }}）</h4>
+      <h4>邀请（最近 {{ aggregate.invites|length }}）</h4>
       <div class="table-responsive mb-3">
         <table class="table table-sm">
-          <thead><tr><th>邀请码</th><th>过期</th><th>已使用</th><th>创建</th></tr></thead>
+          <thead><tr><th>邀请码（脱敏）</th><th>占位过期</th><th>已使用</th><th>创建</th></tr></thead>
           <tbody>
           {% for inv in aggregate.invites %}
             <tr>
-              <td><strong>{{ inv.code }}</strong></td>
+              <td><strong>{{ inv.code[:3] }}…</strong></td>
               <td>{{ inv.expires_at }}</td>
               <td>{{ inv.consumed_at or "未使用" }}</td>
               <td>{{ inv.created_at }}</td>

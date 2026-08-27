@@ -84,6 +84,7 @@ uv run uvicorn coco.main:app --reload --host 127.0.0.1 --port 8000
 
 - 文档：http://127.0.0.1:8000/docs
 - 开发验证码固定为 `246810`（见 `COCO_DEV_SMS_CODE`）
+- 邀请短链对外域名：`COCO_PUBLIC_BASE_URL`（本地默认 `http://127.0.0.1:8000`）
 
 ## 运营管理后台
 

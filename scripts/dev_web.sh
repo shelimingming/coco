@@ -8,6 +8,7 @@
 #   ./scripts/dev_web.sh --reuse-backend  # 端口上已有健康服务时复用
 #   ./scripts/dev_web.sh --api-base URL   # 指定 API 根地址
 #   ./scripts/dev_web.sh --release        # release 模式
+#   ./scripts/dev_web.sh --rebuild-web    # 强制重新 flutter build web（8000 邀请链接用）
 
 set -Eeuo pipefail
 
@@ -27,6 +28,7 @@ RUN_BACKEND=1
 RUN_APP=1
 REUSE_BACKEND=0
 KEEP_BACKEND=0
+REBUILD_WEB=0
 
 BACKEND_STARTED_BY_US=0
 BACKEND_PID=""
@@ -63,6 +65,7 @@ parse_args() {
       --backend-only) RUN_APP=0; shift ;;
       --app-only) RUN_BACKEND=0; shift ;;
       --reuse-backend) REUSE_BACKEND=1; shift ;;
+      --rebuild-web) REBUILD_WEB=1; shift ;;
       --keep-backend) KEEP_BACKEND=1; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "未知参数：$1" "用 --help 查看用法。" ;;
@@ -147,9 +150,26 @@ start_detached() {
   )
 }
 
+ensure_web_build() {
+  # 邀请短链 /i/{code} 302 到 8000/index.html，本地必须把 Flutter Web 构建产物挂到 API 同端口
+  local need_build=0
+  if [[ ! -f "${FRONTEND_DIR}/build/web/index.html" ]]; then
+    need_build=1
+  elif (( REBUILD_WEB )); then
+    need_build=1
+  fi
+  if (( need_build )); then
+    info "构建 Flutter Web（邀请链接 / 8000/index.html 走 build 产物，非 Chrome 热重载）"
+    (cd "${FRONTEND_DIR}" && flutter build web --dart-define=COCO_API_BASE_URL="${API_BASE}") \
+      || die "flutter build web 失败。" "检查 Flutter 环境或网络。"
+  fi
+  export COCO_WEB_STATIC_DIR="${FRONTEND_DIR}/build/web"
+}
+
 start_backend() {
   ensure_env_file
   check_database
+  ensure_web_build
 
   info "同步后端依赖（uv sync）"
   (cd "${BACKEND_DIR}" && uv sync --quiet) || die "uv sync 失败。" "手动执行：cd backend && uv sync"
@@ -210,6 +230,7 @@ run_web_app() {
 
   ok "在 Chrome 上运行 Web（${FLUTTER_MODE}，API=${API_BASE}）"
   dim "麦克风需 localhost/HTTPS；开发验证码见 backend/.env 的 COCO_DEV_SMS_CODE（默认 246810）。"
+  dim "邀请链接走 http://127.0.0.1:${BACKEND_PORT}/i/…（build/web 静态包；改 UI 后执行 ./scripts/dev_web.sh --rebuild-web --backend-only 或 flutter build web）"
   dim "双端同屏演示：在地址栏改开 /presentation.html（长辈 / 子女左右对照）。"
   dim "按 q 退出，r 热重载。"
   cd "${FRONTEND_DIR}"

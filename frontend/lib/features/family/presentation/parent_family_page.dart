@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/network/api_exception.dart';
 import '../../../core/theme/tokens.dart';
@@ -11,8 +12,10 @@ import '../../../core/widgets/coco_scaffold.dart';
 import '../application/family_providers.dart';
 import '../data/family_api.dart';
 import '../domain/models.dart';
+import 'widgets/invite_link_card.dart';
+import 'widgets/unbind_family_button.dart';
 
-/// 父母端：大字邀请码，便于老人念给子女。
+/// 父母端：分享邀请链接给子女，对方点开登录后确认加入。
 class ParentFamilyPage extends ConsumerStatefulWidget {
   const ParentFamilyPage({super.key});
 
@@ -24,6 +27,19 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
   FamilyInvite? _invite;
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureInvite());
+  }
+
+  Future<void> _ensureInvite() async {
+    final family = ref.read(familyInfoProvider).asData?.value;
+    if (family != null && family.isActive) return;
+    if (_invite != null || _busy) return;
+    await _generate();
+  }
 
   Future<void> _generate() async {
     setState(() {
@@ -44,9 +60,23 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
         _busy = false;
         _error = error is ApiException
             ? error.message
-            : '邀请码没生成成功。您可以再试一次，数据没有受影响。';
+            : '邀请链接没准备好。您可以再试一次，数据没有受影响。';
       });
     }
+  }
+
+  Future<void> _share(FamilyInvite invite) async {
+    await SharePlus.instance.share(
+      ShareParams(text: '点开就能加入我的家庭：${invite.inviteUrl}'),
+    );
+  }
+
+  Future<void> _copy(FamilyInvite invite) async {
+    await Clipboard.setData(ClipboardData(text: invite.inviteUrl));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('邀请链接已复制。')));
   }
 
   @override
@@ -69,21 +99,17 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
         ),
         data: (family) {
           if (family != null && family.isActive) {
+            final childName = family.childDisplayName ?? '家人';
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('已经绑定子女', style: theme.textTheme.titleLarge),
                 const SizedBox(height: CocoSpace.s3),
-                Text(
-                  '子女：${family.childDisplayName ?? '家人'}',
-                  style: theme.textTheme.bodyLarge,
-                ),
-                const SizedBox(height: CocoSpace.s2),
-                Text(
-                  '目前每位老人只能绑定一位主要子女。',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: CocoColors.neutral700,
-                  ),
+                Text('子女：$childName', style: theme.textTheme.bodyLarge),
+                const Spacer(),
+                UnbindFamilyButton(
+                  partnerName: childName,
+                  style: UnbindFamilyButtonStyle.parent,
                 ),
               ],
             );
@@ -94,51 +120,25 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '把下面的邀请码告诉子女，让对方在「子女模式」里输入；也可以让子女生成码，您在设置里输入。',
+                '把链接发给子女，对方点开登录后点「加入家庭」即可完成绑定。链接长期有效，绑定成功后自动失效。',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: CocoColors.neutral700,
                 ),
               ),
               const SizedBox(height: CocoSpace.s8),
-              if (invite != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(CocoSpace.s6),
-                  decoration: BoxDecoration(
-                    color: CocoColors.parentPrimarySoft,
-                    borderRadius: BorderRadius.circular(CocoRadius.xl),
+              if (invite != null)
+                InviteLinkCard(
+                  inviteUrl: invite.inviteUrl,
+                  backgroundColor: CocoColors.parentPrimarySoft,
+                  // 父母端字号略大，方便核对链接
+                  urlStyle: theme.textTheme.titleMedium?.copyWith(
+                    color: CocoColors.neutral950,
+                    height: 1.45,
                   ),
-                  child: Column(
-                    children: [
-                      Text(
-                        invite.code,
-                        style: theme.textTheme.displayLarge?.copyWith(
-                          letterSpacing: 8,
-                          fontWeight: FontWeight.w700,
-                          color: CocoColors.neutral950,
-                        ),
-                      ),
-                      const SizedBox(height: CocoSpace.s3),
-                      Text(
-                        '有效至 ${_formatTime(invite.expiresAt)}',
-                        style: theme.textTheme.bodyLarge,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: CocoSpace.s4),
-                CocoSecondaryButton(
-                  label: '复制邀请码',
-                  onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: invite.code));
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('邀请码已复制。')));
-                  },
-                ),
-              ] else
+                )
+              else
                 Text(
-                  '点下面按钮生成邀请码。邀请码 10 分钟内有效。',
+                  '正在准备邀请链接…',
                   style: theme.textTheme.bodyLarge,
                 ),
               if (_error != null) ...[
@@ -152,23 +152,21 @@ class _ParentFamilyPageState extends ConsumerState<ParentFamilyPage> {
               ],
               const Spacer(),
               CocoPrimaryButton(
-                label: invite == null ? '生成邀请码' : '重新生成',
+                label: '分享给子女',
                 loading: _busy,
-                loadingLabel: '正在生成…',
-                onPressed: _generate,
+                loadingLabel: '正在准备…',
+                onPressed: invite == null ? _generate : () => _share(invite),
+              ),
+              const SizedBox(height: CocoSpace.s3),
+              CocoSecondaryButton(
+                label: '复制链接',
+                onPressed: invite == null ? null : () => _copy(invite),
               ),
             ],
           );
         },
       ),
     );
-  }
-
-  String _formatTime(DateTime utc) {
-    final local = utc.toLocal();
-    final h = local.hour.toString().padLeft(2, '0');
-    final m = local.minute.toString().padLeft(2, '0');
-    return '$h:$m';
   }
 }
 
