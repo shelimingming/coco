@@ -41,7 +41,7 @@ from coco.modules.conversations.service import (
 from coco.modules.family.service import get_family
 from coco.modules.memories.service import MemoryService
 from coco.modules.reminders.service import infer_escalation_policy
-from coco.modules.voice.opening import load_opening_brief
+from coco.modules.voice.opening import load_opening_brief  # noqa: F401 — 主动开场恢复时用
 from coco.modules.voice.pending_actions import (
     CONFIRMABLE_KINDS,
     PendingActionStore,
@@ -50,9 +50,9 @@ from coco.modules.voice.pending_actions import (
 )
 from coco.modules.voice.prompts import (
     COCO_REALTIME_COMPANION_PROMPT,
-    OPENING_INJECT_TRIGGER_TEXT,
+    OPENING_INJECT_TRIGGER_TEXT,  # noqa: F401 — 主动开场恢复时用
     build_companion_instructions,
-    build_opening_instructions,
+    build_opening_instructions,  # noqa: F401 — 主动开场恢复时用
 )
 from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
 from coco.observability.llm_trace import (
@@ -205,13 +205,14 @@ async def _load_companion_instructions(user_id: UUID) -> str:
             user_name=name,
             child_name=child_name,
         )
-        # 开场简报失败只丢掉主动开口素材，不影响建连
-        try:
-            brief = await load_opening_brief(session, user=user, settings=settings)
-            return f"{base}\n\n{build_opening_instructions(brief)}"
-        except Exception:
-            logger.warning("load_opening_for_voice_failed user_id=%s", user_id, exc_info=True)
-            return base
+        # 主动开场简报注入 instructions（已临时关闭，恢复时取消注释）
+        # try:
+        #     brief = await load_opening_brief(session, user=user, settings=settings)
+        #     return f"{base}\n\n{build_opening_instructions(brief)}"
+        # except Exception:
+        #     logger.warning("load_opening_for_voice_failed user_id=%s", user_id, exc_info=True)
+        #     return base
+        return base
 
 
 async def create_default_realtime_client(
@@ -418,12 +419,12 @@ async def run_realtime_bridge(
             ),
             name="realtime-vendor-forward",
         )
-        # 先挂起转发再主动开口，避免开场音频在转发启动前被丢掉
-        try:
-            # 百炼要求先有 user message；与识图注入同理，补隐藏触发文本
-            await active_vendor.inject_user_text_and_respond(OPENING_INJECT_TRIGGER_TEXT)
-        except Exception:
-            logger.warning("opening_inject_failed user_id=%s", user_id, exc_info=True)
+        # 主动开场 inject（已临时关闭：须用户先说话，恢复时取消注释）
+        # try:
+        #     # 百炼要求先有 user message；与识图注入同理，补隐藏触发文本
+        #     await active_vendor.inject_user_text_and_respond(OPENING_INJECT_TRIGGER_TEXT)
+        # except Exception:
+        #     logger.warning("opening_inject_failed user_id=%s", user_id, exc_info=True)
         try:
             await _consume_client_events(
                 websocket,

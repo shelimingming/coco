@@ -88,14 +88,15 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   @override
   void initState() {
     super.initState();
-    // 刚进首页：出场动画与自动建连并行；失败才播本地 TTS
+    // 刚进首页：仅出场动画；主动开场已临时关闭，须用户点「说话」后再连
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 通话中从「更多」返回会重新挂载首页；会话还在，不要重播出场和开场白
       if (ref.read(voiceCallControllerProvider).isActive) {
         return;
       }
       _playEntrance();
-      unawaited(_autoStartOrGreet());
+      // 主动 Realtime 开场（已临时关闭，恢复时取消下行注释）
+      // unawaited(_autoStartOrGreet());
     });
   }
 
@@ -125,6 +126,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   }
 
   /// 冷启动自动建连；失败再播本地 TTS 兜底。从子页返回不再自动连。
+  /// 主动开场已临时关闭，当前由用户点「说话」触发 [VoiceCallController.start]。
+  // ignore: unused_element
   Future<void> _autoStartOrGreet() async {
     if (_parentHomeDidAutoStartThisProcess) {
       return;
