@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../core/app/app_version_config.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_safe_area.dart';
 import '../domain/models.dart';
@@ -98,6 +99,13 @@ class RoleSelectionPage extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          // 底部居中展示版本号，便于线上确认是否已发新版
+          Positioned(
+            left: CocoSpace.s6,
+            right: CocoSpace.s6,
+            bottom: CocoSpace.s2 + bottomInset,
+            child: const CocoAppVersionLabel(),
           ),
         ],
       ),
