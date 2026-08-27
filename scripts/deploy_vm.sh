@@ -12,6 +12,7 @@
 #
 # 环境变量（可选）：
 #   COCO_DEPLOY_HOST / COCO_DEPLOY_USER / COCO_DEPLOY_SSH_OPTS / COCO_DEPLOY_IDENTITY
+#   SKIP_SMOKE=1                               # 部署完成后跳过生产门禁
 #
 # 前提：已能 ssh 登录虚机；远端已跑过 ./scripts/setup_vm.sh（或等价首次装机）。
 # 同源部署：Web 使用空 COCO_API_BASE_URL。
@@ -291,6 +292,12 @@ main() {
   ok "部署完成"
   health_hint
   dim "邀请短链：https://coco.xyfit.top/i/{code} → 落地页 /index.html#/invite/{code}"
+
+  # 部署后从本机打公网 HTTPS，验证 Nginx 静态资源与核心 API
+  if [[ "${SKIP_SMOKE:-0}" != "1" ]]; then
+    info "运行生产门禁…"
+    "${SCRIPT_DIR}/smoke_prod.sh" --base-url "https://coco.xyfit.top" || die "生产门禁未通过" "可单独排查：./scripts/smoke_prod.sh"
+  fi
 }
 
 main "$@"

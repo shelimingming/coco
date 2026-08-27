@@ -1,0 +1,11 @@
+{
+  "name": "coco-prod-smoke",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:prod": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}

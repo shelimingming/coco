@@ -159,6 +159,16 @@ HTTPS（`coco.xyfit.top`）：证书放在 `scripts/Nginx/`（已 gitignore）�
 
 需安全组放行 **443**。
 
+部署后会自动跑生产门禁；可跳过或单独执行：
+
+```bash
+./scripts/smoke_prod.sh                    # 对 https://coco.xyfit.top 全量门禁
+./scripts/smoke_prod.sh --skip-browser     # 仅 curl（G01–G14）
+SKIP_SMOKE=1 ./scripts/deploy_vm.sh        # 部署后跳过门禁
+```
+
+浏览器门禁需 Node.js；首次：`cd e2e && npm ci && npx playwright install chromium`。
+
 ## Docker 一体部署（Web + API）
 
 前后端打进同一镜像：FastAPI 提供 `/v1`、`/health`，并托管 Flutter Web。数据库用**外部 Postgres**。
