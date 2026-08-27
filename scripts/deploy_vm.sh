@@ -183,6 +183,23 @@ sync_backend() {
   ok "后端已同步"
 }
 
+remote_ensure_invite_env() {
+  # 邀请链接拼进分享文案，必须是公网 HTTPS 域名
+  info "远端：校验邀请短链域名 COCO_PUBLIC_BASE_URL"
+  ssh_cmd "bash -s" <<'EOF'
+set -Eeuo pipefail
+ENV_FILE=/opt/coco/.env
+PUBLIC=https://coco.xyfit.top
+if grep -q '^COCO_PUBLIC_BASE_URL=' "$ENV_FILE" 2>/dev/null; then
+  sed -i "s|^COCO_PUBLIC_BASE_URL=.*|COCO_PUBLIC_BASE_URL=${PUBLIC}|" "$ENV_FILE"
+else
+  echo "COCO_PUBLIC_BASE_URL=${PUBLIC}" >>"$ENV_FILE"
+fi
+grep '^COCO_PUBLIC_BASE_URL=' "$ENV_FILE"
+EOF
+  ok "邀请短链域名已设为 https://coco.xyfit.top"
+}
+
 remote_backend_apply() {
   info "远端：依赖 / 迁移 / 重启"
   local remote_script
@@ -265,6 +282,7 @@ main() {
 
   if (( DEPLOY_BACKEND )); then
     sync_backend
+    remote_ensure_invite_env
     remote_backend_apply
   elif (( DEPLOY_WEB )); then
     remote_restart_only
@@ -272,6 +290,7 @@ main() {
 
   ok "部署完成"
   health_hint
+  dim "邀请短链：https://coco.xyfit.top/i/{code} → 落地页 /index.html#/invite/{code}"
 }
 
 main "$@"

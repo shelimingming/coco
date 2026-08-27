@@ -134,6 +134,7 @@ lines = [
     "COCO_OTP_MAX_ATTEMPTS=5",
     "COCO_OTP_REQUEST_LIMIT_PER_HOUR=20",
     "COCO_CORS_ALLOWED_ORIGINS=*",
+    "COCO_PUBLIC_BASE_URL=https://coco.xyfit.top",
     "COCO_WEB_STATIC_DIR=/opt/coco/web",
     f"COCO_ALIYUN_API_KEY={key}",
     "COCO_ALIYUN_REGION=cn-beijing",
