@@ -2,6 +2,7 @@
 
 提醒/分享写操作须带 user_confirmed；false 时不落库并返回 need_confirmation。
 用户主动要求记住时用 save_memory 写入显式表；通话中可用 recall_memory 检索。
+时效问答用 web_search（只读联网），不走确认大卡。
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from coco.modules.care.service import CareService
 from coco.modules.memories.service import MemoryService
 from coco.modules.reminders.schemas import OccurrenceRespondRequest, ReminderCreateRequest
 from coco.modules.reminders.service import ReminderService
+from coco.providers.qwen_text import search_or_unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +137,27 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "web_search",
+            "description": (
+                "联网查询实时信息：天气、新闻、时间敏感常识等。"
+                "闲聊回忆、提醒、记忆、看图不要用；不要编造，必须等工具结果再口头回答。"
+                "查到的天气/新闻只口述，不要因此追问或分享给家人。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "自然语言检索句，如「北京今天天气」「今天国内主要新闻」",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "share_to_child",
             "description": (
                 "把一两句关怀摘要分享给已绑定子女。仅在陪伴追问后关键事实已清楚、"
@@ -193,8 +216,7 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "close_vision_image",
             "description": (
-                "用户说关掉照片、不用看了、看完了时调用。"
-                "只结束看图，不要结束语音陪伴。"
+                "用户说关掉照片、不用看了、看完了时调用。只结束看图，不要结束语音陪伴。"
             ),
             "parameters": {
                 "type": "object",
@@ -313,6 +335,33 @@ async def dispatch_voice_tool(
                     "status": "ok",
                     "query": query,
                     "memories": [{"id": m.id, "content": m.content} for m in items],
+                }
+            )
+
+        if name == "web_search":
+            # A0 只读：服务端 enable_search 取数，Realtime 再口语播报
+            query = str(arguments.get("query", "")).strip()
+            result = await search_or_unavailable(
+                api_key=settings.aliyun_api_key,
+                model=settings.text_model,
+                query=query,
+                enabled=settings.web_search_enabled,
+                base_url=settings.aliyun_compatible_base_url,
+                timeout_seconds=settings.web_search_timeout_seconds,
+            )
+            if result.status == "ok":
+                return _serialize(
+                    {
+                        "status": "ok",
+                        "query": result.query,
+                        "answer": result.answer,
+                    }
+                )
+            return _serialize(
+                {
+                    "status": "error",
+                    "query": result.query,
+                    "message": result.message or "刚才联网没查到，您可以过会儿再问。",
                 }
             )
 

@@ -14,6 +14,7 @@ from pydantic import SecretStr
 from coco.observability.llm_trace import (
     PURPOSE_TEXT_TITLE,
     PURPOSE_TEXT_TRANSLATE,
+    PURPOSE_TEXT_WEB_SEARCH,
     record_llm_trace,
     usage_from_openai,
 )
@@ -40,8 +41,20 @@ _TITLE_SYSTEM = """
 4. 只输出标题本身，不要引号、标点装饰或解释。
 """.strip()
 
+# 语音 web_search：联网后整理成可口述的短答，供 Realtime 播报
+_WEB_SEARCH_SYSTEM = """
+你是可可的联网助手，根据实时检索结果回答老人的问题。
+规则：
+1. 只用中文，口语化，2～4 句，方便别人朗读；不要列表、不要长链接、不要角标。
+2. 优先给事实：天气说冷暖与是否下雨；新闻说一两件大事即可。
+3. 若检索不到或不确定，诚实说「暂时没查到」或「信息不够准」，不要编造。
+4. 禁止医疗诊断、药量/处方建议、投资买卖建议、虚假救援承诺。
+5. 只输出可直接口述的正文，不要解释「我搜索了」或加标题。
+""".strip()
+
 _TITLE_MAX_LEN = 16
 _FALLBACK_TITLE_MAX = 24
+_WEB_SEARCH_UNAVAILABLE = "暂时查不了网上的消息，您可以过会儿再问。"
 
 # 模型偶发冒充子女：句首喊爸妈，或用「我…」开场
 _PARENT_ADDRESS_RE = re.compile(r"^(妈|爸|妈妈|爸爸|爹|娘|母亲|父亲)[，,！!、]")
@@ -58,6 +71,16 @@ class TranslateResult:
 class TitleResult:
     title: str
     generated: bool
+
+
+@dataclass(slots=True)
+class WebSearchResult:
+    """语音联网工具结果；status=ok 时 answer 可口述。"""
+
+    status: str
+    query: str
+    answer: str = ""
+    message: str = ""
 
 
 class QwenTextClient:
@@ -81,8 +104,9 @@ class QwenTextClient:
         user: str,
         temperature: float,
         purpose: str,
+        extra_body: dict[str, object] | None = None,
     ) -> str:
-        payload = {
+        payload: dict[str, object] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
@@ -90,6 +114,9 @@ class QwenTextClient:
             ],
             "temperature": temperature,
         }
+        # 百炼非 OpenAI 标准字段（如 enable_search）平铺进 JSON
+        if extra_body:
+            payload.update(extra_body)
         headers = {
             "Authorization": f"Bearer {self._api_key.get_secret_value()}",
             "Content-Type": "application/json",
@@ -112,13 +139,20 @@ class QwenTextClient:
             if not isinstance(content, str) or not content.strip():
                 raise RuntimeError("文本模型返回空内容")
             text = content.strip()
+            # 联网请求体可能含长检索痕迹，落库只保留问句与摘要，避免日志膨胀
+            request_for_trace: dict[str, object] = {
+                "model": self.model,
+                "purpose": purpose,
+                "user": user,
+                "enable_search": bool(extra_body and extra_body.get("enable_search")),
+            }
             await record_llm_trace(
                 purpose=purpose,
                 modality="text",
                 model=self.model,
                 status="ok",
                 latency_ms=int((time.perf_counter() - t0) * 1000),
-                request_json=payload,
+                request_json=request_for_trace if extra_body else payload,
                 response_json={"content": text},
                 usage_json=usage_from_openai(data),
                 started_at=started,
@@ -131,7 +165,7 @@ class QwenTextClient:
                 model=self.model,
                 status="error",
                 latency_ms=int((time.perf_counter() - t0) * 1000),
-                request_json=payload,
+                request_json=payload if not extra_body else {"model": self.model, "user": user},
                 error_message=str(exc),
                 started_at=started,
             )
@@ -167,6 +201,30 @@ class QwenTextClient:
             purpose=PURPOSE_TEXT_TITLE,
         )
         return TitleResult(title=sanitize_conversation_title(content), generated=True)
+
+    async def search_and_summarize(self, query: str) -> WebSearchResult:
+        """强制联网检索并用口语摘要；供语音 web_search 工具调用。"""
+        cleaned = query.strip()
+        if not cleaned:
+            return WebSearchResult(
+                status="error",
+                query="",
+                message="没有听清要查什么，您可以再说一次。",
+            )
+        content = await self._chat(
+            system=_WEB_SEARCH_SYSTEM,
+            user=f"请根据联网检索结果回答：{cleaned}",
+            temperature=0.3,
+            purpose=PURPOSE_TEXT_WEB_SEARCH,
+            extra_body={
+                "enable_search": True,
+                "search_options": {
+                    "forced_search": True,
+                    "search_strategy": "turbo",
+                },
+            },
+        )
+        return WebSearchResult(status="ok", query=cleaned, answer=content)
 
 
 def looks_like_child_first_person(text: str) -> bool:
@@ -282,3 +340,51 @@ async def title_or_fallback(
     except Exception:
         logger.warning("conversation_title_failed", exc_info=True)
         return TitleResult(title=fallback, generated=False)
+
+
+async def search_or_unavailable(
+    *,
+    api_key: SecretStr | None,
+    model: str,
+    query: str,
+    enabled: bool = True,
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    timeout_seconds: float = 30.0,
+) -> WebSearchResult:
+    """语音联网搜索；开关关闭、无 Key 或调用失败时返回可口述的降级文案。"""
+    cleaned = query.strip()
+    if not cleaned:
+        return WebSearchResult(
+            status="error",
+            query="",
+            message="没有听清要查什么，您可以再说一次。",
+        )
+    if not enabled or api_key is None or not api_key.get_secret_value().strip():
+        await record_llm_trace(
+            purpose=PURPOSE_TEXT_WEB_SEARCH,
+            modality="text",
+            model=model,
+            status="skipped",
+            request_json={"query": cleaned},
+            error_message="联网搜索未启用或未配置 API Key",
+        )
+        return WebSearchResult(
+            status="error",
+            query=cleaned,
+            message=_WEB_SEARCH_UNAVAILABLE,
+        )
+    try:
+        client = QwenTextClient(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+        )
+        return await client.search_and_summarize(cleaned)
+    except Exception:
+        logger.warning("web_search_failed", exc_info=True)
+        return WebSearchResult(
+            status="error",
+            query=cleaned,
+            message=_WEB_SEARCH_UNAVAILABLE,
+        )

@@ -13,6 +13,7 @@ from coco.config import Settings
 from coco.models.user import User, UserRole, UserStatus
 from coco.modules.memories.schemas import MemoryResponse
 from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
+from coco.providers.qwen_text import WebSearchResult, search_or_unavailable
 
 
 def _parent() -> User:
@@ -145,6 +146,75 @@ async def test_unknown_tool_returns_error() -> None:
     payload = json.loads(result)
     assert payload["status"] == "error"
 
+
+
+@pytest.mark.asyncio
+async def test_web_search_ok() -> None:
+    settings = Settings(_env_file=None, environment="test")
+    session = MagicMock()
+    parent = _parent()
+
+    with patch("coco.modules.voice.tools.search_or_unavailable", new_callable=AsyncMock) as search:
+        search.return_value = WebSearchResult(
+            status="ok",
+            query="北京今天天气",
+            answer="今天北京多云，大约二十度。",
+        )
+        result = await dispatch_voice_tool(
+            session=session,
+            settings=settings,
+            user=parent,
+            name="web_search",
+            arguments={"query": "北京今天天气"},
+        )
+
+    payload = json.loads(result)
+    assert payload["status"] == "ok"
+    assert payload["query"] == "北京今天天气"
+    assert "二十度" in payload["answer"]
+    search.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_web_search_error_degrades() -> None:
+    settings = Settings(_env_file=None, environment="test", web_search_enabled=False)
+    session = MagicMock()
+
+    with patch("coco.modules.voice.tools.search_or_unavailable", new_callable=AsyncMock) as search:
+        search.return_value = WebSearchResult(
+            status="error",
+            query="今天新闻",
+            message="暂时查不了网上的消息，您可以过会儿再问。",
+        )
+        result = await dispatch_voice_tool(
+            session=session,
+            settings=settings,
+            user=_parent(),
+            name="web_search",
+            arguments={"query": "今天新闻"},
+        )
+
+    payload = json.loads(result)
+    assert payload["status"] == "error"
+    assert "查不了" in payload["message"] or "没查到" in payload["message"]
+
+
+def test_web_search_tool_registered() -> None:
+    names = [item["function"]["name"] for item in VOICE_TOOL_DEFINITIONS]
+    assert "web_search" in names
+
+
+@pytest.mark.asyncio
+async def test_search_or_unavailable_when_disabled() -> None:
+    result = await search_or_unavailable(
+        api_key=None,
+        model="qwen-plus",
+        query="北京天气",
+        enabled=False,
+    )
+    assert result.status == "error"
+    assert result.query == "北京天气"
+    assert "查不了" in result.message
 
 
 def test_vision_tools_are_registered() -> None:

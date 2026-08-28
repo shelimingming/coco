@@ -51,8 +51,11 @@ class Settings(BaseSettings):
     aliyun_region: Literal["cn-beijing", "ap-southeast-1"] = "cn-beijing"
     realtime_model: str = "qwen-audio-3.0-realtime-plus"
     realtime_voice: str = "longanqian"
-    # 文本模型：报平安转译、会话标题等无状态请求
+    # 文本模型：报平安转译、会话标题、语音联网搜索等无状态请求
     text_model: str = "qwen-plus"
+    # 语音 web_search：走文本模型 enable_search；关或无 Key 时工具降级话术
+    web_search_enabled: bool = True
+    web_search_timeout_seconds: float = 30.0
     # 识图模型：须支持 Image 输入；qwen-plus 纯文本不可用
     vision_model: str = "qwen3.7-plus"
     # 识图追问外壳：独立 ASR / TTS（非 Realtime）

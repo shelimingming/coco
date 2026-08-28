@@ -70,6 +70,11 @@ def tool_display_summary(tool_name: str, arguments: dict[str, Any], result: dict
         # 旧通话可能仍有读记忆工具记录
         return "可可查看了你记住的事"
 
+    if tool_name == "web_search":
+        if status == "error":
+            return "可可没查到网上的消息"
+        return "可可查了网上的消息"
+
     if tool_name == "share_to_child":
         summary = str(arguments.get("summary") or result.get("summary") or "").strip()
         if need_confirm:

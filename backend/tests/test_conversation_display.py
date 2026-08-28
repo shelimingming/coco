@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from coco.modules.conversations.service import should_list_in_history, tool_display_summary
 from coco.models.conversation import ConversationItemKind
+from coco.modules.conversations.service import should_list_in_history, tool_display_summary
 
 
 def test_save_memory_summary_compat() -> None:
@@ -68,4 +68,13 @@ def test_share_to_child_summary() -> None:
             {"status": "need_confirmation"},
         )
         == "还在问你要不要告诉家人：今天精神不错"
+    )
+
+
+def test_web_search_summary() -> None:
+    assert tool_display_summary("web_search", {"query": "北京天气"}, {"status": "ok"}) == (
+        "可可查了网上的消息"
+    )
+    assert tool_display_summary("web_search", {"query": "新闻"}, {"status": "error"}) == (
+        "可可没查到网上的消息"
     )

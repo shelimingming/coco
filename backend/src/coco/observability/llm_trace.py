@@ -28,6 +28,7 @@ PURPOSE_VISION_FOLLOW_UP = "vision_follow_up"
 PURPOSE_VISION_INJECT = "vision_inject"
 PURPOSE_TEXT_TITLE = "text_title"
 PURPOSE_TEXT_TRANSLATE = "text_translate"
+PURPOSE_TEXT_WEB_SEARCH = "text_web_search"
 PURPOSE_MEM0_EXTRACT = "mem0_extract"
 PURPOSE_MEM0_SEARCH = "mem0_search"
 
