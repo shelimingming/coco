@@ -90,7 +90,7 @@ class LookState {
   bool get isBusy =>
       phase == LookPhase.initialAnalyzing || phase == LookPhase.reAnalyzing;
 
-  /// 扫描框只在分析中出现
+  /// 扫描特效只在初次看 / 复看分析中出现
   bool get showScanBrackets =>
       phase == LookPhase.initialAnalyzing || phase == LookPhase.reAnalyzing;
 

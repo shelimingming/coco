@@ -12,8 +12,10 @@
 #
 # 环境变量（可选）：
 #   COCO_DEPLOY_HOST / COCO_DEPLOY_USER / COCO_DEPLOY_SSH_OPTS / COCO_DEPLOY_IDENTITY
+#   COCO_DEPLOY_PASSWORD                       # 密码登录（优先读 scripts/coco-vm.credentials）
 #   SKIP_SMOKE=1                               # 部署完成后跳过生产门禁
 #
+# 本地凭据文件（gitignore）：scripts/coco-vm.credentials
 # 前提：已能 ssh 登录虚机；远端已跑过 ./scripts/setup_vm.sh（或等价首次装机）。
 # 同源部署：Web 使用空 COCO_API_BASE_URL。
 
@@ -24,20 +26,35 @@ ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_DIR="${ROOT_DIR}/backend"
 FRONTEND_DIR="${ROOT_DIR}/frontend"
 
+# 本地凭据：主机 / 用户 / 密码（勿提交）
+CREDENTIALS_FILE="${SCRIPT_DIR}/coco-vm.credentials"
+if [[ -f "${CREDENTIALS_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${CREDENTIALS_FILE}"
+fi
+
 DEPLOY_HOST="${COCO_DEPLOY_HOST:-106.13.110.85}"
 DEPLOY_USER="${COCO_DEPLOY_USER:-root}"
+DEPLOY_PASSWORD="${COCO_DEPLOY_PASSWORD:-}"
 # 虚机对外端口（Nginx 监听 80，反代本机 8000）
 DEPLOY_PORT="${COCO_DEPLOY_PORT:-80}"
 DEFAULT_IDENTITY="${SCRIPT_DIR}/coco-vm.key"
 DEPLOY_IDENTITY="${COCO_DEPLOY_IDENTITY:-}"
-if [[ -z "${DEPLOY_IDENTITY}" && -f "${DEFAULT_IDENTITY}" ]]; then
-  DEPLOY_IDENTITY="${DEFAULT_IDENTITY}"
+# 有密码时优先密码登录，避免失效私钥拖垮握手
+if [[ -z "${DEPLOY_PASSWORD}" ]]; then
+  if [[ -z "${DEPLOY_IDENTITY}" && -f "${DEFAULT_IDENTITY}" ]]; then
+    DEPLOY_IDENTITY="${DEFAULT_IDENTITY}"
+  fi
 fi
 SSH_OPTS="${COCO_DEPLOY_SSH_OPTS:--o StrictHostKeyChecking=accept-new}"
-if [[ -n "${DEPLOY_IDENTITY}" ]]; then
+if [[ -n "${DEPLOY_PASSWORD}" ]]; then
+  SSH_OPTS="${SSH_OPTS} -o PreferredAuthentications=password -o PubkeyAuthentication=no"
+elif [[ -n "${DEPLOY_IDENTITY}" ]]; then
   SSH_OPTS="${SSH_OPTS} -i ${DEPLOY_IDENTITY}"
 fi
 REMOTE_ROOT="/opt/coco"
+# 1=使用 sshpass -e；0=直接 ssh（密码走 SSH_ASKPASS 或密钥）
+USE_SSHPASS=0
 
 DEPLOY_BACKEND=1
 DEPLOY_WEB=1
@@ -89,19 +106,48 @@ parse_args() {
 
 ssh_cmd() {
   # shellcheck disable=SC2086
-  ssh ${SSH_OPTS} "${DEPLOY_USER}@${DEPLOY_HOST}" "$@"
+  if (( USE_SSHPASS )); then
+    sshpass -e ssh ${SSH_OPTS} "${DEPLOY_USER}@${DEPLOY_HOST}" "$@"
+  else
+    ssh ${SSH_OPTS} "${DEPLOY_USER}@${DEPLOY_HOST}" "$@"
+  fi
 }
 
 rsync_to() {
-  local src="$1" dest="$2"
+  local src="$1" dest="$2" remote_shell
   shift 2
+  if (( USE_SSHPASS )); then
+    remote_shell="sshpass -e ssh ${SSH_OPTS}"
+  else
+    remote_shell="ssh ${SSH_OPTS}"
+  fi
   # shellcheck disable=SC2086
-  rsync -az --delete "$@" -e "ssh ${SSH_OPTS}" "${src}" "${DEPLOY_USER}@${DEPLOY_HOST}:${dest}"
+  rsync -az --delete "$@" -e "${remote_shell}" "${src}" "${DEPLOY_USER}@${DEPLOY_HOST}:${dest}"
 }
 
 need_cmds() {
   command -v rsync >/dev/null || die "需要 rsync。"
   command -v ssh >/dev/null || die "需要 ssh。"
+  if [[ -n "${DEPLOY_PASSWORD}" ]]; then
+    export SSHPASS="${DEPLOY_PASSWORD}"
+    if command -v sshpass >/dev/null; then
+      USE_SSHPASS=1
+    else
+      # macOS 无 sshpass 时用 SSH_ASKPASS 喂密码
+      local askpass
+      askpass="$(mktemp "${TMPDIR:-/tmp}/coco-askpass.XXXXXX")"
+      cat >"${askpass}" <<'EOF'
+#!/bin/sh
+echo "$SSHPASS"
+EOF
+      chmod 700 "${askpass}"
+      export SSH_ASKPASS="${askpass}"
+      export SSH_ASKPASS_REQUIRE=force
+      export DISPLAY="${DISPLAY:-:0}"
+      trap 'rm -f "${SSH_ASKPASS:-}"' EXIT
+      USE_SSHPASS=0
+    fi
+  fi
   if (( DEPLOY_WEB )); then
     command -v flutter >/dev/null || die "需要 flutter（本机构建 Web）。"
   fi

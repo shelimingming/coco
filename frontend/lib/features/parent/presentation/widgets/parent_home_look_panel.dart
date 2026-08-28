@@ -227,17 +227,9 @@ class _PhotoFrame extends StatelessWidget {
               ),
             ),
           ),
+          // 初次看 / 复看：四角框 + 扫光带，提示可可正在读图
           if (showScanBrackets)
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _CornerBracketsPainter(
-                  color: CocoColors.white,
-                  length: ParentHomeLookPanel._cornerLen,
-                  stroke: ParentHomeLookPanel._cornerStroke,
-                  inset: ParentHomeLookPanel._cornerInset,
-                ),
-              ),
-            ),
+            const Positioned.fill(child: _LookScanOverlay()),
           if (showCaption && captionEntries.isNotEmpty)
             Positioned(
               left: CocoSpace.s3,
@@ -249,6 +241,58 @@ class _PhotoFrame extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// 识图中的扫描特效：四角定位框 + 自上而下循环扫光。
+class _LookScanOverlay extends StatefulWidget {
+  const _LookScanOverlay();
+
+  @override
+  State<_LookScanOverlay> createState() => _LookScanOverlayState();
+}
+
+class _LookScanOverlayState extends State<_LookScanOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    // 约 2.2s 一轮，偏从容，避免医疗仪那种急促扫光
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(CocoRadius.lg - 1),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _LookScanPainter(
+              progress: _controller.value,
+              bracketColor: CocoColors.white,
+              scanColor: CocoColors.parentPrimarySoft,
+              lineColor: CocoColors.white,
+              length: ParentHomeLookPanel._cornerLen,
+              stroke: ParentHomeLookPanel._cornerStroke,
+              inset: ParentHomeLookPanel._cornerInset,
+            ),
+          );
+        },
       ),
     );
   }
@@ -310,30 +354,92 @@ class _CurrentRoundCaption extends StatelessWidget {
   }
 }
 
-class _CornerBracketsPainter extends CustomPainter {
-  const _CornerBracketsPainter({
-    required this.color,
+class _LookScanPainter extends CustomPainter {
+  const _LookScanPainter({
+    required this.progress,
+    required this.bracketColor,
+    required this.scanColor,
+    required this.lineColor,
     required this.length,
     required this.stroke,
     required this.inset,
   });
 
-  final Color color;
+  final double progress;
+  final Color bracketColor;
+  final Color scanColor;
+  final Color lineColor;
   final double length;
   final double stroke;
   final double inset;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
+    // 轻量暗角，让扫光与四角更易辨认，不遮住主体内容
+    final veil = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          CocoColors.neutral950.withValues(alpha: 0.12),
+          CocoColors.neutral950.withValues(alpha: 0.04),
+          CocoColors.neutral950.withValues(alpha: 0.12),
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, veil);
+
+    final bandHeight = size.height * 0.14;
+    final travel = size.height + bandHeight;
+    final top = progress * travel - bandHeight;
+    final bandRect = Rect.fromLTWH(0, top, size.width, bandHeight);
+
+    final bandPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          scanColor.withValues(alpha: 0.0),
+          scanColor.withValues(alpha: 0.35),
+          lineColor.withValues(alpha: 0.85),
+          scanColor.withValues(alpha: 0.28),
+          scanColor.withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+      ).createShader(bandRect);
+    canvas.drawRect(bandRect, bandPaint);
+
+    // 扫光前沿细线，增强「正在扫过」的方向感
+    final lineY = top + bandHeight * 0.5;
+    if (lineY >= 0 && lineY <= size.height) {
+      final linePaint = Paint()
+        ..color = lineColor.withValues(alpha: 0.9)
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(
+        Offset(inset * 0.6, lineY),
+        Offset(size.width - inset * 0.6, lineY),
+        linePaint,
+      );
+    }
+
+    final bracketPaint = Paint()
+      ..color = bracketColor
       ..strokeWidth = stroke
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
     void corner(double x, double y, double dx, double dy) {
-      canvas.drawLine(Offset(x, y), Offset(x + dx * length, y), paint);
-      canvas.drawLine(Offset(x, y), Offset(x, y + dy * length), paint);
+      canvas.drawLine(
+        Offset(x, y),
+        Offset(x + dx * length, y),
+        bracketPaint,
+      );
+      canvas.drawLine(
+        Offset(x, y),
+        Offset(x, y + dy * length),
+        bracketPaint,
+      );
     }
 
     corner(inset, inset, 1, 1);
@@ -343,8 +449,11 @@ class _CornerBracketsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _CornerBracketsPainter oldDelegate) {
-    return oldDelegate.color != color ||
+  bool shouldRepaint(covariant _LookScanPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.bracketColor != bracketColor ||
+        oldDelegate.scanColor != scanColor ||
+        oldDelegate.lineColor != lineColor ||
         oldDelegate.length != length ||
         oldDelegate.stroke != stroke ||
         oldDelegate.inset != inset;

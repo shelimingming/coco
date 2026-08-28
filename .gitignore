@@ -19,8 +19,9 @@
 docker.env
 Nginx/
 
-# 虚机 SSH 私钥（勿提交）
+# 虚机 SSH 私钥 / 密码（勿提交）
 scripts/coco-vm.key
+scripts/coco-vm.credentials
 scripts/*.pem
 scripts/coco-k-*.txt
 
