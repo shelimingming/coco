@@ -220,7 +220,30 @@ class QwenAudioRealtimeClient:
             }
         )
 
+    async def apply_vision_context(
+        self,
+        *,
+        scene_description: str,
+        source: str | None = None,
+    ) -> None:
+        """只替换 instructions 里的照片块，不立刻开口（重识图后由工具 follow-up 开口）。"""
+        from coco.modules.voice.prompts import merge_instructions_with_vision
+
+        base = self._base_instructions or self.session.instructions
+        merged = merge_instructions_with_vision(
+            base,
+            scene_description,
+            source=source,
+        )
+        await self.update_instructions(merged)
+
+    async def clear_vision_context(self) -> None:
+        """去掉照片块，回到建连时的陪伴基线。"""
+        base = (self._base_instructions or "").strip()
+        await self.update_instructions(base)
+
     async def inject_vision_context_and_respond(
+
         self,
         *,
         scene_description: str,

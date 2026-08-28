@@ -33,4 +33,29 @@ void main() {
     );
     expect(state.displayTranscript.single.text, '我想喝水');
   });
+
+  test('看图字幕只取最近一轮用户话和可可回复', () {
+    const state = VoiceCallState(
+      phase: VoiceCallPhase.speaking,
+      assistantCaption: '这是向日葵',
+      transcript: [
+        VoiceCallTranscriptEntry(
+          role: VoiceCallTranscriptRole.user,
+          text: '你好',
+        ),
+        VoiceCallTranscriptEntry(
+          role: VoiceCallTranscriptRole.assistant,
+          text: '您好呀',
+        ),
+        VoiceCallTranscriptEntry(
+          role: VoiceCallTranscriptRole.user,
+          text: '这是什么花',
+        ),
+      ],
+    );
+    expect(
+      state.currentRoundEntries.map((e) => e.text).toList(),
+      ['这是什么花', '这是向日葵'],
+    );
+  });
 }

@@ -20,7 +20,7 @@ from coco.models.conversation import (
     ConversationStatus,
 )
 from coco.models.user import User, UserRole
-from coco.modules.vision.image_cache import look_image_cache
+from coco.modules.vision.image_cache import look_image_cache, normalize_question_key
 from coco.modules.vision.schemas import LookFollowUpResponse, LookResponse
 from coco.observability.llm_trace import (
     PURPOSE_VISION_FOLLOW_UP,
@@ -105,6 +105,7 @@ class VisionService:
                 conversation_id,
                 image_bytes=image_bytes,
                 mime=mime,
+                observation=result.scene_description,
             )
         return LookResponse(
             confidence=result.confidence,
@@ -181,6 +182,99 @@ class VisionService:
         )
         await session.commit()
         return LookFollowUpResponse(reply_text=reply, conversation_id=conversation_id)
+
+    async def re_analyze(
+        self,
+        session: AsyncSession,
+        *,
+        user: User,
+        conversation_id: UUID,
+        question: str,
+    ) -> LookResponse:
+        """按当前问题再看原图；同一问只重识一次，新证据追加到临时观察。"""
+        if user.role != UserRole.PARENT.value:
+            raise AppError(403, "auth.role_required", "只有老人模式可以使用帮我看看。")
+
+        cleaned = question.strip()
+        if not cleaned:
+            raise AppError(400, "vision.empty_question", "请先说想问什么。")
+
+        conversation = await session.get(Conversation, conversation_id)
+        if (
+            conversation is None
+            or conversation.user_id != user.id
+            or conversation.channel != ConversationChannel.LOOK.value
+        ):
+            raise AppError(
+                404,
+                "vision.conversation_not_found",
+                "找不到这次看图记录。请重新拍一张。",
+            )
+
+        cached = look_image_cache.get(conversation_id)
+        if cached is None:
+            raise AppError(
+                410,
+                "vision.image_expired",
+                "这张图过期了。请重新拍一张，再继续问。",
+            )
+
+        question_key = normalize_question_key(cleaned)
+        existing = (cached.accumulated_observation or "").strip()
+        # 同一问题已重识过：直接返回已有观察，避免反复花钱、编造细节
+        if question_key in cached.reanalyzed_keys:
+            return LookResponse(
+                confidence="high" if existing else "low",
+                headline="",
+                detail=existing or "我再看也还是看不太清。",
+                safety_note="",
+                scene_description=existing,
+                conversation_id=conversation_id,
+            )
+
+        tokens = bind_llm_trace(user_id=user.id, conversation_id=conversation_id)
+        try:
+            result = await self._call_model(
+                image_bytes=cached.image_bytes,
+                mime=cached.mime,
+                question=cleaned,
+            )
+        finally:
+            reset_llm_trace(tokens)
+
+        merged = _merge_observation(existing, result.scene_description)
+        look_image_cache.remember_reanalyze(
+            conversation_id,
+            question_key=question_key,
+            observation=merged,
+        )
+
+        next_seq = await self._next_seq(session, conversation_id=conversation_id)
+        session.add(
+            ConversationItem(
+                conversation_id=conversation_id,
+                seq=next_seq,
+                kind=ConversationItemKind.USER.value,
+                text=cleaned,
+            )
+        )
+        session.add(
+            ConversationItem(
+                conversation_id=conversation_id,
+                seq=next_seq + 1,
+                kind=ConversationItemKind.ASSISTANT.value,
+                text=_spoken_from_look(result),
+            )
+        )
+        await session.commit()
+        return LookResponse(
+            confidence=result.confidence,
+            headline=result.headline,
+            detail=result.detail,
+            safety_note=result.safety_note,
+            scene_description=merged,
+            conversation_id=conversation_id,
+        )
 
     async def _call_model(
         self,
@@ -372,6 +466,20 @@ class VisionService:
         )
         current = int(result.scalar_one())
         return current + 1
+
+
+
+def _merge_observation(existing: str, addition: str) -> str:
+    """把新一轮读图追加到临时观察；新证据放后面，关图后整段丢弃。"""
+    old = (existing or "").strip()
+    extra = (addition or "").strip()
+    if not extra:
+        return old
+    if not old:
+        return extra
+    if extra in old:
+        return old
+    return f"{old}\n\n【补充观察】\n{extra}"
 
 
 def _spoken_from_look(result: LookResult) -> str:

@@ -1,15 +1,18 @@
 import 'dart:typed_data';
 
-/// 看一看取图/识图阶段；追问已并入 Realtime 语音，不再本地听/说。
+/// 看一看取图/识图阶段；照片在关图前一直留在首页。
 enum LookPhase {
   /// 未选图或已清空
   idle,
 
-  /// 上传识图中
-  analyzing,
+  /// 首轮上传识图中
+  initialAnalyzing,
 
-  /// 识图成功，待注入语音（短暂态；首页会立刻交接）
-  ready,
+  /// 照片常驻，可追问
+  viewing,
+
+  /// 服务端按当前问题重新识图
+  reAnalyzing,
 
   /// 出错（识图 / 权限等）
   error,
@@ -20,6 +23,7 @@ enum LookSource { camera, screenshot, album }
 
 extension LookSourceX on LookSource {
   /// 首轮识图默认问题，传给 POST /v1/vision/look 的 question 字段。
+
   String get defaultQuestion => switch (this) {
     LookSource.camera => '请帮我看看这是什么、上面写了什么。',
     LookSource.screenshot => '请帮我看看这条消息在说什么，有没有需要小心的地方。',
@@ -75,17 +79,31 @@ class LookState {
 
   bool get hasImage => imageBytes != null && imageBytes!.isNotEmpty;
 
-  bool get isBusy => phase == LookPhase.analyzing;
+  /// 正在占用中间区的看图会话（含失败但图还在）
+  bool get isVisualSession =>
+      hasImage &&
+      (phase == LookPhase.initialAnalyzing ||
+          phase == LookPhase.viewing ||
+          phase == LookPhase.reAnalyzing ||
+          phase == LookPhase.error);
+
+  bool get isBusy =>
+      phase == LookPhase.initialAnalyzing || phase == LookPhase.reAnalyzing;
+
+  /// 扫描框只在分析中出现
+  bool get showScanBrackets =>
+      phase == LookPhase.initialAnalyzing || phase == LookPhase.reAnalyzing;
 
   /// 可交给语音的读图结果
   bool get canInject =>
-      phase == LookPhase.ready && sceneDescription.trim().isNotEmpty;
+      phase == LookPhase.viewing && sceneDescription.trim().isNotEmpty;
 
   String get statusLabel => switch (phase) {
     LookPhase.idle when !hasImage => '选一张图，我帮你看',
     LookPhase.idle => '照片已选好',
-    LookPhase.analyzing => '可可正在看',
-    LookPhase.ready => '看完了，接着和您说',
+    LookPhase.initialAnalyzing => '可可正在看',
+    LookPhase.viewing => '可以问可可',
+    LookPhase.reAnalyzing => '我再仔细看一下',
     LookPhase.error => errorTitle ?? '出了点问题',
   };
 

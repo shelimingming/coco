@@ -12,7 +12,7 @@ import pytest
 from coco.config import Settings
 from coco.models.user import User, UserRole, UserStatus
 from coco.modules.memories.schemas import MemoryResponse
-from coco.modules.voice.tools import dispatch_voice_tool
+from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
 
 
 def _parent() -> User:
@@ -144,3 +144,10 @@ async def test_unknown_tool_returns_error() -> None:
     )
     payload = json.loads(result)
     assert payload["status"] == "error"
+
+
+
+def test_vision_tools_are_registered() -> None:
+    names = [item["function"]["name"] for item in VOICE_TOOL_DEFINITIONS]
+    assert "re_vision_image" in names
+    assert "close_vision_image" in names

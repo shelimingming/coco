@@ -13,6 +13,7 @@ import '../data/realtime_voice_socket.dart';
 import '../domain/coco_companion_pose.dart';
 import '../domain/pending_voice_action.dart';
 import '../domain/voice_call_state.dart';
+import '../../look/application/look_controller.dart';
 import '../domain/voice_call_transcript.dart';
 import 'coco_companion_controller.dart';
 
@@ -167,6 +168,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   Future<void> injectVisionContext({
     required String sceneDescription,
     String? source,
+    String? lookConversationId,
   }) async {
     if (!_sessionReady || !_started) return;
     final scene = sceneDescription.trim();
@@ -184,7 +186,16 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       assistantCaption: '',
     );
     _syncPose(VoiceCallPhase.thinking);
-    await _socket.injectVisionContext(sceneDescription: scene, source: source);
+    await _socket.injectVisionContext(
+      sceneDescription: scene,
+      source: source,
+      lookConversationId: lookConversationId,
+    );
+  }
+
+  /// 关掉看图会话，不结束语音。
+  Future<void> discardVisionSession() async {
+    await _socket.discardVisionSession();
   }
 
   Future<void> stop() async {
@@ -370,6 +381,13 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         _onActionPending(event.payload);
       case 'action.resolved':
         _onActionResolved(event.payload);
+      case 'vision.state':
+        final phase = event.payload['phase']?.toString();
+        if (phase != null && phase.isNotEmpty) {
+          ref.read(lookControllerProvider.notifier).applyServerVisionPhase(phase);
+        }
+      case 'vision.closed':
+        ref.read(lookControllerProvider.notifier).closeVisualSession();
       case 'error':
         unawaited(
           _fail(

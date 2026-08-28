@@ -73,9 +73,6 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   /// 再按一次退出：记录上次系统返回时间
   DateTime? _lastBackAt;
 
-  /// 识图已注入语音，等可可开口后收起照片面板
-  bool _awaitingVisionHandoff = false;
-
   /// 本次为看图新开的通话；识图失败时挂断，避免空连
   bool _voiceStartedForLook = false;
 
@@ -260,34 +257,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         : null;
     final voicePending = inCall && callState.pendingAction != null;
     final lookState = ref.watch(lookControllerProvider);
-    final lookController = ref.read(lookControllerProvider.notifier);
-    // 分析中 / 待交接 / 失败时占用中间区；可可开口后 clear
-    final lookSession =
-        lookState.phase == LookPhase.analyzing ||
-        lookState.phase == LookPhase.ready ||
-        lookState.phase == LookPhase.error;
-    final lookAnalyzing = lookState.phase == LookPhase.analyzing;
-
-    // 识图注入后：可可一开口就收起照片，回到说话 UI
-    ref.listen<VoiceCallState>(voiceCallControllerProvider, (prev, next) {
-      if (!_awaitingVisionHandoff) return;
-      if (next.phase == VoiceCallPhase.speaking ||
-          next.phase == VoiceCallPhase.listening) {
-        if (prev?.phase == VoiceCallPhase.thinking ||
-            prev?.phase == VoiceCallPhase.connecting ||
-            lookState.phase == LookPhase.ready) {
-          _awaitingVisionHandoff = false;
-          _voiceStartedForLook = false;
-          lookController.clearAfterHandoff();
-        }
-      }
-      // 注入失败时勿继续盖着「看完了」，否则语音错误卡被挡住、像卡住
-      if (next.phase == VoiceCallPhase.error) {
-        _awaitingVisionHandoff = false;
-        _voiceStartedForLook = false;
-        lookController.clearAfterHandoff();
-      }
-    });
+    // 有图即占用中间区，直到用户关图；分析中禁用取图以免叠任务
+    final lookSession = lookState.isVisualSession;
+    final lookAnalyzing = lookState.isBusy;
 
     final palette = ParentHomePalette.standard;
     final greeting = parentHomeGreeting(name);
@@ -635,10 +607,10 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
       }
       setState(() {
         _captionVisible = false;
-        _awaitingVisionHandoff = false;
         _voiceStartedForLook = false;
       });
-      lookController.clearAfterHandoff();
+      lookController.closeVisualSession();
+      unawaited(callController.discardVisionSession());
     } else {
       _entranceTimer?.cancel();
       callController.start();
@@ -707,15 +679,14 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
           const SnackBar(content: Text('照片看完了，但没接上语音。您可以再点「说话」继续聊。')),
         );
       }
-      lookController.clearAfterHandoff();
       _voiceStartedForLook = false;
       return;
     }
 
-    _awaitingVisionHandoff = true;
     await callController.injectVisionContext(
       sceneDescription: result.sceneDescription,
       source: source.wireName,
+      lookConversationId: result.conversationId,
     );
   }
 
@@ -734,10 +705,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required String userName,
   }) {
     // 首页原地识图优先于闲置可可（确认卡仍优先）；语音出错时让错误卡露出来
-    final lookSession =
-        lookState.phase == LookPhase.analyzing ||
-        lookState.phase == LookPhase.ready ||
-        lookState.phase == LookPhase.error;
+    final lookSession = lookState.isVisualSession;
     if (lookSession &&
         callState.phase != VoiceCallPhase.error &&
         !voicePending &&
@@ -776,13 +744,15 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
       return ParentHomeLookPanel(
         palette: palette,
         imageBytes: lookState.imageBytes!,
-        analyzing:
-            lookState.phase == LookPhase.analyzing ||
-            lookState.phase == LookPhase.ready,
-        showCaption: false,
-        captionText: '',
+        showScanBrackets: lookState.showScanBrackets,
+        statusLabel: lookState.statusLabel,
+        showCaption: captionVisible,
+        captionEntries: callState.currentRoundEntries,
         errorMessage: errorText,
-        statusHint: lookState.phase == LookPhase.ready ? '看完了，接着和您说' : null,
+        onClose: () {
+          ref.read(lookControllerProvider.notifier).closeVisualSession();
+          unawaited(callController.discardVisionSession());
+        },
       );
     }
 

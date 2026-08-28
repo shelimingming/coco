@@ -151,6 +151,7 @@ class RealtimeVoiceSocket {
   Future<void> injectVisionContext({
     required String sceneDescription,
     String? source,
+    String? lookConversationId,
   }) async {
     final channel = _channel;
     if (channel == null) return;
@@ -161,8 +162,17 @@ class RealtimeVoiceSocket {
         'type': 'vision.inject',
         'scene_description': scene,
         if (source != null && source.isNotEmpty) 'source': source,
+        if (lookConversationId != null && lookConversationId.isNotEmpty)
+          'look_conversation_id': lookConversationId,
       }),
     );
+  }
+
+  /// 关掉当前看图会话，语音通话继续。
+  Future<void> discardVisionSession() async {
+    final channel = _channel;
+    if (channel == null) return;
+    channel.sink.add(jsonEncode({'type': 'vision.discard'}));
   }
 
   Future<void> endSession() async {

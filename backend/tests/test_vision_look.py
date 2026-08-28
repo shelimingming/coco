@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from coco.modules.vision.image_cache import LookImageCache
+from coco.modules.vision.image_cache import LookImageCache, normalize_question_key
 from coco.providers.qwen_vision import parse_look_content, unclear_look_result
 
 
@@ -68,3 +68,20 @@ def test_look_image_cache_ttl() -> None:
     assert hit.image_bytes == b"abc"
     cache.discard(cid)
     assert cache.get(cid) is None
+
+
+
+def test_question_key_normalizes() -> None:
+    assert normalize_question_key("  上面写了什么  ") == normalize_question_key("上面写了什么")
+
+
+def test_look_image_cache_remembers_reanalyze_once() -> None:
+    cache = LookImageCache(ttl_seconds=60)
+    cid = uuid4()
+    cache.put(cid, image_bytes=b"img", mime="image/jpeg", observation="桌上有药盒")
+    key = normalize_question_key("小字是什么")
+    cache.remember_reanalyze(cid, question_key=key, observation="桌上有药盒\n\n【补充观察】\n生产日期 2026")
+    hit = cache.get(cid)
+    assert hit is not None
+    assert key in hit.reanalyzed_keys
+    assert "生产日期" in hit.accumulated_observation

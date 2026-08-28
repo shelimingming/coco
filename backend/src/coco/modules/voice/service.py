@@ -15,6 +15,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -54,6 +55,8 @@ from coco.modules.voice.prompts import (
     build_companion_instructions,
     build_opening_instructions,  # noqa: F401 — 主动开场恢复时用
 )
+from coco.modules.vision.image_cache import look_image_cache
+from coco.modules.vision.service import VisionService
 from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
 from coco.observability.llm_trace import (
     PURPOSE_VISION_INJECT,
@@ -92,6 +95,35 @@ _SCREEN_CANCELLED_PROMPT = (
 )
 
 RealtimeClientFactory = Callable[..., Awaitable[QwenAudioRealtimeClient] | QwenAudioRealtimeClient]
+
+
+@dataclass
+class VisionSessionState:
+    """当前 Realtime 连接上的看图会话；关图或换图时 generation +1 作废迟到结果。"""
+
+    look_conversation_id: UUID | None = None
+    scene_description: str = ""
+    source: str | None = None
+    generation: int = 0
+
+    def bind(self, conversation_id: UUID, scene: str, source: str | None) -> None:
+        old_id = self.look_conversation_id
+        if old_id is not None and old_id != conversation_id:
+            look_image_cache.discard(old_id)
+        self.generation += 1
+        self.look_conversation_id = conversation_id
+        self.scene_description = scene
+        self.source = source
+
+    def discard(self) -> UUID | None:
+        old_id = self.look_conversation_id
+        self.generation += 1
+        self.look_conversation_id = None
+        self.scene_description = ""
+        self.source = None
+        if old_id is not None:
+            look_image_cache.discard(old_id)
+        return old_id
 
 
 class _SeqCounter:
@@ -405,6 +437,7 @@ async def run_realtime_bridge(
         )
         # 通话作用域：提醒/分享待确认草稿（点卡或语音二选一）
         pending_store = PendingActionStore()
+        vision_session = VisionSessionState()
         await _send_json(websocket, _client_event("session.ready"))
 
         recv_task = asyncio.create_task(
@@ -416,6 +449,7 @@ async def run_realtime_bridge(
                 conversation_id=conversation_id,
                 seq=seq,
                 pending_store=pending_store,
+                vision_session=vision_session,
             ),
             name="realtime-vendor-forward",
         )
@@ -434,6 +468,7 @@ async def run_realtime_bridge(
                 conversation_id=conversation_id,
                 seq=seq,
                 pending_store=pending_store,
+                vision_session=vision_session,
             )
         finally:
             # 先关闭供应商连接以结束 events()，再等待下行转发收尾。
@@ -564,6 +599,7 @@ async def _consume_client_events(
     conversation_id: UUID | None,
     seq: _SeqCounter,
     pending_store: PendingActionStore,
+    vision_session: VisionSessionState,
 ) -> None:
     while True:
         raw = await websocket.receive_text()
@@ -626,7 +662,12 @@ async def _consume_client_events(
                 )
             continue
         if event_type == "vision.inject":
-            await _inject_vision_from_client(websocket, vendor, event)
+            await _inject_vision_from_client(
+                websocket, vendor, event, vision_session=vision_session
+            )
+            continue
+        if event_type == "vision.discard":
+            await _discard_vision_session(websocket, vendor, vision_session)
             continue
         # 忽略未知上行事件，避免供应商协议泄漏到客户端约定。
 
@@ -635,6 +676,8 @@ async def _inject_vision_from_client(
     websocket: WebSocket,
     vendor: QwenAudioRealtimeClient,
     event: dict[str, Any],
+    *,
+    vision_session: VisionSessionState,
 ) -> None:
     """把多模态读图结果写入 Realtime instructions 并触发可可开口。"""
     scene = event.get("scene_description")
@@ -650,6 +693,17 @@ async def _inject_vision_from_client(
         return
     source = event.get("source")
     source_str = source.strip() if isinstance(source, str) else None
+    look_id = _parse_optional_uuid(
+        event.get("look_conversation_id") or event.get("conversation_id")
+    )
+    if look_id is not None:
+        vision_session.bind(look_id, scene.strip(), source_str)
+    else:
+        # 没有 LOOK 会话就无法重识图，仍注入文本让可可先开口
+        vision_session.generation += 1
+        vision_session.scene_description = scene.strip()
+        vision_session.source = source_str
+        vision_session.look_conversation_id = None
     # 打断当前播报，再注入新图上下文
     with contextlib.suppress(Exception):
         await vendor.cancel_response()
@@ -686,11 +740,35 @@ async def _inject_vision_from_client(
     )
     await _send_json(
         websocket,
-        _client_event(
-            "vision.injected",
-            source=source_str,
-        ),
+        _client_event("vision.injected", source=source_str),
     )
+    await _send_json(
+        websocket,
+        _client_event("vision.state", phase="viewing"),
+    )
+
+
+async def _discard_vision_session(
+    websocket: WebSocket,
+    vendor: QwenAudioRealtimeClient,
+    vision_session: VisionSessionState,
+) -> None:
+    """关图：清缓存与照片块，语音继续。"""
+    vision_session.discard()
+    with contextlib.suppress(Exception):
+        await vendor.cancel_response()
+    with contextlib.suppress(Exception):
+        await vendor.clear_vision_context()
+    await _send_json(websocket, _client_event("vision.closed"))
+
+
+def _parse_optional_uuid(raw: Any) -> UUID | None:
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return UUID(raw.strip())
+    except ValueError:
+        return None
 
 
 async def _confirm_pending_from_screen(
@@ -820,6 +898,7 @@ async def _handle_function_call(
     conversation_id: UUID | None,
     seq: _SeqCounter,
     pending_store: PendingActionStore,
+    vision_session: VisionSessionState,
 ) -> None:
     call_id = event.get("call_id")
     name = event.get("name")
@@ -847,6 +926,17 @@ async def _handle_function_call(
             output = json.dumps(
                 {"status": "error", "message": "登录状态无效，请重新登录。"},
                 ensure_ascii=False,
+            )
+        elif name in {"re_vision_image", "close_vision_image"}:
+            output = await _dispatch_vision_tool(
+                websocket,
+                vendor,
+                session=session,
+                settings=settings,
+                user=fresh_user,
+                name=name,
+                arguments=arguments,
+                vision_session=vision_session,
             )
         else:
             output = await dispatch_voice_tool(
@@ -950,6 +1040,79 @@ async def _sync_pending_after_tool(
     return output
 
 
+async def _dispatch_vision_tool(
+    websocket: WebSocket,
+    vendor: QwenAudioRealtimeClient,
+    *,
+    session,
+    settings: Settings,
+    user,
+    name: str,
+    arguments: dict[str, Any],
+    vision_session: VisionSessionState,
+) -> str:
+    """看图工具：重识图或关图；结果写回模型，由 follow-up 口语回答。"""
+    if name == "close_vision_image":
+        await _discard_vision_session(websocket, vendor, vision_session)
+        return json.dumps(
+            {"status": "ok", "closed": True, "message": "照片已收起，请继续陪用户说话。"},
+            ensure_ascii=False,
+        )
+
+    question = str(arguments.get("question") or "").strip()
+    look_id = vision_session.look_conversation_id
+    if look_id is None or not question:
+        return json.dumps(
+            {
+                "status": "error",
+                "message": "现在没有正在看的照片，或问题是空的。请用当前读图内容直接回答，或请用户再选一张。",
+            },
+            ensure_ascii=False,
+        )
+    generation = vision_session.generation
+    await _send_json(websocket, _client_event("vision.state", phase="reanalyzing"))
+    try:
+        result = await VisionService(settings).re_analyze(
+            session,
+            user=user,
+            conversation_id=look_id,
+            question=question,
+        )
+    except AppError as exc:
+        await _send_json(websocket, _client_event("vision.state", phase="viewing"))
+        return json.dumps(
+            {"status": "error", "code": exc.code, "message": exc.message},
+            ensure_ascii=False,
+        )
+    except Exception:
+        logger.exception("vision_re_analyze_failed")
+        await _send_json(websocket, _client_event("vision.state", phase="viewing"))
+        return json.dumps(
+            {"status": "error", "message": "这张图没再看清。请如实告诉用户，可以换一张或拍近一点。"},
+            ensure_ascii=False,
+        )
+    if generation != vision_session.generation or vision_session.look_conversation_id != look_id:
+        return json.dumps(
+            {"status": "discarded", "message": "用户已经换图或关掉照片，不要再讲这张旧图。"},
+            ensure_ascii=False,
+        )
+    vision_session.scene_description = result.scene_description
+    with contextlib.suppress(Exception):
+        await vendor.apply_vision_context(
+            scene_description=result.scene_description,
+            source=vision_session.source,
+        )
+    await _send_json(websocket, _client_event("vision.state", phase="viewing"))
+    return json.dumps(
+        {
+            "status": "ok",
+            "scene_description": result.scene_description,
+            "message": "已根据原图补充观察，请用口语回答用户刚才的问题，看不清的地方要老实说。",
+        },
+        ensure_ascii=False,
+    )
+
+
 async def _forward_vendor_events(
     websocket: WebSocket,
     vendor: QwenAudioRealtimeClient,
@@ -959,6 +1122,7 @@ async def _forward_vendor_events(
     conversation_id: UUID | None,
     seq: _SeqCounter,
     pending_store: PendingActionStore,
+    vision_session: VisionSessionState,
 ) -> None:
     assistant_text = ""
     final_sent = False
@@ -988,6 +1152,7 @@ async def _forward_vendor_events(
                         conversation_id=conversation_id,
                         seq=seq,
                         pending_store=pending_store,
+                        vision_session=vision_session,
                     )
                     needs_tool_followup = True
                 except Exception:

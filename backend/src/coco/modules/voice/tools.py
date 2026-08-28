@@ -166,6 +166,42 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "re_vision_image",
+            "description": (
+                "当前照片上下文不够回答用户问题时，用原图再看一遍。"
+                "适用于小字、日期、局部细节、包装说明等。"
+                "question 填用户原话。每个问题最多调用一次；常识题不要调用。"
+                "没有正在看的照片时不要调用。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "用户想从照片里知道的问题，尽量用原话",
+                    },
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "close_vision_image",
+            "description": (
+                "用户说关掉照片、不用看了、看完了时调用。"
+                "只结束看图，不要结束语音陪伴。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
 

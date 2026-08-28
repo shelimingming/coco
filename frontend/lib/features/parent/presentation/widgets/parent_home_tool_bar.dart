@@ -68,8 +68,7 @@ class ParentHomeToolBar extends StatelessWidget {
             assetPath: 'assets/icons/parent/icon-tool-photo-day.svg',
             active: false,
             palette: palette,
-            // 分析中仍可再点选图，取消旧任务
-            onPressed: onPhotoPressed,
+            onPressed: visionToolsEnabled ? onPhotoPressed : null,
           ),
         ],
       ),

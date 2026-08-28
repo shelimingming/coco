@@ -117,6 +117,20 @@ class VoiceCallState {
     return out;
   }
 
+  /// 看图时「字」只展示当前一轮：最近一条用户话 + 可可正在说/刚说完的话。
+  List<VoiceCallTranscriptEntry> get currentRoundEntries {
+    final entries = displayTranscript;
+    if (entries.isEmpty) return const [];
+    var start = 0;
+    for (var i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].role == VoiceCallTranscriptRole.user) {
+        start = i;
+        break;
+      }
+    }
+    return entries.sublist(start);
+  }
+
   VoiceCallState copyWith({
     VoiceCallPhase? phase,
     String? userCaption,

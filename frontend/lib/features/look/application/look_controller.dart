@@ -30,22 +30,26 @@ class LookController extends StateNotifier<LookState> {
     LookSource source, {
     BuildContext? hostContext,
   }) async {
-    if (state.phase == LookPhase.analyzing) {
-      // 打断进行中的分析；若用户取消相册，勿卡在 analyzing
-      _opGen++;
-      if (state.hasImage) {
-        state = state.copyWith(phase: LookPhase.idle, clearError: true);
-      }
-    } else {
-      _opGen++;
+    final previous = state;
+    // 新选图开始即作废进行中的识图/重识图
+    _opGen++;
+    if (state.isBusy && state.hasImage) {
+      // 打开相册前先回到可追问态，取消选择时仍能看到旧图
+      state = state.copyWith(phase: LookPhase.viewing, clearError: true);
     }
 
     try {
       final picked = await _pickBytes(source, hostContext: hostContext);
-      if (picked == null) return null;
+      if (picked == null) {
+        // 取消相册/相机：保留旧图与原会话
+        if (previous.hasImage && previous.phase != LookPhase.idle) {
+          state = previous;
+        }
+        return null;
+      }
 
       state = LookState(
-        phase: LookPhase.analyzing,
+        phase: LookPhase.initialAnalyzing,
         source: source,
         imageBytes: picked.bytes,
       );
@@ -128,7 +132,7 @@ class LookController extends StateNotifier<LookState> {
       if (!_alive(gen)) return null;
 
       state = state.copyWith(
-        phase: LookPhase.ready,
+        phase: LookPhase.viewing,
         conversationId: result.conversationId,
         headline: result.headline,
         detail: result.detail,
@@ -149,16 +153,32 @@ class LookController extends StateNotifier<LookState> {
     }
   }
 
-  /// 清空当前识图会话（首页交接后、失败重选、离开页面）。
+  /// 清空当前识图会话（关图、失败重选、离开页面）。
   Future<void> reset() async {
     _opGen++;
     state = const LookState();
   }
 
-  /// 注入语音成功后收起照片面板，保留不必要字段清掉。
-  void clearAfterHandoff() {
+  /// 关掉照片：清本地图和视觉状态，不结束语音。
+  void closeVisualSession() {
     _opGen++;
     state = const LookState();
+  }
+
+  /// 服务端下行 vision.state：仅在仍有图时切换看图/重识图。
+  void applyServerVisionPhase(String phase) {
+    if (!state.hasImage) return;
+    switch (phase) {
+      case 'reanalyzing':
+        state = state.copyWith(phase: LookPhase.reAnalyzing, clearError: true);
+      case 'viewing':
+        if (state.phase == LookPhase.reAnalyzing ||
+            state.phase == LookPhase.initialAnalyzing) {
+          state = state.copyWith(phase: LookPhase.viewing, clearError: true);
+        }
+      default:
+        break;
+    }
   }
 
   void _fail({required String title, required String message}) {
