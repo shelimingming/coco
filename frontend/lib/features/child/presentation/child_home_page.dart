@@ -10,6 +10,8 @@ import '../../../core/widgets/coco_safe_area.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../care/application/care_providers.dart';
 import '../../care/domain/models.dart';
+import '../../daily_notes/application/daily_notes_providers.dart';
+import '../../daily_notes/presentation/daily_note_image.dart';
 import '../../family/application/family_providers.dart';
 import '../../family/presentation/call_parent_phone.dart';
 import '../../reminders/application/reminders_providers.dart';
@@ -71,6 +73,7 @@ class ChildHomePage extends ConsumerWidget {
             ref.invalidate(childTodayProvider);
             ref.invalidate(familyInfoProvider);
             ref.invalidate(childSuggestionsProvider);
+            ref.invalidate(childDailyNoteTodayProvider);
             await ref.read(childTodayProvider.future);
           },
           child: CustomScrollView(
@@ -92,6 +95,8 @@ class ChildHomePage extends ConsumerWidget {
                       parentName: parentName,
                     ),
                     const SizedBox(height: CocoSpace.s5),
+                    const _DailyNoteBlock(),
+                    const SizedBox(height: CocoSpace.s5),
                     _SyncBlock(
                       items: today.reminderItems,
                       pendingSuggestions: pendingSuggestions,
@@ -105,6 +110,91 @@ class ChildHomePage extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// 已分享的今日小记；无内容时整块不展示。
+class _DailyNoteBlock extends ConsumerWidget {
+  const _DailyNoteBlock();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final async = ref.watch(childDailyNoteTodayProvider);
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (note) {
+        if (note == null || !note.isReady) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${_relationLabel(ref)}的今日小记',
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: CocoSpace.s3),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(CocoSpace.s4),
+              decoration: BoxDecoration(
+                color: CocoColors.childSurface,
+                borderRadius: BorderRadius.circular(CocoRadius.lg),
+                border: Border.all(color: CocoColors.childBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final line in note.items) ...[
+                    Text(
+                      line,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        height: 1.6,
+                        fontSize: note.items.length == 1 ? 20 : 18,
+                      ),
+                    ),
+                    const SizedBox(height: CocoSpace.s2),
+                  ],
+                  if (note.items.isEmpty && note.bodyText.isNotEmpty)
+                    Text(
+                      note.bodyText,
+                      style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
+                    ),
+                  const SizedBox(height: CocoSpace.s2),
+                  Text(
+                    '可可根据今天的交流整理',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: CocoColors.neutral500,
+                    ),
+                  ),
+                  if (note.images.isNotEmpty) ...[
+                    const SizedBox(height: CocoSpace.s3),
+                    for (final image in note.images) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(CocoRadius.md),
+                        child: AspectRatio(
+                          aspectRatio: 16 / 10,
+                          child: DailyNoteImage(urlPath: image.urlPath),
+                        ),
+                      ),
+                      const SizedBox(height: CocoSpace.s2),
+                    ],
+                  ],
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _relationLabel(WidgetRef ref) {
+    final name =
+        ref.watch(familyInfoProvider).valueOrNull?.parentDisplayName ?? '家人';
+    return name;
   }
 }
 

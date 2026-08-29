@@ -12,6 +12,7 @@ import httpx
 from pydantic import SecretStr
 
 from coco.observability.llm_trace import (
+    PURPOSE_TEXT_DAILY_NOTE,
     PURPOSE_TEXT_TITLE,
     PURPOSE_TEXT_TRANSLATE,
     PURPOSE_TEXT_WEB_SEARCH,
@@ -50,6 +51,16 @@ _WEB_SEARCH_SYSTEM = """
 3. 若检索不到或不确定，诚实说「暂时没查到」或「信息不够准」，不要编造。
 4. 禁止医疗诊断、药量/处方建议、投资买卖建议、虚假救援承诺。
 5. 只输出可直接口述的正文，不要解释「我搜索了」或加标题。
+""".strip()
+
+_DAILY_NOTE_SYSTEM = """
+你是可可，根据老人当天与你的真实交流，整理「每日小记」条目。
+规则：
+1. 只输出 JSON 对象：{"items":["……","……"]}，不要其它文字。
+2. items 选 1～3 条有意义的日常生活事实（吃饭、出门、和邻居聊天、心情等）。
+3. 每条一句短中文，陈述事实，不要推断、诊断、敏感隐私、第三方隐私。
+4. 不要写入需要子女紧急关注的身体异常（那些走「需要关注」通道）。
+5. 交流里没有可分享日常时，返回 {"items":[]}。
 """.strip()
 
 _TITLE_MAX_LEN = 16
@@ -226,6 +237,16 @@ class QwenTextClient:
         )
         return WebSearchResult(status="ok", query=cleaned, answer=content)
 
+    async def extract_daily_note_items(self, transcript: str) -> list[str]:
+        """从当日转写提炼 0～3 条日常事实。"""
+        content = await self._chat(
+            system=_DAILY_NOTE_SYSTEM,
+            user=f"当天交流记录：\n{transcript.strip()}",
+            temperature=0.2,
+            purpose=PURPOSE_TEXT_DAILY_NOTE,
+        )
+        return parse_daily_note_items_json(content)
+
 
 def looks_like_child_first_person(text: str) -> bool:
     """是否像子女第一人称或直接喊爸妈（不符合可可旁白）。"""
@@ -272,6 +293,81 @@ def fallback_conversation_title(preview: str) -> str:
     if len(cleaned) > _FALLBACK_TITLE_MAX:
         return cleaned[:_FALLBACK_TITLE_MAX] + "…"
     return cleaned
+
+
+def parse_daily_note_items_json(raw: str) -> list[str]:
+    """解析模型返回的 items JSON；失败返回空列表。"""
+    import json
+
+    text = raw.strip()
+    # 去掉偶发 markdown 围栏
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    items = data.get("items")
+    if not isinstance(items, list):
+        return []
+    cleaned: list[str] = []
+    for item in items:
+        if isinstance(item, str) and item.strip():
+            cleaned.append(item.strip()[:80])
+        if len(cleaned) >= 3:
+            break
+    return cleaned
+
+
+def fallback_daily_note_items(transcript: str) -> list[str]:
+    """无 Key 时从用户话里抽短句，最多 3 条。"""
+    lines: list[str] = []
+    for raw in transcript.splitlines():
+        line = raw.strip()
+        if line.startswith("用户：") or line.startswith("老人："):
+            body = line.split("：", 1)[-1].strip()
+            if len(body) >= 4:
+                lines.append(body[:80])
+        if len(lines) >= 3:
+            break
+    return lines
+
+
+async def daily_note_items_or_fallback(
+    *,
+    api_key: SecretStr | None,
+    model: str,
+    transcript: str,
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    timeout_seconds: float = 30.0,
+) -> list[str]:
+    cleaned = transcript.strip()
+    if not cleaned:
+        return []
+    if api_key is None or not api_key.get_secret_value().strip():
+        await record_llm_trace(
+            purpose=PURPOSE_TEXT_DAILY_NOTE,
+            modality="text",
+            model=model,
+            status="skipped",
+            request_json={"transcript": cleaned[:2000]},
+            error_message="未配置 API Key，使用转写兜底",
+        )
+        return fallback_daily_note_items(cleaned)
+    try:
+        client = QwenTextClient(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+        )
+        return await client.extract_daily_note_items(cleaned)
+    except Exception:
+        logger.warning("daily_note_extract_failed", exc_info=True)
+        return fallback_daily_note_items(cleaned)
 
 
 async def translate_or_passthrough(

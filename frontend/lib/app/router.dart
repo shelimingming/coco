@@ -10,6 +10,8 @@ import '../features/child/presentation/child_attention_page.dart';
 import '../features/child/presentation/child_home_page.dart';
 import '../features/child/presentation/child_shell.dart';
 import '../features/child/presentation/child_suggest_reminder_page.dart';
+import '../features/daily_notes/presentation/daily_note_detail_page.dart';
+import '../features/daily_notes/presentation/daily_notes_page.dart';
 import '../features/family/presentation/child_family_page.dart';
 import '../features/family/presentation/child_invite_page.dart';
 import '../features/family/presentation/invite_landing_page.dart';
@@ -108,6 +110,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'memories',
             builder: (context, state) => const MemoriesPage(),
+          ),
+          GoRoute(
+            path: 'daily-notes',
+            builder: (context, state) => const DailyNotesPage(),
+            routes: [
+              GoRoute(
+                path: ':id',
+                builder: (context, state) => DailyNoteDetailPage(
+                  noteId: state.pathParameters['id']!,
+                ),
+              ),
+            ],
           ),
           GoRoute(path: 'look', builder: (context, state) => const LookPage()),
           GoRoute(

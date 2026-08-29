@@ -1,0 +1,104 @@
+"""每日小记路由。"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Body, Depends, Response
+
+from coco.config import Settings, get_settings
+from coco.deps import CurrentUserDep, SessionDep
+from coco.models.daily_note import DailyNoteSource
+from coco.modules.daily_notes.schemas import (
+    DailyNoteGenerateRequest,
+    DailyNoteListResponse,
+    DailyNoteResponse,
+    DailyNoteSettingsResponse,
+    DailyNoteSettingsUpdateRequest,
+)
+from coco.modules.daily_notes.service import DailyNoteService
+
+router = APIRouter(prefix="/v1", tags=["daily-notes"])
+
+
+def get_daily_note_service(settings: Settings = Depends(get_settings)) -> DailyNoteService:
+    return DailyNoteService(settings)
+
+
+@router.get("/daily-notes/settings", response_model=DailyNoteSettingsResponse)
+async def get_daily_note_settings(
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> DailyNoteSettingsResponse:
+    return await service.get_settings(session, user=user)
+
+
+@router.patch("/daily-notes/settings", response_model=DailyNoteSettingsResponse)
+async def patch_daily_note_settings(
+    body: DailyNoteSettingsUpdateRequest,
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> DailyNoteSettingsResponse:
+    return await service.update_settings(session, user=user, body=body)
+
+
+@router.get("/daily-notes", response_model=DailyNoteListResponse)
+async def list_daily_notes(
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> DailyNoteListResponse:
+    items = await service.list_for_parent(session, user=user)
+    return DailyNoteListResponse(items=items)
+
+
+@router.post("/daily-notes/generate", response_model=DailyNoteResponse)
+async def generate_daily_note(
+    session: SessionDep,
+    user: CurrentUserDep,
+    body: DailyNoteGenerateRequest = Body(default_factory=DailyNoteGenerateRequest),
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> DailyNoteResponse:
+    # 手动生成不受「自动生成」开关限制，方便随时补记
+    return await service.generate_for_parent(
+        session,
+        user=user,
+        source=DailyNoteSource.MANUAL.value,
+        note_date=body.note_date,
+        respect_generate_enabled=False,
+    )
+
+
+@router.get("/child/daily-notes/today", response_model=None)
+async def child_daily_note_today(
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> DailyNoteResponse | None:
+    return await service.child_today(session, user=user)
+
+
+@router.get("/daily-notes/{note_id}", response_model=DailyNoteResponse)
+async def get_daily_note(
+    note_id: UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> DailyNoteResponse:
+    return await service.get_for_parent(session, user=user, note_id=note_id)
+
+
+@router.get("/daily-notes/{note_id}/images/{image_id}")
+async def get_daily_note_image(
+    note_id: UUID,
+    image_id: UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> Response:
+    data, mime = await service.get_image_bytes(
+        session, user=user, note_id=note_id, image_id=image_id
+    )
+    return Response(content=data, media_type=mime)

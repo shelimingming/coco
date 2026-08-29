@@ -1,4 +1,4 @@
-"""集成测试 fixture：依赖 COCO_TEST_DATABASE_URL，缺失则跳过。"""
+"""集成测试 fixture：使用 COCO_DATABASE_URL（可与本地开发共用，由你自行切换库）。"""
 
 from __future__ import annotations
 
@@ -13,18 +13,29 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # 在导入 app 前强制测试环境，避免启动调度器
 os.environ.setdefault("COCO_ENVIRONMENT", "test")
 
-TEST_DATABASE_URL = os.environ.get("COCO_TEST_DATABASE_URL")
-
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line("markers", "integration: needs PostgreSQL test database")
+    config.addinivalue_line("markers", "integration: needs PostgreSQL via COCO_DATABASE_URL")
+
+
+def _resolve_database_url() -> str | None:
+    """优先环境变量，否则读 Settings/.env 里的 COCO_DATABASE_URL。"""
+    raw = (os.environ.get("COCO_DATABASE_URL") or "").strip()
+    if raw:
+        return raw
+    from coco.config import get_settings
+
+    get_settings.cache_clear()
+    url = get_settings().database_url.strip()
+    return url or None
 
 
 @pytest.fixture(scope="session")
 def require_test_db() -> str:
-    if not TEST_DATABASE_URL:
-        pytest.skip("未设置 COCO_TEST_DATABASE_URL，跳过集成测试")
-    return TEST_DATABASE_URL
+    url = _resolve_database_url()
+    if not url:
+        pytest.skip("未设置 COCO_DATABASE_URL，跳过集成测试")
+    return url
 
 
 @pytest_asyncio.fixture
@@ -37,7 +48,6 @@ async def db_engine(require_test_db: str):
     # 跑迁移到最新
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", require_test_db)
-    # alembic 同步路径：临时用环境变量覆盖
     os.environ["COCO_DATABASE_URL"] = require_test_db
     command.upgrade(cfg, "head")
     yield engine

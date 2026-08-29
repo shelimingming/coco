@@ -24,6 +24,11 @@ class ParentFunctionsPage extends StatelessWidget {
         route: '/parent/memories',
       ),
       const _MoreEntry(
+        label: '每日小记',
+        iconAsset: 'assets/icons/parent/icon-more-daily-note.svg',
+        route: '/parent/daily-notes',
+      ),
+      const _MoreEntry(
         label: '历史对话',
         iconAsset: 'assets/icons/parent/icon-more-history.svg',
         route: '/parent/history',

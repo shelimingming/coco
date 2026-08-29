@@ -279,11 +279,23 @@ async def run_scheduler_tick(
     async with session_factory() as session:
         created = await create_due_occurrences(session, now=now)
         advanced = await advance_open_occurrences(session, settings=settings, now=now)
-    if created or advanced:
+    # 每日小记与提醒解耦，独立 session，失败不影响提醒
+    daily_done = 0
+    try:
+        from coco.modules.daily_notes.service import DailyNoteService
+
+        async with session_factory() as session:
+            daily_done = await DailyNoteService(settings).run_auto_generate_due(
+                session, now=now
+            )
+    except Exception:
+        logger.exception("daily_note_scheduler_failed")
+    if created or advanced or daily_done:
         logger.info(
-            "scheduler_tick created_occurrences=%s advanced=%s",
+            "scheduler_tick created_occurrences=%s advanced=%s daily_notes=%s",
             created,
             advanced,
+            daily_done,
         )
 
 

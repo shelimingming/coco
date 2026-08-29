@@ -4,6 +4,7 @@ from coco.models.auth import AuthSession, PhoneCode
 from coco.models.base import Base
 from coco.models.care import CareShare, FamilyMessage
 from coco.models.conversation import Conversation, ConversationItem
+from coco.models.daily_note import DailyNote, DailyNoteImage, DailyNoteSettings
 from coco.models.family import Family, FamilyInvite
 from coco.models.llm_trace import LlmTrace
 from coco.models.memory import Memory
@@ -17,6 +18,9 @@ __all__ = [
     "CareShare",
     "Conversation",
     "ConversationItem",
+    "DailyNote",
+    "DailyNoteImage",
+    "DailyNoteSettings",
     "Family",
     "FamilyInvite",
     "FamilyMessage",

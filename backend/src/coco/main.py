@@ -24,6 +24,7 @@ from coco.modules.auth.router import me_router
 from coco.modules.auth.router import router as auth_router
 from coco.modules.care.router import router as care_router
 from coco.modules.conversations.router import router as conversations_router
+from coco.modules.daily_notes.router import router as daily_notes_router
 from coco.modules.family.router import router as family_router
 from coco.modules.health.router import router as health_router
 from coco.modules.image.router import router as image_router
@@ -172,6 +173,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(memories_router)
     app.include_router(conversations_router)
     app.include_router(care_router)
+    app.include_router(daily_notes_router)
     app.include_router(messages_router)
     app.include_router(notifications_router)
     # 邀请短链必须在 SPA 通配之前；纯 API 部署也可用

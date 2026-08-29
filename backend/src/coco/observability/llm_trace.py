@@ -30,6 +30,7 @@ PURPOSE_IMAGE_GENERATE = "image_generate"
 PURPOSE_TEXT_TITLE = "text_title"
 PURPOSE_TEXT_TRANSLATE = "text_translate"
 PURPOSE_TEXT_WEB_SEARCH = "text_web_search"
+PURPOSE_TEXT_DAILY_NOTE = "text_daily_note"
 PURPOSE_MEM0_EXTRACT = "mem0_extract"
 PURPOSE_MEM0_SEARCH = "mem0_search"
 

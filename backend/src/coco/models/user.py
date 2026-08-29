@@ -20,6 +20,14 @@ class UserStatus(enum.StrEnum):
     DISABLED = "disabled"
 
 
+class UserGender(enum.StrEnum):
+    """生图用性别；unknown 时提示词用中性长辈形象。"""
+
+    MALE = "male"
+    FEMALE = "female"
+    UNKNOWN = "unknown"
+
+
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
@@ -30,3 +38,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(64), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False, default=UserRole.PARENT.value)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=UserStatus.ACTIVE.value)
+    gender: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=UserGender.UNKNOWN.value,
+    )
