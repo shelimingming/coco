@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 老人端暖米色，与 DESIGN elder.background 一致 -->
-    <color name="ic_launcher_background">#FFF8ED</color>
+    <!-- 与图标源图背景一致，避免自适应图标出现嵌套色块 -->
+    <color name="ic_launcher_background">#FEF2E2</color>
     <color name="launch_background">#FFF8ED</color>
 </resources>

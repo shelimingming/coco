@@ -5,8 +5,9 @@ allprojects {
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         google()
-        maven { url = uri("https://storage.googleapis.com/download.flutter.io") }
+        // 引擎 jar 约 180MB：国内优先用 flutter-io.cn，避免 googleapis 超时
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
+        maven { url = uri("https://storage.googleapis.com/download.flutter.io") }
     }
 }
 

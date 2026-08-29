@@ -35,8 +35,9 @@ dependencyResolutionManagement {
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         google()
         // Flutter 引擎 AAR（PREFER_SETTINGS 会忽略插件里声明的该仓库）
-        maven { url = uri("https://storage.googleapis.com/download.flutter.io") }
+        // 国内优先 flutter-io.cn，避免 googleapis 大文件 Read timed out
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
+        maven { url = uri("https://storage.googleapis.com/download.flutter.io") }
     }
 }
 
