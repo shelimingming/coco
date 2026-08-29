@@ -1,4 +1,4 @@
-"""每日小记：父母图文日记设置、正文与配图（BYTEA）。"""
+"""每日小记：父母图文日记设置、正文与配图（BOS object_key）。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
-    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -52,8 +51,8 @@ class DailyNoteSettings(TimestampMixin, Base):
     )
     # 预留；MVP 固定按 20 点调度
     generate_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
-    # 可选：老人自传参考照，未上传则生图只用可可参考图
-    parent_photo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # 可选：老人自传参考照存 BOS；未上传则生图只用可可参考图
+    parent_photo_object_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     parent_photo_mime: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
@@ -104,6 +103,7 @@ class DailyNoteImage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     mime_type: Mapped[str] = mapped_column(String(64), nullable=False, default="image/png")
-    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # 百度 BOS 对象键；二进制不落库
+    object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     # 审计用，截断后写入
     prompt: Mapped[str | None] = mapped_column(Text, nullable=True)

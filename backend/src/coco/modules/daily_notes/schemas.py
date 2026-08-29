@@ -19,8 +19,8 @@ class DailyNoteSettingsResponse(FrozenModel):
     generate_hour: int
     gender: Literal["male", "female", "unknown"]
     has_parent_photo: bool
-    # 有照片时前端可拉预览
-    parent_photo_url_path: str | None = None
+    # BOS 签名 URL，前端 Image.network 直连
+    parent_photo_url: str | None = None
 
 
 class DailyNoteSettingsUpdateRequest(BaseModel):
@@ -33,8 +33,8 @@ class DailyNoteImageMeta(FrozenModel):
     id: uuid.UUID
     seq: int
     mime_type: str
-    # 相对路径，前端拼到 API base
-    url_path: str
+    # BOS 签名 URL（完整 https）
+    url: str
 
 
 class DailyNoteResponse(FrozenModel):

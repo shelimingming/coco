@@ -1,4 +1,4 @@
-"""每日小记：按日生成图文、设置门禁、条件分享给子女。"""
+"""每日小记：按日生成图文、设置门禁、条件分享给子女；配图存百度 BOS。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from coco.config import Settings
 from coco.errors import AppError
@@ -36,6 +37,7 @@ from coco.observability.llm_trace import (
     record_llm_trace,
     reset_llm_trace,
 )
+from coco.providers.bos_storage import BosStorage, get_bos_storage
 from coco.providers.qwen_text import daily_note_items_or_fallback
 from coco.providers.wan_image import WanImageClient
 
@@ -72,37 +74,33 @@ def _day_bounds_utc(settings: Settings, note_date: date) -> tuple[datetime, date
     return start_local.astimezone(UTC), end_local.astimezone(UTC)
 
 
-def _image_url_path(note_id: UUID, image_id: UUID) -> str:
-    return f"/v1/daily-notes/{note_id}/images/{image_id}"
+def _parent_photo_key(user_id: UUID) -> str:
+    return f"daily-notes/{user_id}/parent-photo"
 
 
-def _to_note_response(note: DailyNote, images: list[DailyNoteImage]) -> DailyNoteResponse:
-    items = note.items_json if isinstance(note.items_json, list) else []
-    str_items = [str(x) for x in items if isinstance(x, str) and x.strip()]
-    return DailyNoteResponse(
-        id=note.id,
-        note_date=note.note_date,
-        items=str_items,
-        body_text=note.body_text or "\n".join(str_items),
-        status=note.status,
-        source=note.source,
-        shared_at=note.shared_at,
-        images=[
-            DailyNoteImageMeta(
-                id=img.id,
-                seq=img.seq,
-                mime_type=img.mime_type,
-                url_path=_image_url_path(note.id, img.id),
-            )
-            for img in sorted(images, key=lambda i: i.seq)
-        ],
-        created_at=note.created_at,
-    )
+def _note_image_key(*, parent_id: UUID, note_id: UUID, image_id: UUID) -> str:
+    return f"daily-notes/{parent_id}/{note_id}/{image_id}"
 
 
 class DailyNoteService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+
+    def _require_bos(self) -> BosStorage:
+        if not self._settings.bos_available:
+            raise AppError(
+                503,
+                "bos.not_configured",
+                "对象存储未配置，暂时无法处理图片。请稍后再试，文字小记不受影响。",
+            )
+        # 复用进程内客户端，并确保桶已开 Web 读 CORS
+        return get_bos_storage()
+
+    async def _presign(self, bos: BosStorage, key: str) -> str:
+        return await bos.presigned_url(
+            key,
+            expiration_seconds=max(60, self._settings.bos_url_ttl_seconds),
+        )
 
     async def get_or_create_settings(
         self, session: AsyncSession, *, user: User
@@ -120,23 +118,28 @@ class DailyNoteService:
             await session.refresh(row)
         return row
 
-    async def get_settings(
-        self, session: AsyncSession, *, user: User
-    ) -> DailyNoteSettingsResponse:
+    async def get_settings(self, session: AsyncSession, *, user: User) -> DailyNoteSettingsResponse:
         if user.role != UserRole.PARENT.value:
             raise AppError(403, "daily_note.parent_required", "只有老人模式可以管理每日小记。")
         settings = await self.get_or_create_settings(session, user=user)
-        gender = user.gender if user.gender in {g.value for g in UserGender} else UserGender.UNKNOWN.value
-        has_photo = bool(settings.parent_photo_data)
+        gender = (
+            user.gender
+            if user.gender in {g.value for g in UserGender}
+            else UserGender.UNKNOWN.value
+        )
+        key = settings.parent_photo_object_key
+        has_photo = bool(key)
+        photo_url: str | None = None
+        if has_photo and key:
+            bos = self._require_bos()
+            photo_url = await self._presign(bos, key)
         return DailyNoteSettingsResponse(
             generate_enabled=settings.generate_enabled,
             share_to_child_enabled=settings.share_to_child_enabled,
             generate_hour=settings.generate_hour,
             gender=gender,  # type: ignore[arg-type]
             has_parent_photo=has_photo,
-            parent_photo_url_path=(
-                "/v1/daily-notes/settings/parent-photo" if has_photo else None
-            ),
+            parent_photo_url=photo_url,
         )
 
     async def update_settings(
@@ -184,8 +187,11 @@ class DailyNoteService:
                 "daily_note.photo_too_large",
                 "照片太大了，请选一张更小的（约 3MB 以内）。数据没有写入。",
             )
+        bos = self._require_bos()
         settings = await self.get_or_create_settings(session, user=user)
-        settings.parent_photo_data = data
+        key = _parent_photo_key(user.id)
+        await bos.put_bytes(key, data, content_type=cleaned_mime)
+        settings.parent_photo_object_key = key
         settings.parent_photo_mime = cleaned_mime
         await session.commit()
         return await self.get_settings(session, user=user)
@@ -196,20 +202,18 @@ class DailyNoteService:
         if user.role != UserRole.PARENT.value:
             raise AppError(403, "daily_note.parent_required", "只有老人模式可以管理参考照。")
         settings = await self.get_or_create_settings(session, user=user)
-        settings.parent_photo_data = None
+        old_key = settings.parent_photo_object_key
+        settings.parent_photo_object_key = None
         settings.parent_photo_mime = None
         await session.commit()
+        if old_key and self._settings.bos_available:
+            try:
+                await self._require_bos().delete(old_key)
+            except Exception:
+                logger.warning(
+                    "daily_note_parent_photo_bos_delete_failed key=%s", old_key, exc_info=True
+                )
         return await self.get_settings(session, user=user)
-
-    async def get_parent_photo_bytes(
-        self, session: AsyncSession, *, user: User
-    ) -> tuple[bytes, str]:
-        if user.role != UserRole.PARENT.value:
-            raise AppError(403, "daily_note.parent_required", "只有老人模式可以查看参考照。")
-        settings = await self.get_or_create_settings(session, user=user)
-        if not settings.parent_photo_data:
-            raise AppError(404, "daily_note.photo_not_found", "还没有上传参考照。")
-        return settings.parent_photo_data, settings.parent_photo_mime or "image/jpeg"
 
     async def list_for_parent(
         self, session: AsyncSession, *, user: User, limit: int = 60
@@ -220,9 +224,7 @@ class DailyNoteService:
             select(DailyNote)
             .where(
                 DailyNote.parent_id == user.id,
-                DailyNote.status.in_(
-                    [DailyNoteStatus.READY.value, DailyNoteStatus.EMPTY.value]
-                ),
+                DailyNote.status.in_([DailyNoteStatus.READY.value, DailyNoteStatus.EMPTY.value]),
             )
             .order_by(DailyNote.note_date.desc())
             .limit(limit)
@@ -240,9 +242,7 @@ class DailyNoteService:
             raise AppError(404, "daily_note.not_found", "找不到这条每日小记。")
         return await self._response_with_images(session, note)
 
-    async def child_today(
-        self, session: AsyncSession, *, user: User
-    ) -> DailyNoteResponse | None:
+    async def child_today(self, session: AsyncSession, *, user: User) -> DailyNoteResponse | None:
         """子女近况：仅返回已分享的今日小记。"""
         if user.role != UserRole.CHILD.value:
             raise AppError(403, "daily_note.child_required", "只有子女模式可以查看家人小记。")
@@ -267,23 +267,6 @@ class DailyNoteService:
         if note is None:
             return None
         return await self._response_with_images(session, note)
-
-    async def get_image_bytes(
-        self,
-        session: AsyncSession,
-        *,
-        user: User,
-        note_id: UUID,
-        image_id: UUID,
-    ) -> tuple[bytes, str]:
-        note = await session.get(DailyNote, note_id)
-        if note is None:
-            raise AppError(404, "daily_note.not_found", "找不到这条每日小记。")
-        await self._assert_can_view_note(session, user=user, note=note)
-        image = await session.get(DailyNoteImage, image_id)
-        if image is None or image.daily_note_id != note.id:
-            raise AppError(404, "daily_note.image_not_found", "找不到这张配图。")
-        return image.data, image.mime_type
 
     async def generate_for_parent(
         self,
@@ -322,9 +305,7 @@ class DailyNoteService:
                 note.items_json = []
                 note.body_text = ""
                 note.shared_at = None
-                await session.execute(
-                    delete(DailyNoteImage).where(DailyNoteImage.daily_note_id == note.id)
-                )
+                await self._delete_note_images(session, note=note)
                 await session.commit()
                 await session.refresh(note)
                 return await self._response_with_images(session, note)
@@ -332,9 +313,7 @@ class DailyNoteService:
             note.items_json = items
             note.body_text = "\n".join(items)
             note.status = DailyNoteStatus.READY.value
-            await session.execute(
-                delete(DailyNoteImage).where(DailyNoteImage.daily_note_id == note.id)
-            )
+            await self._delete_note_images(session, note=note)
             await session.commit()
 
             # 生图前再读设置，确保参考照字段最新
@@ -380,13 +359,17 @@ class DailyNoteService:
         hour = local_now.hour
 
         settings_rows = (
-            await session.execute(
-                select(DailyNoteSettings).where(
-                    DailyNoteSettings.generate_enabled.is_(True),
-                    DailyNoteSettings.generate_hour == hour,
+            (
+                await session.execute(
+                    select(DailyNoteSettings).where(
+                        DailyNoteSettings.generate_enabled.is_(True),
+                        DailyNoteSettings.generate_hour == hour,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         done = 0
         for settings in settings_rows:
@@ -437,9 +420,7 @@ class DailyNoteService:
                 )
                 done += 1
             except Exception:
-                logger.exception(
-                    "daily_note_auto_failed parent_id=%s", settings.user_id
-                )
+                logger.exception("daily_note_auto_failed parent_id=%s", settings.user_id)
         return done
 
     async def _response_with_images(
@@ -449,6 +430,15 @@ class DailyNoteService:
             (
                 await session.execute(
                     select(DailyNoteImage)
+                    .options(
+                        load_only(
+                            DailyNoteImage.id,
+                            DailyNoteImage.daily_note_id,
+                            DailyNoteImage.seq,
+                            DailyNoteImage.mime_type,
+                            DailyNoteImage.object_key,
+                        )
+                    )
                     .where(DailyNoteImage.daily_note_id == note.id)
                     .order_by(DailyNoteImage.seq.asc())
                 )
@@ -456,7 +446,57 @@ class DailyNoteService:
             .scalars()
             .all()
         )
-        return _to_note_response(note, images)
+        items = note.items_json if isinstance(note.items_json, list) else []
+        str_items = [str(x) for x in items if isinstance(x, str) and x.strip()]
+        metas: list[DailyNoteImageMeta] = []
+        if images:
+            bos = self._require_bos()
+            for img in sorted(images, key=lambda i: i.seq):
+                metas.append(
+                    DailyNoteImageMeta(
+                        id=img.id,
+                        seq=img.seq,
+                        mime_type=img.mime_type,
+                        url=await self._presign(bos, img.object_key),
+                    )
+                )
+        return DailyNoteResponse(
+            id=note.id,
+            note_date=note.note_date,
+            items=str_items,
+            body_text=note.body_text or "\n".join(str_items),
+            status=note.status,
+            source=note.source,
+            shared_at=note.shared_at,
+            images=metas,
+            created_at=note.created_at,
+        )
+
+    async def _delete_note_images(self, session: AsyncSession, *, note: DailyNote) -> None:
+        """删库前先清 BOS，避免孤儿对象。"""
+        rows = list(
+            (
+                await session.execute(
+                    select(DailyNoteImage)
+                    .options(load_only(DailyNoteImage.id, DailyNoteImage.object_key))
+                    .where(DailyNoteImage.daily_note_id == note.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if rows and self._settings.bos_available:
+            bos = self._require_bos()
+            for row in rows:
+                try:
+                    await bos.delete(row.object_key)
+                except Exception:
+                    logger.warning(
+                        "daily_note_image_bos_delete_failed key=%s",
+                        row.object_key,
+                        exc_info=True,
+                    )
+        await session.execute(delete(DailyNoteImage).where(DailyNoteImage.daily_note_id == note.id))
 
     async def _upsert_pending(
         self,
@@ -496,35 +536,43 @@ class DailyNoteService:
     ) -> str:
         day_start, day_end = _day_bounds_utc(self._settings, note_date)
         convs = (
-            await session.execute(
-                select(Conversation)
-                .where(
-                    Conversation.user_id == user_id,
-                    Conversation.started_at >= day_start,
-                    Conversation.started_at < day_end,
+            (
+                await session.execute(
+                    select(Conversation)
+                    .where(
+                        Conversation.user_id == user_id,
+                        Conversation.started_at >= day_start,
+                        Conversation.started_at < day_end,
+                    )
+                    .order_by(Conversation.started_at.asc())
                 )
-                .order_by(Conversation.started_at.asc())
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if not convs:
             return ""
         lines: list[str] = []
         for conv in convs:
             items = (
-                await session.execute(
-                    select(ConversationItem)
-                    .where(
-                        ConversationItem.conversation_id == conv.id,
-                        ConversationItem.kind.in_(
-                            [
-                                ConversationItemKind.USER.value,
-                                ConversationItemKind.ASSISTANT.value,
-                            ]
-                        ),
+                (
+                    await session.execute(
+                        select(ConversationItem)
+                        .where(
+                            ConversationItem.conversation_id == conv.id,
+                            ConversationItem.kind.in_(
+                                [
+                                    ConversationItemKind.USER.value,
+                                    ConversationItemKind.ASSISTANT.value,
+                                ]
+                            ),
+                        )
+                        .order_by(ConversationItem.seq.asc())
                     )
-                    .order_by(ConversationItem.seq.asc())
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for item in items:
                 text = (item.text or "").strip()
                 if not text:
@@ -565,10 +613,21 @@ class DailyNoteService:
             return
 
         refs: list[str] = [_to_data_uri(coco_bytes, "image/png")]
-        has_parent_photo = bool(settings.parent_photo_data)
-        if has_parent_photo and settings.parent_photo_data:
-            mime = settings.parent_photo_mime or "image/jpeg"
-            refs.append(_to_data_uri(settings.parent_photo_data, mime))
+        parent_key = settings.parent_photo_object_key
+        has_parent_photo = bool(parent_key)
+        if has_parent_photo and parent_key:
+            try:
+                bos = self._require_bos()
+                photo = await bos.get_bytes(parent_key)
+                mime = settings.parent_photo_mime or "image/jpeg"
+                refs.append(_to_data_uri(photo, mime))
+            except Exception:
+                logger.warning(
+                    "daily_note_parent_photo_load_failed key=%s",
+                    parent_key,
+                    exc_info=True,
+                )
+                has_parent_photo = False
 
         scenes = items[:2]
         elder = _elder_look(gender)
@@ -579,6 +638,7 @@ class DailyNoteService:
                 model=self._settings.image_model,
                 base_url=self._settings.aliyun_http_base_url,
             )
+            bos = self._require_bos()
             for seq, scene in enumerate(scenes):
                 if has_parent_photo:
                     prompt = (
@@ -612,13 +672,20 @@ class DailyNoteService:
                             len(raw),
                         )
                         continue
+                    image_id = uuid4()
+                    object_key = _note_image_key(
+                        parent_id=note.parent_id,
+                        note_id=note.id,
+                        image_id=image_id,
+                    )
+                    await bos.put_bytes(object_key, raw, content_type=mime)
                     session.add(
                         DailyNoteImage(
-                            id=uuid4(),
+                            id=image_id,
                             daily_note_id=note.id,
                             seq=seq,
                             mime_type=mime,
-                            data=raw,
+                            object_key=object_key,
                             prompt=prompt,
                         )
                     )
@@ -679,23 +746,6 @@ class DailyNoteService:
                     note.shared_at = None
                     note.share_error = "发送失败"
                     await session.commit()
-
-    async def _assert_can_view_note(
-        self, session: AsyncSession, *, user: User, note: DailyNote
-    ) -> None:
-        if user.role == UserRole.PARENT.value and note.parent_id == user.id:
-            return
-        if user.role == UserRole.CHILD.value and note.shared_at is not None:
-            family = await session.scalar(
-                select(Family).where(
-                    Family.child_user_id == user.id,
-                    Family.parent_user_id == note.parent_id,
-                    Family.status == FamilyStatus.ACTIVE.value,
-                )
-            )
-            if family is not None:
-                return
-        raise AppError(403, "daily_note.forbidden", "没有权限查看这张配图。")
 
 
 async def _download_image(url: str) -> tuple[bytes, str]:

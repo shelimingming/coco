@@ -4,7 +4,7 @@ import '../theme/tokens.dart';
 
 /// 页面底部展示的版本号；每次 git commit 小版本 +1（见 AGENTS.md）。
 abstract final class AppVersionConfig {
-  static const String label = 'v1.0.11';
+  static const String label = 'v1.0.12';
 }
 
 /// 页面底部小号版本号，不抢主内容注意力。

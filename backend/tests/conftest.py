@@ -16,6 +16,7 @@ os.environ.setdefault("COCO_ENVIRONMENT", "test")
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "integration: needs PostgreSQL via COCO_DATABASE_URL")
+    config.addinivalue_line("markers", "bos: needs real Baidu BOS credentials")
 
 
 def _resolve_database_url() -> str | None:

@@ -15,10 +15,25 @@ from coco.database import get_session
 from coco.errors import AppError
 from coco.models.auth import AuthSession
 from coco.models.user import User, UserStatus
+from coco.providers.bos_storage import BosStorage, build_bos_storage
 from coco.security import Principal, decode_access_token
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+def get_bos_storage_dep(settings: SettingsDep) -> BosStorage:
+    """注入 BOS 客户端；未配置时返回可展示的中文错误。"""
+    if not settings.bos_available:
+        raise AppError(
+            503,
+            "bos.not_configured",
+            "对象存储未配置，请联系支持。现有业务数据不受影响。",
+        )
+    return build_bos_storage(settings)
+
+
+BosStorageDep = Annotated[BosStorage, Depends(get_bos_storage_dep)]
 
 _bearer = HTTPBearer(auto_error=False)
 

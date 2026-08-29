@@ -163,7 +163,7 @@ class _NoteListTile extends StatelessWidget {
                   child: SizedBox(
                     width: 64,
                     height: 64,
-                    child: DailyNoteImage(urlPath: note.images.first.urlPath),
+                    child: DailyNoteImage(url: note.images.first.url),
                   ),
                 )
               else

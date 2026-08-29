@@ -145,7 +145,7 @@ class DailyNoteDiaryBody extends StatelessWidget {
                     for (final img in note.images)
                       if (!pairedSeq.contains(img.seq)) ...[
                         const SizedBox(height: CocoSpace.s4),
-                        _RoundedPhoto(urlPath: img.urlPath),
+                        _RoundedPhoto(url: img.url),
                       ],
                     const SizedBox(height: CocoSpace.s6),
                     Row(
@@ -339,7 +339,7 @@ class _ScrapbookEntry extends StatelessWidget {
         ),
         if (image != null) ...[
           const SizedBox(height: CocoSpace.s3),
-          _RoundedPhoto(urlPath: image!.urlPath),
+          _RoundedPhoto(url: image!.url),
         ],
       ],
     );
@@ -347,9 +347,9 @@ class _ScrapbookEntry extends StatelessWidget {
 }
 
 class _RoundedPhoto extends StatelessWidget {
-  const _RoundedPhoto({required this.urlPath});
+  const _RoundedPhoto({required this.url});
 
-  final String urlPath;
+  final String url;
 
   @override
   Widget build(BuildContext context) {
@@ -357,7 +357,7 @@ class _RoundedPhoto extends StatelessWidget {
       borderRadius: BorderRadius.circular(CocoRadius.lg),
       child: AspectRatio(
         aspectRatio: 4 / 3,
-        child: DailyNoteImage(urlPath: urlPath),
+        child: DailyNoteImage(url: url),
       ),
     );
   }

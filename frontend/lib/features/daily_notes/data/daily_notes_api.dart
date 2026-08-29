@@ -136,22 +136,6 @@ class DailyNotesApi {
       throwApiException(error);
     }
   }
-
-  Future<Uint8List> loadImageBytes(String urlPath) async {
-    try {
-      final response = await _dio.get<List<int>>(
-        urlPath,
-        options: Options(responseType: ResponseType.bytes),
-      );
-      final data = response.data;
-      if (data == null) {
-        return Uint8List(0);
-      }
-      return Uint8List.fromList(data);
-    } on DioException catch (error) {
-      throwApiException(error);
-    }
-  }
 }
 
 final dailyNotesApiProvider = Provider<DailyNotesApi>((ref) {

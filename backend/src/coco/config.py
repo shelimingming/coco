@@ -93,6 +93,25 @@ class Settings(BaseSettings):
     # 调试：把每次大模型调用写入 llm_traces，供运营后台按用户排查
     llm_trace_enabled: bool = True
 
+    # 百度 BOS：密钥只留服务端；未配置时业务可降级跳过对象存储
+    bos_access_key_id: SecretStr | None = None
+    bos_secret_access_key: SecretStr | None = None
+    bos_endpoint: str = "https://bj.bcebos.com"
+    bos_bucket: str = "coco-oss"
+    # 列表/设置返回的签名 URL 有效期（秒）
+    bos_url_ttl_seconds: int = 3600
+
+    @property
+    def bos_available(self) -> bool:
+        """AK/SK 与 bucket 齐全时才认为 BOS 可用。"""
+        ak = self.bos_access_key_id
+        sk = self.bos_secret_access_key
+        if ak is None or sk is None:
+            return False
+        if not ak.get_secret_value().strip() or not sk.get_secret_value().strip():
+            return False
+        return bool(self.bos_bucket.strip())
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def _strip_origins(cls, value: object) -> object:

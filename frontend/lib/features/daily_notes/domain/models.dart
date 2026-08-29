@@ -6,7 +6,7 @@ class DailyNoteSettings {
     required this.generateHour,
     required this.gender,
     required this.hasParentPhoto,
-    this.parentPhotoUrlPath,
+    this.parentPhotoUrl,
   });
 
   final bool generateEnabled;
@@ -14,7 +14,8 @@ class DailyNoteSettings {
   final int generateHour;
   final String gender; // male / female / unknown
   final bool hasParentPhoto;
-  final String? parentPhotoUrlPath;
+  /// BOS 签名 URL，可 Image.network 直连。
+  final String? parentPhotoUrl;
 
   factory DailyNoteSettings.fromJson(Map<String, dynamic> json) {
     return DailyNoteSettings(
@@ -23,7 +24,7 @@ class DailyNoteSettings {
       generateHour: json['generate_hour'] as int? ?? 20,
       gender: json['gender'] as String? ?? 'unknown',
       hasParentPhoto: json['has_parent_photo'] as bool? ?? false,
-      parentPhotoUrlPath: json['parent_photo_url_path'] as String?,
+      parentPhotoUrl: json['parent_photo_url'] as String?,
     );
   }
 }
@@ -33,20 +34,21 @@ class DailyNoteImageMeta {
     required this.id,
     required this.seq,
     required this.mimeType,
-    required this.urlPath,
+    required this.url,
   });
 
   final String id;
   final int seq;
   final String mimeType;
-  final String urlPath;
+  /// BOS 签名 URL。
+  final String url;
 
   factory DailyNoteImageMeta.fromJson(Map<String, dynamic> json) {
     return DailyNoteImageMeta(
       id: json['id'] as String,
       seq: json['seq'] as int? ?? 0,
       mimeType: json['mime_type'] as String? ?? 'image/png',
-      urlPath: json['url_path'] as String,
+      url: json['url'] as String,
     );
   }
 }

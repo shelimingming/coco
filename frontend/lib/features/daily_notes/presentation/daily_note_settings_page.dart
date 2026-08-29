@@ -91,7 +91,7 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
             ),
             const SizedBox(height: CocoSpace.s3),
             if (settings.hasParentPhoto &&
-                settings.parentPhotoUrlPath != null) ...[
+                settings.parentPhotoUrl != null) ...[
               Align(
                 alignment: Alignment.centerLeft,
                 child: ClipRRect(
@@ -100,7 +100,7 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
                     width: 96,
                     height: 96,
                     child: DailyNoteImage(
-                      urlPath: settings.parentPhotoUrlPath!,
+                      url: settings.parentPhotoUrl!,
                     ),
                   ),
                 ),
@@ -172,7 +172,6 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
             mimeSubtype: subtype,
           );
       ref.invalidate(dailyNoteSettingsProvider);
-      ref.invalidate(dailyNoteImageBytesProvider);
     } on ApiException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

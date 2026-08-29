@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/daily_notes_api.dart';
@@ -23,9 +21,4 @@ final dailyNoteDetailProvider =
 final childDailyNoteTodayProvider =
     FutureProvider.autoDispose<DailyNote?>((ref) async {
   return ref.watch(dailyNotesApiProvider).childToday();
-});
-
-final dailyNoteImageBytesProvider = FutureProvider.autoDispose
-    .family<Uint8List, String>((ref, urlPath) async {
-  return ref.watch(dailyNotesApiProvider).loadImageBytes(urlPath);
 });
