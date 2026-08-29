@@ -28,6 +28,45 @@ def test_pending_goes_to_notified_1() -> None:
     assert plan.increment_attempt is True
 
 
+def test_notified_1_missing_timestamp_heals_without_renotify() -> None:
+    """缺 first_notified_at 只补字段，避免每轮扫描重复推送。"""
+    now = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
+    plan = plan_occurrence_transition(
+        delivery_state=DeliveryState.NOTIFIED_1.value,
+        now=now,
+        first_notified_at=None,
+        second_notified_at=None,
+        snooze_until=None,
+        reminder_revision=1,
+        current_revision=1,
+        escalation_policy=EscalationPolicy.NONE.value,
+        second_delay=timedelta(minutes=30),
+        escalate_delay=timedelta(minutes=30),
+    )
+    assert plan.next_delivery_state == DeliveryState.NOTIFIED_1.value
+    assert plan.notify_parent is False
+    assert plan.set_first_notified is True
+
+
+def test_notified_2_missing_timestamp_heals_without_renotify() -> None:
+    now = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
+    plan = plan_occurrence_transition(
+        delivery_state=DeliveryState.NOTIFIED_2.value,
+        now=now,
+        first_notified_at=datetime(2026, 8, 9, 11, 0, tzinfo=UTC),
+        second_notified_at=None,
+        snooze_until=None,
+        reminder_revision=1,
+        current_revision=1,
+        escalation_policy=EscalationPolicy.NONE.value,
+        second_delay=timedelta(minutes=30),
+        escalate_delay=timedelta(minutes=30),
+    )
+    assert plan.next_delivery_state == DeliveryState.NOTIFIED_2.value
+    assert plan.notify_parent is False
+    assert plan.set_second_notified is True
+
+
 def test_notified_1_waits_before_second() -> None:
     now = datetime(2026, 8, 9, 12, 10, tzinfo=UTC)
     first_at = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)

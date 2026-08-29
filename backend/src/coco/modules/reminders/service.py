@@ -466,8 +466,62 @@ class ReminderService:
         reminder.status = ReminderStatus.DELETED.value
         reminder.next_trigger_at = None
         reminder.revision += 1
+        # 删除后收尾未完结到点，并清掉对应未读，避免浮层关不掉
+        await self._close_open_occurrences(session, reminder_id=reminder.id)
+        await self._mark_reminder_notifications_read(
+            session, user_id=user.id, reminder_id=reminder.id
+        )
         await session.commit()
         return {"ok": True}
+
+    async def _close_open_occurrences(
+        self, session: AsyncSession, *, reminder_id: UUID
+    ) -> None:
+        result = await session.execute(
+            select(ReminderOccurrence).where(
+                ReminderOccurrence.reminder_id == reminder_id,
+                ReminderOccurrence.delivery_state.in_(
+                    [
+                        DeliveryState.PENDING.value,
+                        DeliveryState.NOTIFIED_1.value,
+                        DeliveryState.NOTIFIED_2.value,
+                    ]
+                ),
+            )
+        )
+        for occ in result.scalars().all():
+            occ.delivery_state = DeliveryState.CLOSED.value
+            if occ.response_status == ResponseStatus.NONE.value:
+                occ.response_status = ResponseStatus.UNANSWERED.value
+            occ.snooze_until = None
+
+    async def _mark_occurrence_notifications_read(
+        self, session: AsyncSession, *, user_id: UUID, occurrence_id: UUID
+    ) -> None:
+        now = datetime.now(UTC)
+        result = await session.execute(
+            select(Notification).where(
+                Notification.user_id == user_id,
+                Notification.read_at.is_(None),
+                Notification.payload.contains({"occurrence_id": str(occurrence_id)}),
+            )
+        )
+        for note in result.scalars().all():
+            note.read_at = now
+
+    async def _mark_reminder_notifications_read(
+        self, session: AsyncSession, *, user_id: UUID, reminder_id: UUID
+    ) -> None:
+        now = datetime.now(UTC)
+        result = await session.execute(
+            select(Notification).where(
+                Notification.user_id == user_id,
+                Notification.read_at.is_(None),
+                Notification.payload.contains({"reminder_id": str(reminder_id)}),
+            )
+        )
+        for note in result.scalars().all():
+            note.read_at = now
 
     async def respond_to_occurrence(
         self,
@@ -486,9 +540,16 @@ class ReminderService:
         occ = await session.get(ReminderOccurrence, occurrence_id)
         if occ is None:
             raise AppError(404, "reminder.occurrence_not_found", "找不到这条提醒记录。")
-        reminder = await self.get_owned(session, user=user, reminder_id=occ.reminder_id)
+        # 已删除的计划仍允许收尾本次到点，否则未读通知会卡住浮层
+        reminder = await session.get(Reminder, occ.reminder_id)
+        if reminder is None or reminder.user_id != user.id:
+            raise AppError(404, "reminder.not_found", "找不到这个提醒，可能已被删除。")
 
         if occ.delivery_state == DeliveryState.CLOSED.value:
+            await self._mark_occurrence_notifications_read(
+                session, user_id=user.id, occurrence_id=occ.id
+            )
+            await session.commit()
             return _occurrence_response(occ)
 
         status = body.status
@@ -501,14 +562,16 @@ class ReminderService:
             occ.response_source = source
             occ.confirmed_at = now
             occ.snooze_until = None
-            _close_once_reminder(reminder)
+            if reminder.status != ReminderStatus.DELETED.value:
+                _close_once_reminder(reminder)
         elif status == ResponseStatus.SKIPPED_SELF_REPORTED.value:
             occ.delivery_state = DeliveryState.CLOSED.value
             occ.response_status = status
             occ.response_source = source
             occ.confirmed_at = now
             occ.snooze_until = None
-            _close_once_reminder(reminder)
+            if reminder.status != ReminderStatus.DELETED.value:
+                _close_once_reminder(reminder)
         elif status == ResponseStatus.SNOOZED.value:
             minutes = body.snooze_minutes if body.snooze_minutes is not None else 30
             occ.delivery_state = DeliveryState.PENDING.value
@@ -521,10 +584,14 @@ class ReminderService:
             occ.response_status = status
             occ.response_source = source
             occ.snooze_until = None
-            _close_once_reminder(reminder)
+            if reminder.status != ReminderStatus.DELETED.value:
+                _close_once_reminder(reminder)
         else:
             raise AppError(400, "reminder.invalid_response", "这个回应类型还不支持。")
 
+        await self._mark_occurrence_notifications_read(
+            session, user_id=user.id, occurrence_id=occ.id
+        )
         await session.commit()
         await session.refresh(occ)
         return _occurrence_response(occ)

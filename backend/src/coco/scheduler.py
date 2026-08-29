@@ -9,6 +9,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -75,10 +76,10 @@ def plan_occurrence_transition(
             clear_snooze=True,
         )
     if delivery_state == DeliveryState.NOTIFIED_1.value:
+        # 缺时间戳只补字段，绝不再发通知（否则每轮扫描刷屏）
         if first_notified_at is None:
             return OccurrenceTransition(
                 next_delivery_state=DeliveryState.NOTIFIED_1.value,
-                notify_parent=True,
                 set_first_notified=True,
             )
         if now >= first_notified_at + second_delay:
@@ -93,7 +94,6 @@ def plan_occurrence_transition(
         if second_notified_at is None:
             return OccurrenceTransition(
                 next_delivery_state=DeliveryState.NOTIFIED_2.value,
-                notify_parent=True,
                 set_second_notified=True,
             )
         if now >= second_notified_at + escalate_delay:
@@ -108,6 +108,32 @@ def plan_occurrence_transition(
             )
         return OccurrenceTransition(next_delivery_state=None)
     return OccurrenceTransition(next_delivery_state=None)
+
+
+_OPEN_DELIVERY_STATES = (
+    DeliveryState.PENDING.value,
+    DeliveryState.NOTIFIED_1.value,
+    DeliveryState.NOTIFIED_2.value,
+)
+
+
+async def _close_open_occurrences(
+    session: AsyncSession,
+    *,
+    reminder_id: UUID,
+    response_status: str = ResponseStatus.UNANSWERED.value,
+) -> None:
+    """收尾同一计划下未完结的到点，避免多日堆积叠弹。"""
+    result = await session.execute(
+        select(ReminderOccurrence).where(
+            ReminderOccurrence.reminder_id == reminder_id,
+            ReminderOccurrence.delivery_state.in_(_OPEN_DELIVERY_STATES),
+        )
+    )
+    for occ in result.scalars().all():
+        occ.delivery_state = DeliveryState.CLOSED.value
+        occ.response_status = response_status
+        occ.snooze_until = None
 
 
 async def create_due_occurrences(session: AsyncSession, *, now: datetime) -> int:
@@ -126,6 +152,8 @@ async def create_due_occurrences(session: AsyncSession, *, now: datetime) -> int
     for reminder in reminders:
         due_at = reminder.next_trigger_at
         assert due_at is not None
+        # 新一轮到点前关掉旧 occurrence，父母只需处理「这一次」
+        await _close_open_occurrences(session, reminder_id=reminder.id)
         session.add(
             ReminderOccurrence(
                 reminder_id=reminder.id,
@@ -164,20 +192,21 @@ async def advance_open_occurrences(
     result = await session.execute(
         select(ReminderOccurrence, Reminder)
         .join(Reminder, Reminder.id == ReminderOccurrence.reminder_id)
-        .where(
-            ReminderOccurrence.delivery_state.in_(
-                [
-                    DeliveryState.PENDING.value,
-                    DeliveryState.NOTIFIED_1.value,
-                    DeliveryState.NOTIFIED_2.value,
-                ]
-            )
-        )
+        .where(ReminderOccurrence.delivery_state.in_(_OPEN_DELIVERY_STATES))
         .with_for_update(skip_locked=True, of=ReminderOccurrence)
     )
     rows = list(result.all())
     changed = 0
     for occ, reminder in rows:
+        # 计划已停用/删除：静默收尾，不再推通知
+        if reminder.status != ReminderStatus.ACTIVE.value:
+            occ.delivery_state = DeliveryState.CLOSED.value
+            if occ.response_status == ResponseStatus.NONE.value:
+                occ.response_status = ResponseStatus.UNANSWERED.value
+            occ.snooze_until = None
+            changed += 1
+            continue
+
         plan = plan_occurrence_transition(
             delivery_state=occ.delivery_state,
             now=now,

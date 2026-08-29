@@ -236,18 +236,27 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
       await dismissPendingReminder(markRead: true);
       return null;
     }
-    final occ = await _ref
-        .read(remindersApiProvider)
-        .respond(
-          occurrenceId: occurrenceId,
-          status: 'COMPLETED_SELF_REPORTED',
-        );
-    await _ref
-        .read(localNotificationServiceProvider)
-        .cancelReminder(reminderId);
-    await _rescheduleLocal();
-    await dismissPendingReminder(markRead: true);
-    return occ;
+    try {
+      final occ = await _ref
+          .read(remindersApiProvider)
+          .respond(
+            occurrenceId: occurrenceId,
+            status: 'COMPLETED_SELF_REPORTED',
+          );
+      await _ref
+          .read(localNotificationServiceProvider)
+          .cancelReminder(reminderId);
+      await _rescheduleLocal();
+      // 后端会按 occurrence 批量已读；本地再扫一遍防竞态叠弹
+      await _markOccurrenceNotificationsRead(occurrenceId);
+      await dismissPendingReminder(markRead: true);
+      return occ;
+    } catch (_) {
+      // 计划已删等陈旧通知：仍收起并标已读，避免浮层关不掉
+      await _markOccurrenceNotificationsRead(occurrenceId);
+      await dismissPendingReminder(markRead: true);
+      return null;
+    }
   }
 
   Future<ReminderOccurrence?> delayPendingReminder({int minutes = 30}) async {
@@ -259,28 +268,50 @@ class NotificationPoller extends StateNotifier<NotificationPollerState>
       await dismissPendingReminder(markRead: true);
       return null;
     }
-    final occ = await _ref
-        .read(remindersApiProvider)
-        .respond(
-          occurrenceId: occurrenceId,
-          status: 'SNOOZED',
-          snoozeMinutes: minutes,
-        );
-    await _ref
-        .read(localNotificationServiceProvider)
-        .cancelReminder(reminderId);
-    await _rescheduleLocal(
-      snoozeOverride: occ.snoozeUntil == null
-          ? null
-          : LocalReminderSchedule(
-              id: reminderId,
-              title: pending.title,
-              nextTriggerAt: occ.snoozeUntil!,
-              occurrenceId: occ.id,
-            ),
-    );
-    await dismissPendingReminder(markRead: true);
-    return occ;
+    try {
+      final occ = await _ref
+          .read(remindersApiProvider)
+          .respond(
+            occurrenceId: occurrenceId,
+            status: 'SNOOZED',
+            snoozeMinutes: minutes,
+          );
+      await _ref
+          .read(localNotificationServiceProvider)
+          .cancelReminder(reminderId);
+      await _rescheduleLocal(
+        snoozeOverride: occ.snoozeUntil == null
+            ? null
+            : LocalReminderSchedule(
+                id: reminderId,
+                title: pending.title,
+                nextTriggerAt: occ.snoozeUntil!,
+                occurrenceId: occ.id,
+              ),
+      );
+      await _markOccurrenceNotificationsRead(occurrenceId);
+      await dismissPendingReminder(markRead: true);
+      return occ;
+    } catch (_) {
+      await _markOccurrenceNotificationsRead(occurrenceId);
+      await dismissPendingReminder(markRead: true);
+      return null;
+    }
+  }
+
+  /// 同一次到点可能因调度刷屏产生多条未读，确认时一并清掉。
+  Future<void> _markOccurrenceNotificationsRead(String occurrenceId) async {
+    final api = _ref.read(notificationsApiProvider);
+    try {
+      final unread = await api.list(unreadOnly: true);
+      for (final item in unread) {
+        if (item.isReminder && item.occurrenceId == occurrenceId) {
+          try {
+            await api.markRead(item.id);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> acceptPendingSuggestion() async {
