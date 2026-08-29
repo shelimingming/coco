@@ -6,6 +6,7 @@ class LookResult {
     required this.safetyNote,
     required this.sceneDescription,
     this.conversationId,
+    this.shouldStopScreen = false,
   });
 
   final String confidence;
@@ -16,6 +17,9 @@ class LookResult {
   /// 注入 Realtime 语音的详细读图文本
   final String sceneDescription;
   final String? conversationId;
+
+  /// 投屏场景：服务端判定应停止看手机（支付/验证码等）
+  final bool shouldStopScreen;
 
   bool get isClear => confidence == 'high' && headline.trim().isNotEmpty;
 
@@ -33,6 +37,11 @@ class LookResult {
       ];
       scene = parts.isEmpty ? '我看不太清这上面的字。' : parts.join(' ');
     }
+    final stopRaw = json['should_stop_screen'];
+    final shouldStop =
+        stopRaw == true ||
+        stopRaw == 1 ||
+        stopRaw?.toString().toLowerCase() == 'true';
     return LookResult(
       confidence: json['confidence']?.toString() ?? 'low',
       headline: headline,
@@ -40,6 +49,7 @@ class LookResult {
       safetyNote: safetyNote,
       sceneDescription: scene,
       conversationId: json['conversation_id']?.toString(),
+      shouldStopScreen: shouldStop,
     );
   }
 }

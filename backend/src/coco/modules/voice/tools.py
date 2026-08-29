@@ -239,6 +239,26 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "stop_screen_share",
+            "description": (
+                "停止「看手机」投屏：用户说不用看了/关掉屏幕，或画面是支付、转账、验证码、"
+                "密码、银行卡、身份凭证页时调用。只停投屏，不要结束语音陪伴。"
+                "reason 用一句老人能听懂的话说明为什么停。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "停看原因，口语短句",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "open_screen",
             "description": (
                 "打开 App 内某个页面，方便老人用眼睛看列表或设置。"

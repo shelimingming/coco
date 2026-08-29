@@ -114,20 +114,52 @@ class LookController extends StateNotifier<LookState> {
           case ScreenshotPickCancelled():
             return null;
         }
+      case LookSource.screen:
+        // 投屏由 ScreenShareController 抽帧后走 analyzeBytes，不经相册选图
+        _fail(title: '请用首页看手机', message: '请回到首页点「看手机」打开投屏。');
+        return null;
     }
+  }
+
+  /// 已有字节直接识图（看手机抽帧）；[question] 空则用来源默认问题。
+  Future<LookResult?> analyzeBytes({
+    required LookSource source,
+    required Uint8List bytes,
+    String filename = 'screen.jpg',
+    String? question,
+  }) async {
+    if (bytes.isEmpty) {
+      _fail(title: '没有画面', message: '请稍后再试，或换一个页面后说「你看」。');
+      return null;
+    }
+    state = LookState(
+      phase: LookPhase.initialAnalyzing,
+      source: source,
+      imageBytes: bytes,
+    );
+    return _analyze(
+      source: source,
+      bytes: bytes,
+      filename: filename,
+      question: question,
+    );
   }
 
   Future<LookResult?> _analyze({
     required LookSource source,
     required Uint8List bytes,
     required String filename,
+    String? question,
   }) async {
     final gen = ++_opGen;
     try {
       final result = await _lookApi.look(
         imageBytes: bytes,
         filename: filename,
-        question: source.defaultQuestion,
+        question: (question != null && question.trim().isNotEmpty)
+            ? question.trim()
+            : source.defaultQuestion,
+        source: source.wireName,
       );
       if (!_alive(gen)) return null;
 

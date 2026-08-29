@@ -19,7 +19,7 @@ enum LookPhase {
 }
 
 /// 图片来源：只影响取图方式与首轮默认问题。
-enum LookSource { camera, screenshot, album }
+enum LookSource { camera, screenshot, album, screen }
 
 extension LookSourceX on LookSource {
   /// 首轮识图默认问题，传给 POST /v1/vision/look 的 question 字段。
@@ -28,12 +28,14 @@ extension LookSourceX on LookSource {
     LookSource.camera => '请帮我看看这是什么、上面写了什么。',
     LookSource.screenshot => '请帮我看看这条消息在说什么，有没有需要小心的地方。',
     LookSource.album => '请帮我看看这张照片里有什么。',
+    LookSource.screen => '请帮我看看屏幕上的内容在说什么，有没有需要小心的地方。',
   };
 
   String get label => switch (this) {
     LookSource.camera => '拍一张',
     LookSource.screenshot => '最近截屏',
     LookSource.album => '相册',
+    LookSource.screen => '看手机',
   };
 
   /// 注入 Realtime 时的来源标识。
@@ -41,6 +43,7 @@ extension LookSourceX on LookSource {
     LookSource.camera => 'camera',
     LookSource.screenshot => 'screenshot',
     LookSource.album => 'album',
+    LookSource.screen => 'screen',
   };
 }
 

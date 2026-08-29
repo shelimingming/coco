@@ -132,7 +132,9 @@ class _SourceButtons extends StatelessWidget {
       spacing: CocoSpace.s3,
       runSpacing: CocoSpace.s3,
       children: [
-        for (final source in LookSource.values)
+        for (final source in LookSource.values.where(
+          (s) => s != LookSource.screen,
+        ))
           ParentChipButton(
             label: source.label,
             onPressed: () => onPick(source),

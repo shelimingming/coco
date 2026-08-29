@@ -27,6 +27,7 @@ async def look_image(
     service: VisionService = Depends(get_vision_service),
     image: UploadFile = File(..., description="要看的照片"),
     question: str | None = Form(default=None),
+    source: str | None = Form(default=None),
 ) -> LookResponse:
     """父母端识图：只转发内存中的图片字节，请求结束即丢弃（追问用进程内缓存）。"""
     try:
@@ -46,12 +47,22 @@ async def look_image(
             "问题太长了。请用一两句话说清楚想问什么。",
         )
 
+    cleaned_source = (source or "").strip().lower() or None
+    if cleaned_source and cleaned_source not in {
+        "camera",
+        "album",
+        "screenshot",
+        "screen",
+    }:
+        cleaned_source = None
+
     return await service.look(
         session,
         user=user,
         image_bytes=image_bytes,
         content_type=image.content_type,
         question=cleaned_question,
+        source=cleaned_source,
     )
 
 

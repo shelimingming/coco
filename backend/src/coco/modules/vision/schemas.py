@@ -17,6 +17,8 @@ class LookResponse(BaseModel):
     scene_description: str = ""
     # 历史会话 id；仅文本摘要入历史，不含图片
     conversation_id: UUID | None = None
+    # 投屏场景：应停止看手机（支付/验证码等）
+    should_stop_screen: bool = False
 
 
 class LookFollowUpRequest(BaseModel):

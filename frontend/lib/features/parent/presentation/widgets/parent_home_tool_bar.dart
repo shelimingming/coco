@@ -5,7 +5,7 @@ import '../../../../core/theme/tokens.dart';
 import 'parent_home_palette.dart';
 
 /// 底部四工具：说话 / 看眼前 / 看手机 / 看照片。
-/// 「看照片」为瞬时动作，不保持高亮；分析中禁用眼前/手机以减干扰。
+/// 「看照片」为瞬时动作，不保持高亮；投屏中「看手机」保持高亮。
 class ParentHomeToolBar extends StatelessWidget {
   const ParentHomeToolBar({
     super.key,
@@ -16,6 +16,7 @@ class ParentHomeToolBar extends StatelessWidget {
     required this.onPhonePressed,
     required this.onPhotoPressed,
     this.visionToolsEnabled = true,
+    this.phoneActive = false,
   });
 
   final ParentHomePalette palette;
@@ -25,8 +26,11 @@ class ParentHomeToolBar extends StatelessWidget {
   final VoidCallback onPhonePressed;
   final VoidCallback onPhotoPressed;
 
-  /// 分析中为 false：禁用看眼前 / 看手机。
+  /// 分析中为 false：禁用看眼前 / 看照片（投屏中看手机仍可点以停止）。
   final bool visionToolsEnabled;
+
+  /// 投屏会话进行中：看手机高亮。
+  final bool phoneActive;
 
   @override
   Widget build(BuildContext context) {
@@ -59,9 +63,12 @@ class ParentHomeToolBar extends StatelessWidget {
           _ToolItem(
             label: '看手机',
             assetPath: 'assets/icons/parent/icon-tool-phone-day.svg',
-            active: false,
+            active: phoneActive,
             palette: palette,
-            onPressed: visionToolsEnabled ? onPhonePressed : null,
+            // 投屏中仍可点以停止；其它视觉分析中禁用
+            onPressed: (visionToolsEnabled || phoneActive)
+                ? onPhonePressed
+                : null,
           ),
           _ToolItem(
             label: '看照片',

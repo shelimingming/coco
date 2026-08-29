@@ -42,7 +42,21 @@ _LOOK_SYSTEM = """
    - headline: 一两句大字结论（看不清时用空字符串）
    - detail: 一句话补充说明
    - safety_note: 必要安全提示，没有则空字符串
+   - should_stop_screen: 布尔；仅当画面是支付/转账/验证码/密码/银行卡/身份凭证页时为 true，否则 false
 """.strip()
+
+_LOOK_SYSTEM_SCREEN = """
+你是 Coco，正在看老人手机屏幕的一帧画面（可能是短信、微信、App 界面）。
+你的输出会交给语音陪伴模型当上下文。
+必须遵守：
+1. 只根据画面可见内容描述；看不清就写清。
+2. 若像短信/通知：说明大致说什么，是否可疑（要链接、要验证码、要转账、要下载 App 等），不要断言「绝对安全」。
+3. 若像操作界面：标出关键按钮/文字位置，方便语音一次只指导下一步。
+4. 支付、转账、验证码输入、密码、银行卡、身份证件页：should_stop_screen=true，并在 safety_note 说明应停止看屏、建议找子女。
+5. 不做医疗诊断；不指导输入验证码或转账。
+6. 只输出一个 JSON 对象，字段同普通识图，并含 should_stop_screen。
+""".strip()
+
 
 _FOLLOW_UP_SYSTEM = """
 你是 Coco，正在根据同一张照片继续回答老人的追问。
@@ -64,6 +78,7 @@ class LookResult:
     safety_note: str
     # 给 Realtime 语音注入用的详细读图文本
     scene_description: str = ""
+    should_stop_screen: bool = False
 
 
 class QwenVisionClient:
@@ -85,13 +100,16 @@ class QwenVisionClient:
         *,
         image_data_url: str,
         question: str | None = None,
+        source: str | None = None,
     ) -> LookResult:
         """对一张图给出结构化识图结果。"""
         user_text = (question or "").strip() or "请帮我看看这张图里写了什么、是什么意思。"
+        source_key = (source or "").strip().lower()
+        system_prompt = _LOOK_SYSTEM_SCREEN if source_key == "screen" else _LOOK_SYSTEM
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": _LOOK_SYSTEM},
+                {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": [
@@ -278,6 +296,12 @@ def parse_look_content(raw: str) -> LookResult:
     detail = str(data.get("detail") or "").strip()
     safety_note = str(data.get("safety_note") or "").strip()
     scene_description = str(data.get("scene_description") or "").strip()
+    stop_raw = data.get("should_stop_screen")
+    should_stop_screen = stop_raw is True or str(stop_raw).strip().lower() in {
+        "true",
+        "1",
+        "yes",
+    }
 
     if confidence == "low":
         # 看不清时不展示可能误导的结论
@@ -299,6 +323,7 @@ def parse_look_content(raw: str) -> LookResult:
         detail=detail,
         safety_note=safety_note,
         scene_description=scene_description,
+        should_stop_screen=should_stop_screen,
     )
 
 

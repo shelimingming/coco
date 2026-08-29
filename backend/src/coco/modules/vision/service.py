@@ -59,6 +59,7 @@ class VisionService:
         image_bytes: bytes,
         content_type: str | None,
         question: str | None = None,
+        source: str | None = None,
     ) -> LookResponse:
         if user.role != UserRole.PARENT.value:
             raise AppError(403, "auth.role_required", "只有老人模式可以使用帮我看看。")
@@ -90,6 +91,7 @@ class VisionService:
                 image_bytes=image_bytes,
                 mime=mime,
                 question=question,
+                source=source,
             )
         finally:
             reset_llm_trace(tokens)
@@ -114,6 +116,7 @@ class VisionService:
             safety_note=result.safety_note,
             scene_description=result.scene_description,
             conversation_id=conversation_id,
+            should_stop_screen=result.should_stop_screen,
         )
 
     async def follow_up(
@@ -282,6 +285,7 @@ class VisionService:
         image_bytes: bytes,
         mime: str,
         question: str | None,
+        source: str | None = None,
     ) -> LookResult:
         key = self._settings.aliyun_api_key
         if key is None or not key.get_secret_value().strip():
@@ -301,7 +305,11 @@ class VisionService:
                 api_key=key,
                 model=self._settings.vision_model,
             )
-            return await client.look(image_data_url=data_url, question=question)
+            return await client.look(
+                image_data_url=data_url,
+                question=question,
+                source=source,
+            )
         except Exception:
             logger.warning("vision_look_failed", exc_info=True)
             return unclear_look_result()

@@ -17,5 +17,13 @@ import UserNotifications
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    // 看手机：MethodChannel + 广播选择器 PlatformView
+    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "coco.ScreenShareBridge")
+    if let registrar {
+      ScreenShareBridge.register(
+        messenger: registrar.messenger(),
+        registrar: registrar
+      )
+    }
   }
 }

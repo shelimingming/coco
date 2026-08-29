@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/audio/mic_pcm_stream.dart';
 import '../../../core/audio/pcm_stream_player.dart';
+import '../../../core/audio/voice_background.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/screen/screen_wake_lock.dart';
 import '../data/realtime_voice_socket.dart';
@@ -14,6 +15,8 @@ import '../domain/coco_companion_pose.dart';
 import '../domain/pending_voice_action.dart';
 import '../domain/voice_call_state.dart';
 import '../../look/application/look_controller.dart';
+import '../../look/application/screen_share_controller.dart';
+import '../../look/domain/screen_share_state.dart';
 import '../domain/voice_call_transcript.dart';
 import 'coco_companion_controller.dart';
 
@@ -60,6 +63,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   final PcmStreamPlayer _player;
   final RealtimeVoiceSocket _socket;
   final ScreenWakeLock _wakeLock;
+  final VoiceBackground _voiceBackground = createVoiceBackground();
 
   StreamSubscription<Uint8List>? _micSub;
   StreamSubscription<RealtimeSocketEvent>? _socketSub;
@@ -110,6 +114,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       _micSub = _mic.pcmStream.listen((chunk) {
         unawaited(_socket.sendAudioPcm(chunk));
       });
+      // Android：麦克风前台服务，划到后台仍可继续听
+      unawaited(_voiceBackground.startVoiceKeepAlive());
     } on MicPcmException catch (e) {
       await _fail(title: '打不开麦克风', message: e.message);
     } catch (_) {
@@ -212,8 +218,34 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     await _socket.discardVisionSession();
   }
 
+  /// 投屏中用户开口：打断当前回答 → 抽帧识图 → 再注入让可可按新画面说。
+  Future<void> _refreshScreenForUtterance(String userText) async {
+    await prepareForVisionLook();
+    final result = await ref
+        .read(screenShareControllerProvider.notifier)
+        .captureAndAnalyze(question: userText);
+    if (result == null) {
+      setMicSuppressed(false);
+      return;
+    }
+    if (!_started) {
+      final ok = await ensureStarted();
+      if (!ok) return;
+    }
+    await injectVisionContext(
+      sceneDescription: result.sceneDescription,
+      source: 'screen',
+      lookConversationId: result.conversationId,
+    );
+  }
+
   Future<void> stop() async {
     if (!_started && state.phase == VoiceCallPhase.idle) return;
+    // 挂断语音时一并停投屏
+    final share = ref.read(screenShareControllerProvider);
+    if (share.phase != ScreenSharePhase.idle) {
+      unawaited(ref.read(screenShareControllerProvider.notifier).stopSharing());
+    }
     try {
       await _socket.endSession();
     } catch (_) {}
@@ -243,28 +275,28 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      // 播报中被来电/系统音打断：立即停播并提示；倾听中仅暂停上行
-      if (this.state.phase == VoiceCallPhase.speaking) {
-        unawaited(_onAudioInterrupted());
-      } else if (this.state.isActive) {
-        _mic.suppress = true;
+    // inactive：控制中心/短暂遮挡，不要停麦；paused：用户划走 App。
+    // 产品允许显式会话在后台继续听/说（看手机场景必需）。
+    if (state == AppLifecycleState.paused) {
+      if (_started && this.state.isActive) {
+        final sharing = ref.read(screenShareControllerProvider).isSharing;
+        unawaited(_voiceBackground.onEnteredBackground(screenSharing: sharing));
       }
     } else if (state == AppLifecycleState.resumed) {
-      if (_started &&
-          this.state.isActive &&
-          this.state.phase != VoiceCallPhase.speaking) {
-        _mic.suppress = false;
-      }
-      // 部分系统回前台后会丢掉常亮标记，通话未结束则重新申请
       if (_started && this.state.isActive) {
+        // 确保上行未因旧逻辑卡住
+        if (this.state.phase != VoiceCallPhase.speaking) {
+          _mic.suppress = false;
+        }
         unawaited(_setWakeLock(true));
+        unawaited(_voiceBackground.onEnteredForeground());
       }
     }
   }
 
   /// 音频被系统抢占后的明确中断态：停播、恢复听，不挂断会话。
+  /// 保留供来电等真音频焦点丢失时调用（划到后台不再走此路径）。
+  // ignore: unused_element
   Future<void> _onAudioInterrupted() async {
     if (!_started || !state.isActive) return;
     try {
@@ -354,6 +386,11 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
             userCaption: '',
           );
           _syncPose(VoiceCallPhase.thinking);
+          // 投屏中：先抽当前帧再注入，让回答对着最新屏幕
+          final share = ref.read(screenShareControllerProvider);
+          if (share.isSharing) {
+            unawaited(_refreshScreenForUtterance(text));
+          }
         }
       case 'assistant.partial':
         final text = event.text;
@@ -401,10 +438,30 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       case 'vision.state':
         final phase = event.payload['phase']?.toString();
         if (phase != null && phase.isNotEmpty) {
-          ref.read(lookControllerProvider.notifier).applyServerVisionPhase(phase);
+          ref
+              .read(lookControllerProvider.notifier)
+              .applyServerVisionPhase(phase);
+          ref
+              .read(screenShareControllerProvider.notifier)
+              .applyServerVisionPhase(phase);
         }
       case 'vision.closed':
         ref.read(lookControllerProvider.notifier).closeVisualSession();
+        // 关图工具也可能用于停投屏
+        final sharePhase = ref.read(screenShareControllerProvider).phase;
+        if (sharePhase != ScreenSharePhase.idle &&
+            sharePhase != ScreenSharePhase.blocked) {
+          unawaited(
+            ref.read(screenShareControllerProvider.notifier).stopSharing(),
+          );
+        }
+      case 'vision.stop_screen':
+        final reason = event.payload['reason']?.toString();
+        unawaited(
+          ref
+              .read(screenShareControllerProvider.notifier)
+              .applyStopScreen(reason: reason),
+        );
       case 'error':
         unawaited(
           _fail(
@@ -486,6 +543,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     _assistantAccum = '';
     _mic.suppress = false;
     await _setWakeLock(false);
+    unawaited(_voiceBackground.stopVoiceKeepAlive());
     _completeReadyWaiter(false);
     _readyTimeout?.cancel();
     _readyTimeout = null;

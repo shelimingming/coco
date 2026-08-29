@@ -927,7 +927,7 @@ async def _handle_function_call(
                 {"status": "error", "message": "登录状态无效，请重新登录。"},
                 ensure_ascii=False,
             )
-        elif name in {"re_vision_image", "close_vision_image"}:
+        elif name in {"re_vision_image", "close_vision_image", "stop_screen_share"}:
             output = await _dispatch_vision_tool(
                 websocket,
                 vendor,
@@ -1082,6 +1082,25 @@ async def _dispatch_vision_tool(
         await _discard_vision_session(websocket, vendor, vision_session)
         return json.dumps(
             {"status": "ok", "closed": True, "message": "照片已收起，请继续陪用户说话。"},
+            ensure_ascii=False,
+        )
+
+    if name == "stop_screen_share":
+        reason = str(arguments.get("reason") or "").strip()
+        if not reason:
+            reason = "这类页面我不继续看了，建议先退出，有需要让子女帮忙。"
+        await _discard_vision_session(websocket, vendor, vision_session)
+        await _send_json(
+            websocket,
+            _client_event("vision.stop_screen", reason=reason),
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "stopped": True,
+                "reason": reason,
+                "message": "已建议客户端停止看手机。请用口语告诉用户原因，然后继续陪他说话，不要挂断。",
+            },
             ensure_ascii=False,
         )
 

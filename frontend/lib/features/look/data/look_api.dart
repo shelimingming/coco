@@ -17,6 +17,7 @@ class LookApi {
     required Uint8List imageBytes,
     String filename = 'look.jpg',
     String? question,
+    String? source,
   }) async {
     try {
       final form = FormData.fromMap({
@@ -27,6 +28,7 @@ class LookApi {
         ),
         if (question != null && question.trim().isNotEmpty)
           'question': question.trim(),
+        if (source != null && source.trim().isNotEmpty) 'source': source.trim(),
       });
       final response = await _dio.post<Map<String, dynamic>>(
         '/v1/vision/look',

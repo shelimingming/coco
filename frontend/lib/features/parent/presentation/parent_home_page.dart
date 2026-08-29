@@ -16,8 +16,10 @@ import '../../../core/widgets/coco_button.dart';
 import '../../../core/widgets/coco_safe_area.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../look/application/look_controller.dart';
+import '../../look/application/screen_share_controller.dart';
 import '../../look/data/look_api.dart';
 import '../../look/domain/look_state.dart';
+import '../../look/domain/screen_share_state.dart';
 import '../../notifications/application/notification_poller.dart';
 import '../../notifications/domain/models.dart';
 import '../../reminders/application/reminders_providers.dart';
@@ -34,6 +36,7 @@ import 'widgets/parent_home_look_panel.dart';
 import 'widgets/parent_home_palette.dart';
 import 'widgets/parent_home_tool_bar.dart';
 import 'widgets/parent_pending_action_card.dart';
+import 'widgets/parent_screen_share_panel.dart';
 import 'widgets/reminder_suggestion_card.dart';
 
 /// App 冷启动后是否已自动开通过一次；从子页返回不再自动连。
@@ -241,6 +244,19 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 投屏进入 sharingIdle：接通语音并引导去目标页
+    ref.listen<ScreenShareState>(screenShareControllerProvider, (prev, next) {
+      final becameSharing =
+          next.phase == ScreenSharePhase.sharingIdle &&
+          prev?.phase != ScreenSharePhase.sharingIdle &&
+          prev?.phase != ScreenSharePhase.analyzing &&
+          prev?.phase != ScreenSharePhase.viewing &&
+          prev?.phase != ScreenSharePhase.reAnalyzing;
+      if (becameSharing) {
+        unawaited(_onScreenShareBecameActive());
+      }
+    });
+
     final user = ref.watch(authControllerProvider).user;
     final name = user?.displayName ?? '家人';
     final companionPose = ref.watch(cocoCompanionPoseProvider);
@@ -257,23 +273,27 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         : null;
     final voicePending = inCall && callState.pendingAction != null;
     final lookState = ref.watch(lookControllerProvider);
+    final screenShare = ref.watch(screenShareControllerProvider);
     // 有图即占用中间区，直到用户关图；分析中禁用取图以免叠任务
     final lookSession = lookState.isVisualSession;
-    final lookAnalyzing = lookState.isBusy;
+    final lookAnalyzing = lookState.isBusy || screenShare.isBusy;
+    final screenOccupies = screenShare.occupiesCenter;
+    final visualSession = lookSession || screenOccupies;
 
     final palette = ParentHomePalette.standard;
     final greeting = parentHomeGreeting(name);
     // 默认对话不叠气泡；仅「字」开时展示本通记录；识图结果也跟「字」
-    final showTranscript = inCall && _captionVisible && !lookSession;
+    final showTranscript = inCall && _captionVisible && !visualSession;
     final showingConfirmCard =
         voicePending ||
         (!inCall && pendingSuggestion != null) ||
         (!inCall && pendingChildStatus != null);
     // 「字」开、识图、或确认大卡时虚化场景
-    final blurBackground = showTranscript || lookSession || showingConfirmCard;
+    final blurBackground =
+        showTranscript || visualSession || showingConfirmCard;
     // 确认卡要把高度还给中间区，否则「告诉家人」等按钮会被底栏裁掉
     final bottomCopyHeight =
-        (showTranscript || lookSession || showingConfirmCard)
+        (showTranscript || visualSession || showingConfirmCard)
         ? _bottomCopySlotWhenTranscript
         : _bottomCopySlotHeight;
 
@@ -448,6 +468,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                               pendingChildStatus: pendingChildStatus,
                               inCall: inCall,
                               lookState: lookState,
+                              screenShare: screenShare,
                               captionVisible: _captionVisible,
                               userName: name,
                             ),
@@ -492,13 +513,17 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                     ParentHomeToolBar(
                       palette: palette,
                       inCall: inCall,
-                      // 分析中禁用眼前/手机，减轻一屏多主操作
+                      // 分析中禁用眼前/照片；投屏中看手机高亮可再点停止
                       visionToolsEnabled: !lookAnalyzing,
+                      phoneActive:
+                          screenShare.isActive || screenShare.isSharing,
                       onTalkPressed: _onTalkPressed,
                       onFrontPressed: () {
                         unawaited(_runLookAndHandoff(LookSource.camera));
                       },
-                      onPhonePressed: () => _showVisionPlaceholder('看手机'),
+                      onPhonePressed: () {
+                        unawaited(_onPhonePressed());
+                      },
                       onPhotoPressed: () {
                         unawaited(_runLookAndHandoff(LookSource.album));
                       },
@@ -578,14 +603,49 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     return const SizedBox.shrink();
   }
 
-  void _showVisionPlaceholder(String label) {
-    // Web 无法实现看手机；原生端仍用即将支持的占位提示。
-    final message = kIsWeb
-        ? '"看手机"功能在网页端无法使用，请用手机 App 体验完整功能'
-        : '$label即将支持，您可以先用「看照片」。';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  /// 投屏刚成功：接通语音并说引导语（含「不再提醒」直连授权成功）。
+  Future<void> _onScreenShareBecameActive() async {
+    final callController = ref.read(voiceCallControllerProvider.notifier);
+    final voiceOk = await callController.ensureStarted();
+    if (!mounted || !voiceOk) return;
+    await callController.injectVisionContext(
+      sceneDescription:
+          '（系统：用户刚打开「看手机」投屏。请用口语说：'
+          '${ScreenShareState.coachingSpeech}'
+          '不要描述你自己的 App 界面。）',
+      source: 'screen',
+    );
+  }
+
+  Future<void> _onPhonePressed() async {
+    _cancelVoiceGreeting();
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('"看手机"功能在网页端无法使用，请用手机 App 体验完整功能')),
+      );
+      return;
+    }
+    final share = ref.read(screenShareControllerProvider.notifier);
+    final wasSharing =
+        ref.read(screenShareControllerProvider).isSharing ||
+        ref.read(screenShareControllerProvider).isActive;
+    await share.onPhonePressed();
+    if (!mounted) return;
+    // 再点停止时清视觉会话
+    final now = ref.read(screenShareControllerProvider);
+    if (wasSharing && now.phase == ScreenSharePhase.idle) {
+      unawaited(
+        ref.read(voiceCallControllerProvider.notifier).discardVisionSession(),
+      );
+    }
+  }
+
+  /// 说明卡确认后拉起系统投屏。
+  Future<void> _confirmScreenShare({bool dontAskAgain = false}) async {
+    await ref
+        .read(screenShareControllerProvider.notifier)
+        .confirmAndStart(dontAskAgain: dontAskAgain);
   }
 
   /// 底栏「说话」：未通话则开始；通话中再点则结束（出错则重试）。
@@ -610,6 +670,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         _voiceStartedForLook = false;
       });
       lookController.closeVisualSession();
+      unawaited(ref.read(screenShareControllerProvider.notifier).stopSharing());
       unawaited(callController.discardVisionSession());
     } else {
       _entranceTimer?.cancel();
@@ -701,14 +762,231 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required AppNotification? pendingChildStatus,
     required bool inCall,
     required LookState lookState,
+    required ScreenShareState screenShare,
     required bool captionVisible,
     required String userName,
   }) {
-    // 首页原地识图优先于闲置可可（确认卡仍优先）；语音出错时让错误卡露出来
+    // 确认大卡优先
+    if (voicePending) {
+      return Padding(
+        padding: const EdgeInsets.only(top: CocoSpace.s2, bottom: CocoSpace.s2),
+        child: ParentPendingActionCard(
+          action: callState.pendingAction!,
+          busy: callState.pendingActionBusy,
+          onConfirm: () {
+            unawaited(() async {
+              await callController.confirmPendingAction();
+              ref.invalidate(remindersListProvider);
+            }());
+          },
+          onCancel: () {
+            unawaited(callController.cancelPendingAction());
+          },
+        ),
+      );
+    }
+
+    // 看手机：说明卡 / 引导 / 投屏画面
+    if (screenShare.occupiesCenter &&
+        callState.phase != VoiceCallPhase.error &&
+        (pendingSuggestion == null && pendingChildStatus == null)) {
+      if (screenShare.phase == ScreenSharePhase.confirming) {
+        return ParentScreenShareConfirmCard(
+          onConfirm: () => unawaited(_confirmScreenShare()),
+          onCancel: () {
+            ref.read(screenShareControllerProvider.notifier).cancelConfirm();
+          },
+          onConfirmDontAskAgain: () =>
+              unawaited(_confirmScreenShare(dontAskAgain: true)),
+        );
+      }
+      if (screenShare.phase == ScreenSharePhase.awaitingPermission ||
+          screenShare.phase == ScreenSharePhase.starting) {
+        if (screenShare.showIosGuide) {
+          return ParentScreenShareIosGuide(
+            onCancel: () {
+              unawaited(
+                ref.read(screenShareControllerProvider.notifier).stopSharing(),
+              );
+            },
+          );
+        }
+        return Center(
+          child: Text(
+            screenShare.statusLabel,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              color: palette.text,
+            ),
+          ),
+        );
+      }
+      if (screenShare.phase == ScreenSharePhase.blocked ||
+          screenShare.phase == ScreenSharePhase.error) {
+        final msg = screenShare.phase == ScreenSharePhase.blocked
+            ? (screenShare.blockReason ?? '已停止看屏幕')
+            : [
+                if (screenShare.errorTitle != null) screenShare.errorTitle!,
+                if (screenShare.errorMessage != null) screenShare.errorMessage!,
+              ].join('。');
+        final frame = screenShare.latestFrame;
+        if (frame != null && frame.isNotEmpty) {
+          return ParentHomeLookPanel(
+            palette: palette,
+            imageBytes: frame,
+            showScanBrackets: false,
+            statusLabel: screenShare.statusLabel,
+            showCaption: false,
+            errorMessage: msg,
+            onClose: () {
+              if (screenShare.phase == ScreenSharePhase.blocked) {
+                ref
+                    .read(screenShareControllerProvider.notifier)
+                    .dismissBlocked();
+              } else {
+                ref.read(screenShareControllerProvider.notifier).clearError();
+              }
+            },
+          );
+        }
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(CocoSpace.s5),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  screenShare.statusLabel,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    color: palette.text,
+                  ),
+                ),
+                const SizedBox(height: CocoSpace.s3),
+                Text(
+                  msg,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    height: 1.4,
+                    color: CocoColors.neutral700,
+                  ),
+                ),
+                const SizedBox(height: CocoSpace.s4),
+                CocoPrimaryButton(
+                  label: screenShareCloseLabel(screenShare.phase),
+                  onPressed: () {
+                    if (screenShare.phase == ScreenSharePhase.blocked) {
+                      ref
+                          .read(screenShareControllerProvider.notifier)
+                          .dismissBlocked();
+                    } else {
+                      ref
+                          .read(screenShareControllerProvider.notifier)
+                          .clearError();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      // sharingIdle / analyzing / viewing / reAnalyzing
+      final frame = screenShare.latestFrame ?? lookState.imageBytes;
+      if (frame != null && frame.isNotEmpty) {
+        return ParentHomeLookPanel(
+          palette: palette,
+          imageBytes: frame,
+          showScanBrackets: screenShare.showScanBrackets,
+          statusLabel: screenShare.statusLabel,
+          showCaption: captionVisible,
+          captionEntries: callState.currentRoundEntries,
+          onClose: () {
+            unawaited(() async {
+              await ref
+                  .read(screenShareControllerProvider.notifier)
+                  .stopSharing();
+              await callController.discardVisionSession();
+            }());
+          },
+        );
+      }
+      // 尚无帧：暖色占位
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: CocoSpace.s4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    screenShare.statusLabel,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: palette.text,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    unawaited(() async {
+                      await ref
+                          .read(screenShareControllerProvider.notifier)
+                          .stopSharing();
+                      await callController.discardVisionSession();
+                    }());
+                  },
+                  child: Text(
+                    screenShareCloseLabel(screenShare.phase),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: CocoColors.parentPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: CocoSpace.s4),
+            Expanded(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: CocoColors.parentPrimarySoft,
+                  borderRadius: BorderRadius.circular(CocoRadius.xl),
+                ),
+                child: const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(CocoSpace.s5),
+                    child: Text(
+                      '打开短信或卡住的页面后，跟我说一声，我就能看见。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600,
+                        color: CocoColors.neutral950,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 首页原地识图优先于闲置可可；语音出错时让错误卡露出来
     final lookSession = lookState.isVisualSession;
     if (lookSession &&
         callState.phase != VoiceCallPhase.error &&
-        !voicePending &&
         (pendingSuggestion == null && pendingChildStatus == null)) {
       final errorText = lookState.phase == LookPhase.error
           ? [
@@ -763,26 +1041,6 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         message: callState.errorMessage ?? '请稍后再试。',
         onRetry: callController.retry,
         onOpenSettings: title == '打不开麦克风' ? _openAppSettings : null,
-      );
-    }
-
-    if (voicePending) {
-      // 不用外层 ScrollView：卡片内部钉住按钮，长文案自己滚
-      return Padding(
-        padding: const EdgeInsets.only(top: CocoSpace.s2, bottom: CocoSpace.s2),
-        child: ParentPendingActionCard(
-          action: callState.pendingAction!,
-          busy: callState.pendingActionBusy,
-          onConfirm: () {
-            unawaited(() async {
-              await callController.confirmPendingAction();
-              ref.invalidate(remindersListProvider);
-            }());
-          },
-          onCancel: () {
-            unawaited(callController.cancelPendingAction());
-          },
-        ),
       );
     }
 

@@ -75,5 +75,12 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- 投屏切到外 App 时保持语音听/说 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>RTCAppGroupIdentifier</key>
+	<string>group.com.sheliming.coco</string>
 </dict>
 </plist>
