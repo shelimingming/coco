@@ -41,12 +41,9 @@ from coco.providers.wan_image import WanImageClient
 
 logger = logging.getLogger(__name__)
 
-_COCO_LOOK = (
-    "一只可爱的金毛寻回犬小狗可可，圆润卡通风格，温暖阳光，"
-    "戴青色项圈，表情友善"
-)
 _PROMPT_MAX = 500
 _IMAGE_MAX_BYTES = 4 * 1024 * 1024
+_PARENT_PHOTO_MAX_BYTES = 3 * 1024 * 1024
 
 
 def _elder_look(gender: str) -> str:
@@ -55,6 +52,13 @@ def _elder_look(gender: str) -> str:
     if gender == UserGender.FEMALE.value:
         return "一位慈祥的中国老年女性，花白短发，温和微笑，日常家居服装"
     return "一位慈祥的中国长辈，温和微笑，日常家居服装"
+
+
+def _to_data_uri(data: bytes, mime: str) -> str:
+    import base64
+
+    b64 = base64.b64encode(data).decode("ascii")
+    return f"data:{mime};base64,{b64}"
 
 
 def _local_today(settings: Settings) -> date:
@@ -123,11 +127,16 @@ class DailyNoteService:
             raise AppError(403, "daily_note.parent_required", "只有老人模式可以管理每日小记。")
         settings = await self.get_or_create_settings(session, user=user)
         gender = user.gender if user.gender in {g.value for g in UserGender} else UserGender.UNKNOWN.value
+        has_photo = bool(settings.parent_photo_data)
         return DailyNoteSettingsResponse(
             generate_enabled=settings.generate_enabled,
             share_to_child_enabled=settings.share_to_child_enabled,
             generate_hour=settings.generate_hour,
             gender=gender,  # type: ignore[arg-type]
+            has_parent_photo=has_photo,
+            parent_photo_url_path=(
+                "/v1/daily-notes/settings/parent-photo" if has_photo else None
+            ),
         )
 
     async def update_settings(
@@ -149,6 +158,58 @@ class DailyNoteService:
         await session.commit()
         await session.refresh(user)
         return await self.get_settings(session, user=user)
+
+    async def upload_parent_photo(
+        self,
+        session: AsyncSession,
+        *,
+        user: User,
+        data: bytes,
+        mime_type: str,
+    ) -> DailyNoteSettingsResponse:
+        if user.role != UserRole.PARENT.value:
+            raise AppError(403, "daily_note.parent_required", "只有老人模式可以上传参考照。")
+        cleaned_mime = (mime_type or "").split(";")[0].strip().lower() or "image/jpeg"
+        if cleaned_mime not in {"image/jpeg", "image/png", "image/webp"}:
+            raise AppError(
+                400,
+                "daily_note.photo_type",
+                "请上传 JPG、PNG 或 WebP 照片。数据没有写入。",
+            )
+        if not data:
+            raise AppError(400, "daily_note.photo_empty", "没有读到照片，请再选一张。")
+        if len(data) > _PARENT_PHOTO_MAX_BYTES:
+            raise AppError(
+                400,
+                "daily_note.photo_too_large",
+                "照片太大了，请选一张更小的（约 3MB 以内）。数据没有写入。",
+            )
+        settings = await self.get_or_create_settings(session, user=user)
+        settings.parent_photo_data = data
+        settings.parent_photo_mime = cleaned_mime
+        await session.commit()
+        return await self.get_settings(session, user=user)
+
+    async def delete_parent_photo(
+        self, session: AsyncSession, *, user: User
+    ) -> DailyNoteSettingsResponse:
+        if user.role != UserRole.PARENT.value:
+            raise AppError(403, "daily_note.parent_required", "只有老人模式可以管理参考照。")
+        settings = await self.get_or_create_settings(session, user=user)
+        settings.parent_photo_data = None
+        settings.parent_photo_mime = None
+        await session.commit()
+        return await self.get_settings(session, user=user)
+
+    async def get_parent_photo_bytes(
+        self, session: AsyncSession, *, user: User
+    ) -> tuple[bytes, str]:
+        if user.role != UserRole.PARENT.value:
+            raise AppError(403, "daily_note.parent_required", "只有老人模式可以查看参考照。")
+        settings = await self.get_or_create_settings(session, user=user)
+        if not settings.parent_photo_data:
+            raise AppError(404, "daily_note.photo_not_found", "还没有上传参考照。")
+        return settings.parent_photo_data, settings.parent_photo_mime or "image/jpeg"
 
     async def list_for_parent(
         self, session: AsyncSession, *, user: User, limit: int = 60
@@ -276,8 +337,14 @@ class DailyNoteService:
             )
             await session.commit()
 
+            # 生图前再读设置，确保参考照字段最新
+            settings = await self.get_or_create_settings(session, user=user)
             await self._generate_and_store_images(
-                session, note=note, items=items, gender=user.gender
+                session,
+                note=note,
+                items=items,
+                gender=user.gender,
+                settings=settings,
             )
 
             if settings.share_to_child_enabled:
@@ -475,6 +542,7 @@ class DailyNoteService:
         note: DailyNote,
         items: list[str],
         gender: str,
+        settings: DailyNoteSettings,
     ) -> None:
         key = self._settings.aliyun_api_key
         if key is None or not key.get_secret_value().strip():
@@ -488,6 +556,20 @@ class DailyNoteService:
             )
             return
 
+        from coco.assets import load_coco_reference_png
+
+        try:
+            coco_bytes = load_coco_reference_png()
+        except Exception:
+            logger.exception("daily_note_coco_reference_missing")
+            return
+
+        refs: list[str] = [_to_data_uri(coco_bytes, "image/png")]
+        has_parent_photo = bool(settings.parent_photo_data)
+        if has_parent_photo and settings.parent_photo_data:
+            mime = settings.parent_photo_mime or "image/jpeg"
+            refs.append(_to_data_uri(settings.parent_photo_data, mime))
+
         scenes = items[:2]
         elder = _elder_look(gender)
         tokens = bind_llm_trace(user_id=note.parent_id)
@@ -498,16 +580,27 @@ class DailyNoteService:
                 base_url=self._settings.aliyun_http_base_url,
             )
             for seq, scene in enumerate(scenes):
-                prompt = (
-                    f"温馨插画，{_COCO_LOOK}，与{elder}在一起，场景：{scene}。"
-                    "中国家庭日常氛围，柔和暖色，无文字无水印。"
-                )[:_PROMPT_MAX]
+                if has_parent_photo:
+                    prompt = (
+                        f"图1是金毛小狗可可的形象参考，图2是老人的照片参考。"
+                        f"请画温馨插画：保持可可与老人外观一致，"
+                        f"他们一起在「{scene}」的日常场景里，柔和暖色，无文字无水印。"
+                    )
+                else:
+                    # 未上传老人照：只用可可参考图，长辈用文字描述
+                    prompt = (
+                        f"图1是金毛小狗可可的形象参考，请保持其外观一致。"
+                        f"请画温馨插画：可可与{elder}一起在「{scene}」，"
+                        f"中国家庭日常氛围，柔和暖色，无文字无水印。"
+                    )
+                prompt = prompt[:_PROMPT_MAX]
                 try:
                     result = await client.generate(
                         prompt=prompt,
                         n=1,
                         watermark=False,
-                        size="1280*1280",
+                        size="1K",
+                        reference_images=refs,
                     )
                     if not result.images:
                         continue

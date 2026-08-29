@@ -64,13 +64,21 @@ class WanImageClient:
         seed: int | None = None,
         thinking_mode: bool | None = None,
         prompt_extend: bool | None = None,
+        reference_images: list[str] | None = None,
     ) -> ImageGenerateResult:
-        """文生图：优先 HTTP 同步；若该账号/模型仅支持异步则改轮询。"""
+        """文生图 / 多图参考生图：content 可含 image + text。"""
         cleaned = prompt.strip()
         if not cleaned:
             raise RuntimeError("生图提示词不能为空")
         if n < 1 or n > 4:
             raise RuntimeError("生图张数 n 须在 1～4")
+
+        content: list[dict[str, str]] = []
+        for raw in reference_images or []:
+            url = (raw or "").strip()
+            if url:
+                content.append({"image": url})
+        content.append({"text": cleaned})
 
         parameters = self._build_parameters(
             size=size,
@@ -80,6 +88,7 @@ class WanImageClient:
             negative_prompt=negative_prompt,
             thinking_mode=thinking_mode,
             prompt_extend=prompt_extend,
+            has_reference=bool(reference_images),
         )
         payload: dict[str, Any] = {
             "model": self.model,
@@ -87,7 +96,7 @@ class WanImageClient:
                 "messages": [
                     {
                         "role": "user",
-                        "content": [{"text": cleaned}],
+                        "content": content,
                     }
                 ]
             },
@@ -142,12 +151,19 @@ class WanImageClient:
         negative_prompt: str | None,
         thinking_mode: bool | None,
         prompt_extend: bool | None,
+        has_reference: bool = False,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
             "n": n,
             "watermark": watermark,
         }
-        resolved_size = (size or "").strip() or self._default_size()
+        # 有参考图时用 1K/2K 规格字符串更稳；像素串留给纯文生图
+        if has_reference:
+            resolved_size = (size or "").strip() or "1K"
+            if "*" in resolved_size or "x" in resolved_size.lower():
+                resolved_size = "1K"
+        else:
+            resolved_size = (size or "").strip() or self._default_size()
         params["size"] = resolved_size
         if seed is not None:
             params["seed"] = seed
@@ -160,8 +176,11 @@ class WanImageClient:
             if neg:
                 params["negative_prompt"] = neg
         else:
-            # wan2.7-image*：无图输入时 thinking_mode 默认真，可关以换速度
-            params["thinking_mode"] = True if thinking_mode is None else thinking_mode
+            # 有参考图时默认关思考，加快多图参考生成
+            if thinking_mode is None:
+                params["thinking_mode"] = not has_reference
+            else:
+                params["thinking_mode"] = thinking_mode
             neg = (negative_prompt or "").strip()
             if neg:
                 # 部分 2.7 部署也接受 negative_prompt；有则透传
@@ -292,20 +311,29 @@ def parse_image_generate_response(data: dict[str, Any], *, model: str) -> ImageG
 
 
 def _trace_request(payload: dict[str, Any]) -> dict[str, Any]:
-    """trace 里保留提示词摘要，避免超长 prompt 撑爆 JSONB。"""
+    """trace 里保留提示词摘要与参考图数量，不落 base64。"""
     messages = (
         ((payload.get("input") or {}).get("messages") or [])
         if isinstance(payload.get("input"), dict)
         else []
     )
     prompt = ""
+    ref_count = 0
     if messages and isinstance(messages[0], dict):
         content = messages[0].get("content")
-        if isinstance(content, list) and content and isinstance(content[0], dict):
-            prompt = str(content[0].get("text") or "")
+        if isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if isinstance(item.get("image"), str) and item["image"].strip():
+                    ref_count += 1
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    prompt = text
     return {
         "model": payload.get("model"),
         "prompt": prompt[:500],
+        "reference_image_count": ref_count,
         "parameters": payload.get("parameters"),
     }
 

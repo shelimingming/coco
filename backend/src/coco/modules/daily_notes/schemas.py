@@ -18,6 +18,9 @@ class DailyNoteSettingsResponse(FrozenModel):
     share_to_child_enabled: bool
     generate_hour: int
     gender: Literal["male", "female", "unknown"]
+    has_parent_photo: bool
+    # 有照片时前端可拉预览
+    parent_photo_url_path: str | None = None
 
 
 class DailyNoteSettingsUpdateRequest(BaseModel):

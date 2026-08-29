@@ -11,6 +11,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../care/application/care_providers.dart';
 import '../../care/domain/models.dart';
 import '../../daily_notes/application/daily_notes_providers.dart';
+import '../../daily_notes/domain/models.dart';
 import '../../daily_notes/presentation/daily_note_image.dart';
 import '../../family/application/family_providers.dart';
 import '../../family/presentation/call_parent_phone.dart';
@@ -79,7 +80,13 @@ class ChildHomePage extends ConsumerWidget {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              SliverToBoxAdapter(child: _StatusHeader(parentName: parentName)),
+              SliverToBoxAdapter(
+                // 今日有待关注提醒 → 伤心狗；没有 → 开心狗
+                child: _StatusHeader(
+                  parentName: parentName,
+                  hasReminders: today.reminderItems.isNotEmpty,
+                ),
+              ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(
                   CocoSpace.s4,
@@ -95,13 +102,14 @@ class ChildHomePage extends ConsumerWidget {
                       parentName: parentName,
                     ),
                     const SizedBox(height: CocoSpace.s5),
-                    const _DailyNoteBlock(),
-                    const SizedBox(height: CocoSpace.s5),
+                    // 信息同步紧随「需要关注」，空态样式与之一致
                     _SyncBlock(
                       items: today.reminderItems,
                       pendingSuggestions: pendingSuggestions,
                       onSuggest: () => context.push('/child/reminders/suggest'),
                     ),
+                    const SizedBox(height: CocoSpace.s5),
+                    const _DailyNoteBlock(),
                   ]),
                 ),
               ),
@@ -113,7 +121,7 @@ class ChildHomePage extends ConsumerWidget {
   }
 }
 
-/// 已分享的今日小记；无内容时整块不展示。
+/// 已分享的今日小记：近况只展示摘要卡，点进详情看完整图文。
 class _DailyNoteBlock extends ConsumerWidget {
   const _DailyNoteBlock();
 
@@ -128,61 +136,68 @@ class _DailyNoteBlock extends ConsumerWidget {
         if (note == null || !note.isReady) {
           return const SizedBox.shrink();
         }
+        final parentName = _relationLabel(ref);
+        final preview = note.items.isNotEmpty
+            ? note.items.first
+            : (note.bodyText.isNotEmpty ? note.bodyText : '今天有新的小记');
+        final moreHint = note.items.length > 1
+            ? '共 ${note.items.length} 件小事，点开查看'
+            : '点开查看完整小记';
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${_relationLabel(ref)}的今日小记',
+              '$parentName的今日小记',
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: CocoSpace.s3),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(CocoSpace.s4),
-              decoration: BoxDecoration(
-                color: CocoColors.childSurface,
+            Material(
+              color: CocoColors.childSurface,
+              borderRadius: BorderRadius.circular(CocoRadius.lg),
+              child: InkWell(
+                onTap: () => context.push('/child/daily-notes/today'),
                 borderRadius: BorderRadius.circular(CocoRadius.lg),
-                border: Border.all(color: CocoColors.childBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final line in note.items) ...[
-                    Text(
-                      line,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        height: 1.6,
-                        fontSize: note.items.length == 1 ? 20 : 18,
-                      ),
-                    ),
-                    const SizedBox(height: CocoSpace.s2),
-                  ],
-                  if (note.items.isEmpty && note.bodyText.isNotEmpty)
-                    Text(
-                      note.bodyText,
-                      style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
-                    ),
-                  const SizedBox(height: CocoSpace.s2),
-                  Text(
-                    '可可根据今天的交流整理',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: CocoColors.neutral500,
-                    ),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(CocoSpace.s4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(CocoRadius.lg),
+                    border: Border.all(color: CocoColors.childBorder),
                   ),
-                  if (note.images.isNotEmpty) ...[
-                    const SizedBox(height: CocoSpace.s3),
-                    for (final image in note.images) ...[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(CocoRadius.md),
-                        child: AspectRatio(
-                          aspectRatio: 16 / 10,
-                          child: DailyNoteImage(urlPath: image.urlPath),
+                  child: Row(
+                    children: [
+                      _ChildNoteThumb(note: note),
+                      const SizedBox(width: CocoSpace.s3),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              preview,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                color: CocoColors.neutral950,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              moreHint,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: CocoColors.childPrimary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: CocoSpace.s2),
+                      const Icon(
+                        Icons.chevron_right,
+                        color: CocoColors.neutral500,
+                      ),
                     ],
-                  ],
-                ],
+                  ),
+                ),
               ),
             ),
           ],
@@ -192,20 +207,64 @@ class _DailyNoteBlock extends ConsumerWidget {
   }
 
   String _relationLabel(WidgetRef ref) {
-    final name =
-        ref.watch(familyInfoProvider).valueOrNull?.parentDisplayName ?? '家人';
-    return name;
+    return ref.watch(familyInfoProvider).valueOrNull?.parentDisplayName ??
+        '家人';
+  }
+}
+
+class _ChildNoteThumb extends StatelessWidget {
+  const _ChildNoteThumb({required this.note});
+
+  final DailyNote note;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (note.images.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(CocoRadius.md),
+        child: SizedBox(
+          width: 64,
+          height: 64,
+          child: DailyNoteImage(urlPath: note.images.first.urlPath),
+        ),
+      );
+    }
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: BoxDecoration(
+        color: CocoColors.childPrimarySoft,
+        borderRadius: BorderRadius.circular(CocoRadius.md),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '记',
+        style: theme.textTheme.titleLarge?.copyWith(
+          color: CocoColors.childPrimary,
+        ),
+      ),
+    );
   }
 }
 
 class _StatusHeader extends StatelessWidget {
-  const _StatusHeader({required this.parentName});
+  const _StatusHeader({
+    required this.parentName,
+    required this.hasReminders,
+  });
 
   final String parentName;
+  // 与「今日信息同步」是否有待关注提醒对齐
+  final bool hasReminders;
+
+  static const _happyAsset = 'assets/images/child/status_header_bg_happy.png';
+  static const _sadAsset = 'assets/images/child/status_header_bg_sad.png';
 
   @override
   Widget build(BuildContext context) {
     final top = CocoSafeInsets.paddingOf(context).top;
+    final bgAsset = hasReminders ? _sadAsset : _happyAsset;
     // 顶部背景 cover，不横向压缩；可可在素材里，不与卡片同层
     return SizedBox(
       height: top + 168,
@@ -214,7 +273,7 @@ class _StatusHeader extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           Image.asset(
-            'assets/images/child/status_header_bg.png',
+            bgAsset,
             fit: BoxFit.cover,
             alignment: Alignment.topCenter,
             excludeFromSemantics: true,
@@ -372,19 +431,31 @@ class _EmptyAttentionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // 空态与「今日信息同步」一致：青绿软底，不显得像告警白卡
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(CocoSpace.s5),
       decoration: BoxDecoration(
-        color: CocoColors.childSurface,
+        color: CocoColors.childPrimarySoft,
         borderRadius: BorderRadius.circular(CocoRadius.lg),
-        border: Border.all(color: CocoColors.childBorder),
       ),
-      child: Text(
-        '今天没有需要你处理的事。',
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: CocoColors.neutral700,
-        ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.check_circle_outline_rounded,
+            size: 22,
+            color: CocoColors.childPrimary,
+          ),
+          const SizedBox(width: CocoSpace.s3),
+          Expanded(
+            child: Text(
+              '今天没有需要你处理的事。',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: CocoColors.neutral700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

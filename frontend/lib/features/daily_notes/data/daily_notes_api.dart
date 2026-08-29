@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http_parser/http_parser.dart';
 
 import '../../../core/network/api_client.dart';
 import '../domain/models.dart';
@@ -48,13 +49,50 @@ class DailyNotesApi {
     }
   }
 
+  Future<DailyNoteSettings> uploadParentPhoto({
+    required Uint8List bytes,
+    String filename = 'parent.jpg',
+    String mimeSubtype = 'jpeg',
+  }) async {
+    try {
+      final form = FormData.fromMap({
+        'image': MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+          contentType: MediaType('image', mimeSubtype),
+        ),
+      });
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/v1/daily-notes/settings/parent-photo',
+        data: form,
+        options: Options(
+          sendTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 30),
+          contentType: 'multipart/form-data',
+        ),
+      );
+      return DailyNoteSettings.fromJson(asJsonMap(response.data));
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
+  Future<DailyNoteSettings> deleteParentPhoto() async {
+    try {
+      final response = await _dio.delete<Map<String, dynamic>>(
+        '/v1/daily-notes/settings/parent-photo',
+      );
+      return DailyNoteSettings.fromJson(asJsonMap(response.data));
+    } on DioException catch (error) {
+      throwApiException(error);
+    }
+  }
+
   Future<List<DailyNote>> list() async {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/v1/daily-notes');
       final items = asJsonMap(response.data)['items'] as List<dynamic>? ?? [];
-      return items
-          .map((e) => DailyNote.fromJson(asJsonMap(e)))
-          .toList();
+      return items.map((e) => DailyNote.fromJson(asJsonMap(e))).toList();
     } on DioException catch (error) {
       throwApiException(error);
     }
@@ -73,7 +111,6 @@ class DailyNotesApi {
 
   Future<DailyNote> generate() async {
     try {
-      // 生图可能较慢，单独放宽超时
       final response = await _dio.post<Map<String, dynamic>>(
         '/v1/daily-notes/generate',
         data: const <String, dynamic>{},

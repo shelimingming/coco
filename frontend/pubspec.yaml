@@ -92,9 +92,16 @@ flutter:
     - assets/images/onboarding/
     - assets/images/parent/home/
     - assets/images/child/
+    - assets/images/daily_notes/
     - assets/icons/onboarding/
     - assets/icons/parent/
     - assets/icons/child/
+
+  # 每日小记手账正文：龙藏手写体（OFL）
+  fonts:
+    - family: CocoHandwriting
+      fonts:
+        - asset: assets/fonts/LongCang-Regular.ttf
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

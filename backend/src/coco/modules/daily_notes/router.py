@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Response
+from fastapi import APIRouter, Body, Depends, File, Response, UploadFile
 
 from coco.config import Settings, get_settings
 from coco.deps import CurrentUserDep, SessionDep
@@ -42,6 +42,39 @@ async def patch_daily_note_settings(
     service: DailyNoteService = Depends(get_daily_note_service),
 ) -> DailyNoteSettingsResponse:
     return await service.update_settings(session, user=user, body=body)
+
+
+@router.post("/daily-notes/settings/parent-photo", response_model=DailyNoteSettingsResponse)
+async def upload_parent_photo(
+    session: SessionDep,
+    user: CurrentUserDep,
+    image: UploadFile = File(..., description="老人参考照"),
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> DailyNoteSettingsResponse:
+    data = await image.read()
+    mime = image.content_type or "image/jpeg"
+    return await service.upload_parent_photo(
+        session, user=user, data=data, mime_type=mime
+    )
+
+
+@router.delete("/daily-notes/settings/parent-photo", response_model=DailyNoteSettingsResponse)
+async def delete_parent_photo(
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> DailyNoteSettingsResponse:
+    return await service.delete_parent_photo(session, user=user)
+
+
+@router.get("/daily-notes/settings/parent-photo")
+async def get_parent_photo(
+    session: SessionDep,
+    user: CurrentUserDep,
+    service: DailyNoteService = Depends(get_daily_note_service),
+) -> Response:
+    data, mime = await service.get_parent_photo_bytes(session, user=user)
+    return Response(content=data, media_type=mime)
 
 
 @router.get("/daily-notes", response_model=DailyNoteListResponse)

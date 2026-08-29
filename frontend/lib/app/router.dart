@@ -10,7 +10,9 @@ import '../features/child/presentation/child_attention_page.dart';
 import '../features/child/presentation/child_home_page.dart';
 import '../features/child/presentation/child_shell.dart';
 import '../features/child/presentation/child_suggest_reminder_page.dart';
+import '../features/daily_notes/presentation/child_daily_note_detail_page.dart';
 import '../features/daily_notes/presentation/daily_note_detail_page.dart';
+import '../features/daily_notes/presentation/daily_note_settings_page.dart';
 import '../features/daily_notes/presentation/daily_notes_page.dart';
 import '../features/family/presentation/child_family_page.dart';
 import '../features/family/presentation/child_invite_page.dart';
@@ -115,6 +117,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: 'daily-notes',
             builder: (context, state) => const DailyNotesPage(),
             routes: [
+              // settings 须在 :id 前注册，避免被当成 note id
+              GoRoute(
+                path: 'settings',
+                builder: (context, state) => const DailyNoteSettingsPage(),
+              ),
               GoRoute(
                 path: ':id',
                 builder: (context, state) => DailyNoteDetailPage(
@@ -154,6 +161,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'attention',
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) => const ChildAttentionPage(),
+                  ),
+                  GoRoute(
+                    path: 'daily-notes/today',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) =>
+                        const ChildDailyNoteDetailPage(),
                   ),
                   GoRoute(
                     path: 'reminders/suggest',

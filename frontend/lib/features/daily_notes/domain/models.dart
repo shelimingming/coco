@@ -5,12 +5,16 @@ class DailyNoteSettings {
     required this.shareToChildEnabled,
     required this.generateHour,
     required this.gender,
+    required this.hasParentPhoto,
+    this.parentPhotoUrlPath,
   });
 
   final bool generateEnabled;
   final bool shareToChildEnabled;
   final int generateHour;
   final String gender; // male / female / unknown
+  final bool hasParentPhoto;
+  final String? parentPhotoUrlPath;
 
   factory DailyNoteSettings.fromJson(Map<String, dynamic> json) {
     return DailyNoteSettings(
@@ -18,6 +22,8 @@ class DailyNoteSettings {
       shareToChildEnabled: json['share_to_child_enabled'] as bool? ?? false,
       generateHour: json['generate_hour'] as int? ?? 20,
       gender: json['gender'] as String? ?? 'unknown',
+      hasParentPhoto: json['has_parent_photo'] as bool? ?? false,
+      parentPhotoUrlPath: json['parent_photo_url_path'] as String?,
     );
   }
 }

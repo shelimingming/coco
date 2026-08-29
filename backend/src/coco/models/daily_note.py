@@ -52,6 +52,9 @@ class DailyNoteSettings(TimestampMixin, Base):
     )
     # 预留；MVP 固定按 20 点调度
     generate_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    # 可选：老人自传参考照，未上传则生图只用可可参考图
+    parent_photo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    parent_photo_mime: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class DailyNote(UUIDPrimaryKeyMixin, TimestampMixin, Base):
