@@ -11,6 +11,7 @@ from coco.models.conversation import Conversation
 from coco.models.llm_trace import LlmTrace
 from coco.models.user import User
 from coco.observability.llm_trace import (
+    PURPOSE_IMAGE_GENERATE,
     PURPOSE_MEM0_EXTRACT,
     PURPOSE_MEM0_SEARCH,
     PURPOSE_TEXT_TITLE,
@@ -36,6 +37,7 @@ PURPOSE_LABELS: dict[str, str] = {
     PURPOSE_VISION_LOOK: "识图",
     PURPOSE_VISION_FOLLOW_UP: "识图追问",
     PURPOSE_VISION_INJECT: "识图注入语音",
+    PURPOSE_IMAGE_GENERATE: "文生图",
     PURPOSE_TEXT_TITLE: "生成标题",
     PURPOSE_TEXT_TRANSLATE: "报平安转译",
     PURPOSE_MEM0_EXTRACT: "记忆抽取",
@@ -77,6 +79,10 @@ def _summarize(trace: LlmTrace) -> str:
         return str(resp.get("content") or req.get("text") or "")[:60]
     if trace.purpose in {PURPOSE_VISION_LOOK, PURPOSE_VISION_FOLLOW_UP}:
         return str(resp.get("headline") or resp.get("content") or "")[:60]
+    if trace.purpose == PURPOSE_IMAGE_GENERATE:
+        count = resp.get("image_count")
+        prompt = str(req.get("prompt") or "")[:40]
+        return f"{count or '?'} 张 · {prompt or '—'}"
     if trace.error_message:
         return trace.error_message[:80]
     return ""

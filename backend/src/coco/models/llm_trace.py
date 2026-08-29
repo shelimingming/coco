@@ -24,6 +24,7 @@ class LlmTraceModality(enum.StrEnum):
     REALTIME = "realtime"
     TEXT = "text"
     VISION = "vision"
+    IMAGE = "image"
     EMBEDDING = "embedding"
 
 

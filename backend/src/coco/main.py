@@ -26,6 +26,7 @@ from coco.modules.care.router import router as care_router
 from coco.modules.conversations.router import router as conversations_router
 from coco.modules.family.router import router as family_router
 from coco.modules.health.router import router as health_router
+from coco.modules.image.router import router as image_router
 from coco.modules.memories.router import router as memories_router
 from coco.modules.messages.router import router as messages_router
 from coco.modules.notifications.router import router as notifications_router
@@ -164,6 +165,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(me_router)
     app.include_router(voice_router)
     app.include_router(vision_router)
+    app.include_router(image_router)
     app.include_router(audio_router)
     app.include_router(family_router)
     app.include_router(reminders_router)

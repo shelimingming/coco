@@ -42,8 +42,8 @@ class Settings(BaseSettings):
     # Docker 一体部署：指向 Flutter Web 构建目录；空则不托管静态站
     web_static_dir: str | None = None
 
-    # 百炼：密钥只留服务端；无 Key 时应用照常启动，实时/文本/识图能力关闭或降级
-    # 模型名均可在 .env 用 COCO_REALTIME_MODEL / COCO_TEXT_MODEL / COCO_VISION_MODEL 覆盖
+    # 百炼：密钥只留服务端；无 Key 时应用照常启动，实时/文本/识图/生图能力关闭或降级
+    # 模型名均可在 .env 用 COCO_*_MODEL 覆盖
     aliyun_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("COCO_ALIYUN_API_KEY", "DASHSCOPE_API_KEY"),
@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     web_search_timeout_seconds: float = 30.0
     # 识图模型：须支持 Image 输入；qwen-plus 纯文本不可用
     vision_model: str = "qwen3.7-plus"
+    # 文生图：万相 wan2.7-image（快）/ wan2.7-image-pro（可 4K）/ wan2.6-t2i 等
+    image_model: str = "wan2.7-image"
     # 识图追问外壳：独立 ASR / TTS（非 Realtime）
     asr_model: str = "qwen-audio-3.0-asr-flash"
     tts_model: str = "qwen-audio-3.0-tts-flash"
