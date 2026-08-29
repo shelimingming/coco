@@ -17,6 +17,20 @@ import '../../look/application/look_controller.dart';
 import '../domain/voice_call_transcript.dart';
 import 'coco_companion_controller.dart';
 
+/// 语音 open_screen 允许跳转的父母端路径（与后端 OPEN_SCREEN_ROUTES 对齐）。
+const _voiceOpenRoutes = <String>{
+  '/parent',
+  '/parent/reminders',
+  '/parent/memories',
+  '/parent/daily-notes',
+  '/parent/history',
+  '/parent/settings',
+  '/parent/functions',
+};
+
+/// 语音要打开的路由；由 [CocoApp] 监听后 go，避免 feature→app 循环依赖。
+final voicePendingNavigateProvider = StateProvider<String?>((ref) => null);
+
 /// 父母端实时通话状态机：连接 → 听 → 想 → 说；小狗姿态仅倾听 / 说话。
 class VoiceCallController extends StateNotifier<VoiceCallState>
     with WidgetsBindingObserver {
@@ -381,6 +395,9 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         _onActionPending(event.payload);
       case 'action.resolved':
         _onActionResolved(event.payload);
+      case 'navigate.open':
+        // 语音打开页面：会话跨页保留，不挂断
+        _onNavigateOpen(event.payload);
       case 'vision.state':
         final phase = event.payload['phase']?.toString();
         if (phase != null && phase.isNotEmpty) {
@@ -403,6 +420,13 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         // 未知下行事件静默忽略，保证后续扩展兼容。
         break;
     }
+  }
+
+  /// 服务端 open_screen 成功后写入待跳转路由；会话跨页保留，不挂断。
+  void _onNavigateOpen(Map<String, Object?> payload) {
+    final route = payload['route']?.toString().trim() ?? '';
+    if (route.isEmpty || !_voiceOpenRoutes.contains(route)) return;
+    ref.read(voicePendingNavigateProvider.notifier).state = route;
   }
 
   void _onActionPending(Map<String, Object?> payload) {

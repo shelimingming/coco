@@ -81,6 +81,12 @@ def tool_display_summary(tool_name: str, arguments: dict[str, Any], result: dict
             return f"还在问你要不要告诉家人：{summary}" if summary else "还在问你要不要告诉家人"
         return f"准备告诉家人：{summary}" if summary else "准备告诉家人一件事"
 
+    if tool_name == "open_screen":
+        label = str(result.get("label") or "").strip()
+        if status == "error":
+            return "可可没能打开那个页面"
+        return f"打开了「{label}」" if label else "打开了一个页面"
+
     if tool_name == "look_image":
         headline = str(result.get("headline") or "").strip()
         confidence = str(result.get("confidence") or "").strip().lower()

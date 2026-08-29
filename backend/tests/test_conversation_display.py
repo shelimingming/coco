@@ -29,6 +29,14 @@ def test_create_reminder_and_list() -> None:
     )
     assert tool_display_summary("list_reminders", {}, {}) == "可可查看了你的提醒"
     assert tool_display_summary("list_memories", {}, {}) == "可可查看了你记住的事"
+    assert (
+        tool_display_summary(
+            "open_screen",
+            {"screen": "reminders"},
+            {"status": "ok", "label": "提醒事项", "route": "/parent/reminders"},
+        )
+        == "打开了「提醒事项」"
+    )
 
 
 def test_should_list_in_history_filters_greeting_only() -> None:

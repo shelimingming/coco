@@ -9,6 +9,7 @@ import '../core/widgets/web_iphone_shell.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/domain/models.dart';
 import '../features/notifications/application/notification_poller.dart';
+import '../features/parent/application/voice_call_controller.dart';
 import '../features/reminders/presentation/widgets/reminder_overlay_host.dart';
 import 'router.dart';
 
@@ -29,6 +30,13 @@ class CocoApp extends ConsumerWidget {
     );
     // 全局挂载通知轮询：登录后前台拉未读并弹本地系统通知
     ref.watch(notificationPollerProvider);
+
+    // 语音 open_screen：会话跨页保留，由根层执行 go
+    ref.listen<String?>(voicePendingNavigateProvider, (previous, next) {
+      if (next == null || next.isEmpty) return;
+      router.go(next);
+      ref.read(voicePendingNavigateProvider.notifier).state = null;
+    });
 
     final isChild = role == UserRole.child;
     final scaffoldBg = isChild

@@ -3,6 +3,7 @@
 提醒/分享写操作须带 user_confirmed；false 时不落库并返回 need_confirmation。
 用户主动要求记住时用 save_memory 写入显式表；通话中可用 recall_memory 检索。
 时效问答用 web_search（只读联网），不走确认大卡。
+open_screen 只返回路由；由桥接层推 navigate.open，客户端跳转，不结束通话。
 """
 
 from __future__ import annotations
@@ -28,6 +29,17 @@ from coco.modules.reminders.service import ReminderService
 from coco.providers.qwen_text import search_or_unavailable
 
 logger = logging.getLogger(__name__)
+
+# 父母端可语音打开的页面：screen → (route, 口语标签)
+OPEN_SCREEN_ROUTES: dict[str, tuple[str, str]] = {
+    "reminders": ("/parent/reminders", "提醒事项"),
+    "memories": ("/parent/memories", "备忘录"),
+    "daily_notes": ("/parent/daily-notes", "每日小记"),
+    "history": ("/parent/history", "历史对话"),
+    "settings": ("/parent/settings", "我的"),
+    "functions": ("/parent/functions", "更多功能"),
+    "home": ("/parent", "首页"),
+}
 
 # 百炼 session.update 所需的 tools 定义
 VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
@@ -224,6 +236,32 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_screen",
+            "description": (
+                "打开 App 内某个页面，方便老人用眼睛看列表或设置。"
+                "用户说「打开提醒」「看看备忘录」「每日小记」「历史对话」「我的/设置」「更多功能」"
+                "或「回首页」时调用。能直接用其他工具办的事（创建提醒、记住、分享）不要用本工具。"
+                "打开页面后语音继续，不要挂断。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "screen": {
+                        "type": "string",
+                        "enum": list(OPEN_SCREEN_ROUTES.keys()),
+                        "description": (
+                            "reminders 提醒；memories 备忘录；daily_notes 每日小记；"
+                            "history 历史对话；settings 我的/设置；functions 更多功能；home 首页"
+                        ),
+                    },
+                },
+                "required": ["screen"],
+            },
+        },
+    },
 ]
 
 
@@ -378,6 +416,31 @@ async def dispatch_voice_tool(
                 source=CareSource.VOICE.value,
             )
             return _serialize(result)
+
+        if name == "open_screen":
+            # A0：只解析路由；客户端跳转由桥接层推 navigate.open
+            screen = str(arguments.get("screen", "")).strip()
+            mapped = OPEN_SCREEN_ROUTES.get(screen)
+            if mapped is None:
+                return _serialize(
+                    {
+                        "status": "error",
+                        "message": (
+                            "没有这个页面。可以说打开提醒、备忘录、每日小记、"
+                            "历史对话、我的，或更多功能。"
+                        ),
+                    }
+                )
+            route, label = mapped
+            return _serialize(
+                {
+                    "status": "ok",
+                    "screen": screen,
+                    "route": route,
+                    "label": label,
+                    "message": f"已打开「{label}」，请继续陪用户说话，不要挂断。",
+                }
+            )
 
         return _serialize({"status": "error", "message": f"未知工具: {name}"})
     except AppError as exc:

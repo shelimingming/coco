@@ -972,6 +972,10 @@ async def _handle_function_call(
             pending_store=pending_store,
         )
 
+    # 打开页面：推客户端导航，不结束通话
+    if name == "open_screen":
+        await _push_navigate_open(websocket, output)
+
     # 记忆检索：不进通话历史，父母只在「可可记得的我」里看
     if conversation_id is not None and name != "recall_memory":
         await append_tool_call(
@@ -983,6 +987,28 @@ async def _handle_function_call(
         )
     # 只写回结果；response.create 须等本轮 response.done，否则百炼会报 in progress
     await vendor.send_tool_output(call_id=call_id, output=output)
+
+
+async def _push_navigate_open(websocket: WebSocket, output: str) -> None:
+    """open_screen 成功时下行 navigate.open，供客户端 go_router 跳转。"""
+    try:
+        result = json.loads(output)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        return
+    route = result.get("route")
+    if not isinstance(route, str) or not route.strip():
+        return
+    await _send_json(
+        websocket,
+        _client_event(
+            "navigate.open",
+            route=route.strip(),
+            screen=result.get("screen"),
+            label=result.get("label"),
+        ),
+    )
 
 
 async def _sync_pending_after_tool(

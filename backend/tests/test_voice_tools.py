@@ -221,3 +221,44 @@ def test_vision_tools_are_registered() -> None:
     names = [item["function"]["name"] for item in VOICE_TOOL_DEFINITIONS]
     assert "re_vision_image" in names
     assert "close_vision_image" in names
+
+
+def test_open_screen_tool_registered() -> None:
+    names = [item["function"]["name"] for item in VOICE_TOOL_DEFINITIONS]
+    assert "open_screen" in names
+    tool = next(item for item in VOICE_TOOL_DEFINITIONS if item["function"]["name"] == "open_screen")
+    enum_vals = tool["function"]["parameters"]["properties"]["screen"]["enum"]
+    assert "reminders" in enum_vals
+    assert "home" in enum_vals
+
+
+@pytest.mark.asyncio
+async def test_open_screen_ok() -> None:
+    settings = Settings(_env_file=None, environment="test")
+    session = AsyncMock()
+    result = await dispatch_voice_tool(
+        session=session,
+        settings=settings,
+        user=_parent(),
+        name="open_screen",
+        arguments={"screen": "reminders"},
+    )
+    payload = json.loads(result)
+    assert payload["status"] == "ok"
+    assert payload["route"] == "/parent/reminders"
+    assert payload["label"] == "提醒事项"
+    session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_open_screen_unknown() -> None:
+    settings = Settings(_env_file=None, environment="test")
+    result = await dispatch_voice_tool(
+        session=AsyncMock(),
+        settings=settings,
+        user=_parent(),
+        name="open_screen",
+        arguments={"screen": "admin"},
+    )
+    payload = json.loads(result)
+    assert payload["status"] == "error"
