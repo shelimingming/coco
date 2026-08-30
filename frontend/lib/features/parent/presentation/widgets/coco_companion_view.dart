@@ -20,7 +20,10 @@ class CocoCompanionView extends StatelessWidget {
         height: size,
         // gif 为透明底全身角色，contain 保证不裁切耳朵/尾巴
         fit: BoxFit.contain,
-        alignment: Alignment.center,
+        // 出场从右走进：贴右对齐，减少画布右侧透明空隙
+        alignment: pose == CocoCompanionPose.entrance
+            ? Alignment.centerRight
+            : Alignment.center,
         excludeFromSemantics: true,
         // 姿态切换时保留上一帧，避免闪一下空位
         gaplessPlayback: true,

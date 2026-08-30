@@ -3,6 +3,20 @@ import 'package:coco/features/parent/domain/voice_call_transcript.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('paused 时 isInSession 为真且 isActive 为假', () {
+    const state = VoiceCallState(phase: VoiceCallPhase.paused);
+    expect(state.isPaused, isTrue);
+    expect(state.isInSession, isTrue);
+    expect(state.isActive, isFalse);
+    expect(state.statusLabel, '聊天已暂停');
+  });
+
+  test('播报中提示开口即可打断', () {
+    const state = VoiceCallState(phase: VoiceCallPhase.speaking);
+    expect(state.canInterrupt, isTrue);
+    expect(state.statusLabel, '您说话就能打断我');
+  });
+
   test('已落定的用户句不会因残留 caption 再插一条', () {
     const state = VoiceCallState(
       phase: VoiceCallPhase.listening,
@@ -53,9 +67,9 @@ void main() {
         ),
       ],
     );
-    expect(
-      state.currentRoundEntries.map((e) => e.text).toList(),
-      ['这是什么花', '这是向日葵'],
-    );
+    expect(state.currentRoundEntries.map((e) => e.text).toList(), [
+      '这是什么花',
+      '这是向日葵',
+    ]);
   });
 }

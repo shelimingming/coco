@@ -18,6 +18,9 @@ enum VoiceCallPhase {
   /// Coco 正在播报
   speaking,
 
+  /// 用户暂停：停收音，保留当前 session 与上下文
+  paused,
+
   /// 出错（页内展示说明，不自动消失）
   error,
 }
@@ -46,11 +49,17 @@ class VoiceCallState {
   final PendingVoiceAction? pendingAction;
   final bool pendingActionBusy;
 
+  /// 正在听/说（不含暂停）；后台恢复时据此判断是否开麦。
   bool get isActive =>
       phase == VoiceCallPhase.connecting ||
       phase == VoiceCallPhase.listening ||
       phase == VoiceCallPhase.thinking ||
       phase == VoiceCallPhase.speaking;
+
+  /// 仍在同一会话（含暂停）；顶栏「字」、返回确认、看图复用会话。
+  bool get isInSession => isActive || phase == VoiceCallPhase.paused;
+
+  bool get isPaused => phase == VoiceCallPhase.paused;
 
   bool get canInterrupt => phase == VoiceCallPhase.speaking;
 
@@ -59,8 +68,9 @@ class VoiceCallState {
     VoiceCallPhase.connecting => '正在准备对话…',
     VoiceCallPhase.listening => '正在听您说',
     VoiceCallPhase.thinking => '我想一想',
-    // 播报中可点小狗打断，文案直接提示操作
-    VoiceCallPhase.speaking => '点我可以打断我～',
+    // 播报中开口即可插话；点小狗仍可打断
+    VoiceCallPhase.speaking => '您说话就能打断我',
+    VoiceCallPhase.paused => '聊天已暂停',
     VoiceCallPhase.error => errorTitle ?? '出了点问题',
   };
 

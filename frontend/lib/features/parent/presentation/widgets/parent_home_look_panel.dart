@@ -299,10 +299,7 @@ class _LookScanOverlayState extends State<_LookScanOverlay>
 }
 
 class _CurrentRoundCaption extends StatelessWidget {
-  const _CurrentRoundCaption({
-    required this.palette,
-    required this.entries,
-  });
+  const _CurrentRoundCaption({required this.palette, required this.entries});
 
   final ParentHomePalette palette;
   final List<VoiceCallTranscriptEntry> entries;
@@ -430,16 +427,8 @@ class _LookScanPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     void corner(double x, double y, double dx, double dy) {
-      canvas.drawLine(
-        Offset(x, y),
-        Offset(x + dx * length, y),
-        bracketPaint,
-      );
-      canvas.drawLine(
-        Offset(x, y),
-        Offset(x, y + dy * length),
-        bracketPaint,
-      );
+      canvas.drawLine(Offset(x, y), Offset(x + dx * length, y), bracketPaint);
+      canvas.drawLine(Offset(x, y), Offset(x, y + dy * length), bracketPaint);
     }
 
     corner(inset, inset, 1, 1);

@@ -41,7 +41,7 @@ class _ReminderOverlayHostState extends ConsumerState<ReminderOverlayHost> {
       ),
     );
     final inCall = ref.watch(
-      voiceCallControllerProvider.select((state) => state.isActive),
+      voiceCallControllerProvider.select((state) => state.isInSession),
     );
     final pending = ref.watch(
       notificationPollerProvider.select((state) => state.pendingReminder),

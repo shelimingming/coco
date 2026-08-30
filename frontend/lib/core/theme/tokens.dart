@@ -27,6 +27,24 @@ abstract final class CocoColors {
   /// 对话气泡约 72% 白，半透明贴合场景，与身份选择介绍气泡一致。
   static const Color parentHomeCaptionBubble = Color(0xB8FFFFFF);
 
+  /// 首页对话控制交付主橙（#E26D24）；仅首页使用，不改全局 parentPrimary。
+  static const Color parentHomeChatOrange = Color(0xFFE26D24);
+
+  /// 首页未选中工具图标 / 结束叉号橙（#CC5515）。
+  static const Color parentHomeIconOrange = Color(0xFFCC5515);
+
+  /// 首页状态主文案（#212422）。
+  static const Color parentHomeTextPrimary = Color(0xFF212422);
+
+  /// 首页状态副文案（#5F6461）。
+  static const Color parentHomeTextSecondary = Color(0xFF5F6461);
+
+  /// 首页底部工具条半透明暖白底。
+  static const Color parentHomeToolbar = Color(0xF2FFFDFA);
+
+  /// 首页工具条分隔线（#ECCCB5）。
+  static const Color parentHomeDivider = Color(0xFFECCCB5);
+
   static const Color childBackground = Color(0xFFF6F8F7);
   static const Color childSurface = Color(0xFFFFFFFF);
   static const Color childPrimary = Color(0xFF28786B);

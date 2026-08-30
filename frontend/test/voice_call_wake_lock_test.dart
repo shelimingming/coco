@@ -40,11 +40,46 @@ void main() {
     expect(lock.enableCount, 1);
     expect(lock.disableCount, 1);
   });
+
+  test('暂停保留 session，继续不新建连接', () async {
+    final lock = _RecordingWakeLock();
+    final socket = _FakeSocket(emitReady: true);
+    final mic = _FakeMic();
+    final container = _containerFor(
+      token: 'token',
+      lock: lock,
+      socket: socket,
+      mic: mic,
+    );
+    addTearDown(container.dispose);
+
+    final controller = container.read(voiceCallControllerProvider.notifier);
+    await controller.start();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(controller.state.phase, VoiceCallPhase.listening);
+    expect(socket.connectCount, 1);
+    expect(mic.startCount, 1);
+
+    await controller.pause();
+    expect(controller.state.isPaused, isTrue);
+    expect(controller.state.isInSession, isTrue);
+    expect(controller.state.isActive, isFalse);
+    expect(mic.stopCount, greaterThanOrEqualTo(1));
+    expect(socket.connectCount, 1);
+
+    await controller.resume();
+    expect(controller.state.phase, VoiceCallPhase.listening);
+    expect(controller.state.isActive, isTrue);
+    expect(socket.connectCount, 1);
+    expect(mic.startCount, greaterThanOrEqualTo(2));
+  });
 }
 
 ProviderContainer _containerFor({
   required String token,
   required ScreenWakeLock lock,
+  RealtimeVoiceSocket? socket,
+  MicPcmStream? mic,
 }) {
   return ProviderContainer(
     overrides: [
@@ -53,9 +88,9 @@ ProviderContainer _containerFor({
           ref: ref,
           readAccessToken: () => token,
           httpBaseUrl: 'http://127.0.0.1',
-          mic: _FakeMic(),
+          mic: mic ?? _FakeMic(),
           player: _FakePlayer(),
-          socket: _FakeSocket(),
+          socket: socket ?? _FakeSocket(),
           wakeLock: lock,
         );
       }),
@@ -83,6 +118,8 @@ class _RecordingWakeLock implements ScreenWakeLock {
 
 class _FakeMic implements MicPcmStream {
   final _controller = StreamController<Uint8List>.broadcast();
+  int startCount = 0;
+  int stopCount = 0;
 
   @override
   Stream<Uint8List> get pcmStream => _controller.stream;
@@ -97,10 +134,14 @@ class _FakeMic implements MicPcmStream {
   Future<bool> hasPermission() async => true;
 
   @override
-  Future<void> start() async {}
+  Future<void> start() async {
+    startCount++;
+  }
 
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    stopCount++;
+  }
 
   @override
   Future<void> dispose() async {
@@ -132,8 +173,29 @@ class _FakePlayer implements PcmStreamPlayer {
 }
 
 class _FakeSocket extends RealtimeVoiceSocket {
+  _FakeSocket({this.emitReady = false});
+
+  final bool emitReady;
+  final _controller = StreamController<RealtimeSocketEvent>.broadcast();
+  int connectCount = 0;
+
   @override
-  Future<void> connect(Uri uri) async {}
+  Stream<RealtimeSocketEvent> get events => _controller.stream;
+
+  @override
+  Future<void> connect(Uri uri) async {
+    connectCount++;
+    if (emitReady) {
+      // Duration.zero 排在 microtask 之后，确保调用方已 listen(events)
+      unawaited(
+        Future<void>.delayed(Duration.zero, () {
+          if (!_controller.isClosed) {
+            _controller.add(const RealtimeSocketEvent('session.ready', {}));
+          }
+        }),
+      );
+    }
+  }
 
   @override
   Future<void> close() async {}
@@ -142,7 +204,12 @@ class _FakeSocket extends RealtimeVoiceSocket {
   Future<void> endSession() async {}
 
   @override
-  Future<void> dispose() async {}
+  Future<void> cancelResponse() async {}
+
+  @override
+  Future<void> dispose() async {
+    await _controller.close();
+  }
 
   @override
   Future<void> sendAudioPcm(Uint8List pcm) async {}

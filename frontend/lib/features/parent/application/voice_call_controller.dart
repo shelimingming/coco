@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/audio/barge_in_detector.dart';
 import '../../../core/audio/mic_pcm_stream.dart';
 import '../../../core/audio/pcm_stream_player.dart';
 import '../../../core/audio/voice_background.dart';
@@ -39,16 +40,23 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     with WidgetsBindingObserver {
   VoiceCallController({
     required this.ref,
-    required this._readAccessToken,
-    required this._httpBaseUrl,
+    required String Function() readAccessToken,
+    required String httpBaseUrl,
     MicPcmStream? mic,
     PcmStreamPlayer? player,
     RealtimeVoiceSocket? socket,
     ScreenWakeLock? wakeLock,
-  }) : _mic = mic ?? createMicPcmStream(),
+    BargeInDetector? bargeIn,
+    Duration bargeInGrace = const Duration(milliseconds: 200),
+  }) : // 公开命名参数 readAccessToken / httpBaseUrl，内部存私有字段
+       _readAccessToken = readAccessToken,
+       _httpBaseUrl = httpBaseUrl,
+       _mic = mic ?? createMicPcmStream(),
        _player = player ?? createPcmStreamPlayer(),
        _socket = socket ?? RealtimeVoiceSocket(),
        _wakeLock = wakeLock ?? createScreenWakeLock(),
+       _bargeIn = bargeIn ?? BargeInDetector(),
+       _bargeInGrace = bargeInGrace,
        super(const VoiceCallState()) {
     // 构造期注入播放结束回调，用于恢复麦克风上行。
     _player.onDrained = _onPlaybackDrained;
@@ -64,6 +72,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   final RealtimeVoiceSocket _socket;
   final ScreenWakeLock _wakeLock;
   final VoiceBackground _voiceBackground = createVoiceBackground();
+  final BargeInDetector _bargeIn;
+  final Duration _bargeInGrace;
 
   StreamSubscription<Uint8List>? _micSub;
   StreamSubscription<RealtimeSocketEvent>? _socketSub;
@@ -75,6 +85,21 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
 
   /// 串行化常亮开关，避免 start / teardown 交错导致挂断后仍亮屏
   Future<void> _wakeLockChain = Future.value();
+
+  /// 用户暂停后仍有下行播报未播完；播完前恢复会话时暂不开麦。
+  bool _playbackPending = false;
+
+  /// 插话进行中：后续麦块直接上行，避免打断过程中再被闸门吞掉。
+  bool _interrupting = false;
+
+  /// 插话后丢掉已取消回答的尾包，但不挡住工具追问等新一轮播报。
+  bool _dropCancelledAssistant = false;
+
+  /// 本轮首包音频时刻；短宽限内不插话，躲开开播瞬态回声。
+  DateTime? _playbackBeganAt;
+
+  /// 播报中暂存的上行块，插话时作为句首补发给模型。
+  final List<Uint8List> _gatedPrefix = [];
 
   Future<void> start() async {
     if (_started || state.isActive) return;
@@ -111,9 +136,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       });
 
       await _mic.start();
-      _micSub = _mic.pcmStream.listen((chunk) {
-        unawaited(_socket.sendAudioPcm(chunk));
-      });
+      _attachMicListener();
       // Android：麦克风前台服务，划到后台仍可继续听
       unawaited(_voiceBackground.startVoiceKeepAlive());
     } on MicPcmException catch (e) {
@@ -128,6 +151,11 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
 
   /// 已接通则立即返回；否则 start 并等到 session.ready（或失败）。
   Future<bool> ensureStarted() async {
+    // 暂停态已有 session：先恢复收音再复用
+    if (_sessionReady && state.isPaused) {
+      await resume();
+      return state.isActive;
+    }
     if (_sessionReady && state.isActive) return true;
     if (state.phase == VoiceCallPhase.error) {
       await _teardown(resetToIdle: true);
@@ -198,7 +226,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     } catch (_) {}
     await _player.clear();
     _assistantAccum = '';
-    // 注入后等模型开口；播报时仍由 assistant.audio 抑制麦克风
+    // 注入后等模型开口；播报中开口即可插话，不再关麦
     _mic.suppress = false;
     state = state.copyWith(
       phase: VoiceCallPhase.thinking,
@@ -252,25 +280,73 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     await _teardown(resetToIdle: true);
   }
 
-  /// 打断当前播报；点小狗在 speaking 时也走这里。
-  Future<void> interrupt() async {
-    if (!state.canInterrupt) return;
+  /// 暂停一下：只闭麦，保留 session；可可未说完的话继续播完。
+  Future<void> pause() async {
+    if (!_started || !state.isActive) return;
+    final wasSpeaking = state.phase == VoiceCallPhase.speaking;
+    await _micSub?.cancel();
+    _micSub = null;
+    await _mic.stop();
+    _mic.suppress = true;
+    state = state.copyWith(phase: VoiceCallPhase.paused);
+    // 正在播报时保持说话姿态，等 drained 再回待机
+    _syncPose(wasSpeaking ? VoiceCallPhase.speaking : VoiceCallPhase.paused);
+  }
+
+  /// 继续聊天：同一 session 恢复收音。
+  Future<void> resume() async {
+    if (!_started || !state.isPaused || !_sessionReady) return;
     try {
-      await _socket.cancelResponse();
-    } catch (_) {}
-    await _player.clear();
-    _mic.suppress = false;
-    // 已说出的半句仍记入本通记录，方便「字」面板回看
-    final spoken = _assistantAccum.trim();
-    if (spoken.isNotEmpty) {
-      _appendTranscript(VoiceCallTranscriptRole.assistant, spoken);
+      await _mic.start();
+      _attachMicListener();
+      // 可可还在说完刚才那句：保持播报，开口即可插话
+      if (_playbackPending) {
+        _mic.suppress = false;
+        state = state.copyWith(phase: VoiceCallPhase.speaking);
+        _syncPose(VoiceCallPhase.speaking);
+      } else {
+        _mic.suppress = false;
+        state = state.copyWith(phase: VoiceCallPhase.listening);
+        _syncPose(VoiceCallPhase.listening);
+      }
+    } on MicPcmException catch (e) {
+      await _fail(title: '打不开麦克风', message: e.message);
+    } catch (_) {
+      await _fail(title: '麦克风暂时没准备好', message: '您可以再点「继续聊天」。刚才的对话还在，没有额外保存。');
     }
-    _assistantAccum = '';
-    state = state.copyWith(
-      phase: VoiceCallPhase.listening,
-      assistantCaption: '',
-    );
-    _syncPose(VoiceCallPhase.listening);
+  }
+
+  /// 打断当前播报；开口插话与点小狗共用。
+  Future<void> interrupt() async {
+    if (_interrupting) return;
+    if (!state.canInterrupt && !_playbackPending) return;
+    _interrupting = true;
+    try {
+      try {
+        await _socket.cancelResponse();
+      } catch (_) {}
+      await _player.clear();
+      _playbackPending = false;
+      _playbackBeganAt = null;
+      _dropCancelledAssistant = true;
+      _bargeIn.reset();
+      _gatedPrefix.clear();
+      _mic.suppress = false;
+      // 已说出的半句仍记入本通记录，方便「字」面板回看
+      final spoken = _assistantAccum.trim();
+      if (spoken.isNotEmpty) {
+        _appendTranscript(VoiceCallTranscriptRole.assistant, spoken);
+      }
+      _assistantAccum = '';
+      if (state.isPaused) return;
+      state = state.copyWith(
+        phase: VoiceCallPhase.listening,
+        assistantCaption: '',
+      );
+      _syncPose(VoiceCallPhase.listening);
+    } finally {
+      _interrupting = false;
+    }
   }
 
   @override
@@ -283,13 +359,14 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         unawaited(_voiceBackground.onEnteredBackground(screenSharing: sharing));
       }
     } else if (state == AppLifecycleState.resumed) {
+      // 用户主动暂停时不得误开麦
       if (_started && this.state.isActive) {
-        // 确保上行未因旧逻辑卡住
-        if (this.state.phase != VoiceCallPhase.speaking) {
-          _mic.suppress = false;
-        }
+        // 确保上行未因旧逻辑卡住；播报中保持开麦以便插话
+        _mic.suppress = false;
         unawaited(_setWakeLock(true));
         unawaited(_voiceBackground.onEnteredForeground());
+      } else if (_started && this.state.isPaused) {
+        unawaited(_setWakeLock(true));
       }
     }
   }
@@ -347,6 +424,24 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   }
 
   void _onSocketEvent(RealtimeSocketEvent event) {
+    // 用户暂停：闭麦，但仍放行可可播报相关下行，让未说完的话播完
+    if (state.isPaused) {
+      const allowedWhilePaused = {
+        'assistant.partial',
+        'assistant.audio',
+        'assistant.final',
+        'error',
+        'closed',
+        'navigate.open',
+        'action.pending',
+        'action.resolved',
+        'vision.state',
+        'vision.closed',
+        'vision.stop_screen',
+      };
+      if (!allowedWhilePaused.contains(event.type)) return;
+    }
+
     switch (event.type) {
       case 'session.ready':
         _sessionReady = true;
@@ -358,6 +453,11 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         );
         _syncPose(VoiceCallPhase.listening);
       case 'speech.started':
+        // 播报中开口：先停本地播放，再切倾听（点小狗打断同源）
+        if (state.phase == VoiceCallPhase.speaking || _playbackPending) {
+          unawaited(interrupt());
+          return;
+        }
         state = state.copyWith(
           phase: VoiceCallPhase.listening,
           userCaption: '',
@@ -366,6 +466,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         _assistantAccum = '';
         _syncPose(VoiceCallPhase.listening);
       case 'speech.stopped':
+        _dropCancelledAssistant = false;
         state = state.copyWith(phase: VoiceCallPhase.thinking);
         _syncPose(VoiceCallPhase.thinking);
       case 'user.partial':
@@ -379,6 +480,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       case 'user.final':
         final text = event.text;
         if (text != null && text.isNotEmpty) {
+          _dropCancelledAssistant = false;
           _appendTranscript(VoiceCallTranscriptRole.user, text);
           // 已写入 transcript，清空 caption，避免「字」面板在可可说完后又叠一句「您」
           state = state.copyWith(
@@ -393,22 +495,41 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
           }
         }
       case 'assistant.partial':
+        // 插话后供应商可能仍推已取消回答的尾包
+        if (_dropCancelledAssistant) return;
         final text = event.text;
         if (text != null && text.isNotEmpty) {
           _assistantAccum += text;
-          // 清空残留 userCaption，避免「字」面板在可可说话时再拼出上一句「您」
-          state = state.copyWith(
-            phase: VoiceCallPhase.speaking,
-            userCaption: '',
-            assistantCaption: _assistantAccum,
-          );
-          _syncPose(VoiceCallPhase.speaking);
+          // 暂停中只更新字幕与姿态，不离开 paused，避免 UI 变回「暂停一下」
+          if (state.isPaused) {
+            state = state.copyWith(
+              userCaption: '',
+              assistantCaption: _assistantAccum,
+            );
+            _syncPose(VoiceCallPhase.speaking);
+          } else {
+            state = state.copyWith(
+              phase: VoiceCallPhase.speaking,
+              userCaption: '',
+              assistantCaption: _assistantAccum,
+            );
+            _syncPose(VoiceCallPhase.speaking);
+          }
         }
       case 'assistant.audio':
+        if (_dropCancelledAssistant) return;
         final b64 = event.audioBase64;
         if (b64 == null || b64.isEmpty) return;
-        _mic.suppress = true;
-        state = state.copyWith(phase: VoiceCallPhase.speaking);
+        if (!_playbackPending) {
+          _bargeIn.reset();
+          _playbackBeganAt = DateTime.now();
+        }
+        _playbackPending = true;
+        // 播报中保持开麦：本地能量闸门挡回声，人声即可插话
+        if (!state.isPaused) {
+          _mic.suppress = false;
+          state = state.copyWith(phase: VoiceCallPhase.speaking);
+        }
         _syncPose(VoiceCallPhase.speaking);
         try {
           final pcm = base64Decode(b64);
@@ -417,15 +538,20 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
           );
         } catch (_) {}
       case 'assistant.final':
+        if (_dropCancelledAssistant) return;
         final text = event.text;
         if (text != null && text.isNotEmpty) {
           _assistantAccum = text;
           _appendTranscript(VoiceCallTranscriptRole.assistant, text);
-          state = state.copyWith(
-            phase: VoiceCallPhase.speaking,
-            userCaption: '',
-            assistantCaption: text,
-          );
+          if (state.isPaused) {
+            state = state.copyWith(userCaption: '', assistantCaption: text);
+          } else {
+            state = state.copyWith(
+              phase: VoiceCallPhase.speaking,
+              userCaption: '',
+              assistantCaption: text,
+            );
+          }
         }
         _player.markResponseComplete();
       case 'action.pending':
@@ -470,7 +596,9 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
           ),
         );
       case 'closed':
-        if (state.isActive || state.phase == VoiceCallPhase.connecting) {
+        if (state.isActive ||
+            state.isPaused ||
+            state.phase == VoiceCallPhase.connecting) {
           unawaited(_teardown(resetToIdle: true));
         }
       default:
@@ -519,6 +647,14 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
 
   void _onPlaybackDrained() {
     if (!_started) return;
+    _playbackPending = false;
+    _playbackBeganAt = null;
+    _bargeIn.reset();
+    // 用户仍在暂停：说完就回待机姿态，绝不自动开麦
+    if (state.isPaused) {
+      _syncPose(VoiceCallPhase.paused);
+      return;
+    }
     _mic.suppress = false;
     if (state.phase == VoiceCallPhase.speaking) {
       state = state.copyWith(phase: VoiceCallPhase.listening);
@@ -541,6 +677,12 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     _started = false;
     _sessionReady = false;
     _assistantAccum = '';
+    _playbackPending = false;
+    _playbackBeganAt = null;
+    _interrupting = false;
+    _dropCancelledAssistant = false;
+    _bargeIn.reset();
+    _gatedPrefix.clear();
     _mic.suppress = false;
     await _setWakeLock(false);
     unawaited(_voiceBackground.stopVoiceKeepAlive());
@@ -573,16 +715,58 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   }
 
   void _syncPose(VoiceCallPhase phase) {
-    // 通话过程只切倾听 / 说话；连接与思考并入倾听，结束或出错回待机
+    // 通话过程只切倾听 / 说话；连接与思考并入倾听，暂停/结束/出错回待机
     final pose = switch (phase) {
       VoiceCallPhase.idle => CocoCompanionPose.idle,
       VoiceCallPhase.connecting => CocoCompanionPose.listening,
       VoiceCallPhase.listening => CocoCompanionPose.listening,
       VoiceCallPhase.thinking => CocoCompanionPose.listening,
       VoiceCallPhase.speaking => CocoCompanionPose.speaking,
+      VoiceCallPhase.paused => CocoCompanionPose.idle,
       VoiceCallPhase.error => CocoCompanionPose.idle,
     };
     ref.read(cocoCompanionPoseProvider.notifier).state = pose;
+  }
+
+  void _attachMicListener() {
+    final previous = _micSub;
+    _micSub = null;
+    if (previous != null) {
+      unawaited(previous.cancel());
+    }
+    _micSub = _mic.pcmStream.listen(_onMicChunk);
+  }
+
+  bool get _inBargeInGrace {
+    final began = _playbackBeganAt;
+    if (began == null) return false;
+    return DateTime.now().difference(began) < _bargeInGrace;
+  }
+
+  /// 播报中只把足够响的人声送给模型；确认插话后立刻停播。
+  void _onMicChunk(Uint8List chunk) {
+    if (state.isPaused) return;
+    final gating =
+        !_interrupting &&
+        (_playbackPending || state.phase == VoiceCallPhase.speaking);
+    if (gating) {
+      if (_inBargeInGrace) return;
+      // 保留最近几块，插话时一并送出，避免 Server VAD 丢掉句首
+      _gatedPrefix.add(chunk);
+      if (_gatedPrefix.length > 6) {
+        _gatedPrefix.removeAt(0);
+      }
+      if (_bargeIn.feed(chunk)) {
+        unawaited(interrupt());
+        for (final prefix in _gatedPrefix) {
+          unawaited(_socket.sendAudioPcm(prefix));
+        }
+        _gatedPrefix.clear();
+      }
+      return;
+    }
+    _gatedPrefix.clear();
+    unawaited(_socket.sendAudioPcm(chunk));
   }
 
   /// 写入本通记录；同角色连续定稿则替换末条，避免 partial→final 重复。

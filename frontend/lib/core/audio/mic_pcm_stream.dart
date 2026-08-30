@@ -22,7 +22,7 @@ abstract class MicPcmStream {
 
   bool get isRecording;
 
-  /// 外放播报时抑制上行，避免喇叭回灌触发误打断。
+  /// 暂停 / 识图等场景完全停发上行；播报中的插话改走能量闸门，不用此开关。
   set suppress(bool value);
 
   Future<bool> hasPermission();
