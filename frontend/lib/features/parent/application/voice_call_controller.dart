@@ -35,6 +35,9 @@ const _voiceOpenRoutes = <String>{
 /// 语音要打开的路由；由 [CocoApp] 监听后 go，避免 feature→app 循环依赖。
 final voicePendingNavigateProvider = StateProvider<String?>((ref) => null);
 
+/// 语音要触发的首页动作：看眼前 / 看手机；由首页消费。
+final voicePendingHomeActionProvider = StateProvider<String?>((ref) => null);
+
 /// 父母端实时通话状态机：连接 → 听 → 想 → 说；小狗姿态仅倾听 / 说话。
 class VoiceCallController extends StateNotifier<VoiceCallState>
     with WidgetsBindingObserver {
@@ -100,6 +103,11 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
 
   /// 播报中暂存的上行块，插话时作为句首补发给模型。
   final List<Uint8List> _gatedPrefix = [];
+
+  /// 语音挂断：等告别播完再拆连接，避免一调工具就把话掐掉。
+  bool _awaitingHangupSpeech = false;
+  bool _hangupSpeechStarted = false;
+  Timer? _hangupFallback;
 
   Future<void> start() async {
     if (_started || state.isActive) return;
@@ -438,6 +446,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         'vision.state',
         'vision.closed',
         'vision.stop_screen',
+        'home.action',
       };
       if (!allowedWhilePaused.contains(event.type)) return;
     }
@@ -497,6 +506,9 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       case 'assistant.partial':
         // 插话后供应商可能仍推已取消回答的尾包
         if (_dropCancelledAssistant) return;
+        if (_awaitingHangupSpeech) {
+          _hangupSpeechStarted = true;
+        }
         final text = event.text;
         if (text != null && text.isNotEmpty) {
           _assistantAccum += text;
@@ -518,6 +530,9 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         }
       case 'assistant.audio':
         if (_dropCancelledAssistant) return;
+        if (_awaitingHangupSpeech) {
+          _hangupSpeechStarted = true;
+        }
         final b64 = event.audioBase64;
         if (b64 == null || b64.isEmpty) return;
         if (!_playbackPending) {
@@ -561,6 +576,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       case 'navigate.open':
         // 语音打开页面：会话跨页保留，不挂断
         _onNavigateOpen(event.payload);
+      case 'home.action':
+        _onHomeAction(event.payload);
       case 'vision.state':
         final phase = event.payload['phase']?.toString();
         if (phase != null && phase.isNotEmpty) {
@@ -614,6 +631,36 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     ref.read(voicePendingNavigateProvider.notifier).state = route;
   }
 
+  /// 语音首页能力：暂停/挂断本地执行；看眼前/看手机交给首页。
+  void _onHomeAction(Map<String, Object?> payload) {
+    final action = payload['action']?.toString().trim() ?? '';
+    switch (action) {
+      case 'pause_call':
+        unawaited(pause());
+      case 'end_call':
+        _scheduleHangupAfterGoodbye();
+      case 'open_look_front':
+      case 'open_look_phone':
+        // 先记下动作再回首页，避免跳转后指令还没写上
+        ref.read(voicePendingHomeActionProvider.notifier).state = action;
+        ref.read(voicePendingNavigateProvider.notifier).state = '/parent';
+      default:
+        break;
+    }
+  }
+
+  /// 等告别播完再挂；若没有下行语音，超时兜底拆线。
+  void _scheduleHangupAfterGoodbye() {
+    _awaitingHangupSpeech = true;
+    _hangupSpeechStarted = false;
+    _hangupFallback?.cancel();
+    _hangupFallback = Timer(const Duration(seconds: 8), () {
+      if (_awaitingHangupSpeech && _started) {
+        unawaited(stop());
+      }
+    });
+  }
+
   void _onActionPending(Map<String, Object?> payload) {
     try {
       final action = PendingVoiceAction.fromPayload(payload);
@@ -650,6 +697,11 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     _playbackPending = false;
     _playbackBeganAt = null;
     _bargeIn.reset();
+    // 告别已播完：拆掉通话
+    if (_awaitingHangupSpeech && _hangupSpeechStarted) {
+      unawaited(stop());
+      return;
+    }
     // 用户仍在暂停：说完就回待机姿态，绝不自动开麦
     if (state.isPaused) {
       _syncPose(VoiceCallPhase.paused);
@@ -681,6 +733,10 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     _playbackBeganAt = null;
     _interrupting = false;
     _dropCancelledAssistant = false;
+    _awaitingHangupSpeech = false;
+    _hangupSpeechStarted = false;
+    _hangupFallback?.cancel();
+    _hangupFallback = null;
     _bargeIn.reset();
     _gatedPrefix.clear();
     _mic.suppress = false;

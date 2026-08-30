@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -67,6 +68,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     super.initState();
     // 刚进首页：仅出场动画；须用户点「开始聊天」后再连
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 从其它页回来时消费语音「看眼前/看手机」指令
+      _consumeVoiceHomeAction();
       // 通话中从「更多」返回会重新挂载首页；会话还在，不要重播出场
       if (ref.read(voiceCallControllerProvider).isInSession) {
         return;
@@ -117,6 +120,14 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
       if (becameSharing) {
         unawaited(_onScreenShareBecameActive());
       }
+    });
+    // 已在首页时，语音看眼前/看手机直接走按钮同一套逻辑
+    ref.listen<String?>(voicePendingHomeActionProvider, (prev, next) {
+      if (next == null || next.isEmpty) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _consumeVoiceHomeAction();
+      });
     });
 
     final user = ref.watch(authControllerProvider).user;
@@ -199,16 +210,19 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         backgroundColor: CocoColors.parentBackground,
         body: LayoutBuilder(
           builder: (context, constraints) {
-            final scale = constraints.maxWidth / _kDesignWidth;
             final isEntrance = companionPose == CocoCompanionPose.entrance;
-            // 出场与待机同尺寸，避免切姿态时突然变小
-            final cocoW = 380 * scale;
-            final cocoH = 490 * scale;
-            final cocoTop = 190 * scale;
-            // 出场仍右贴边并略溢出，只吃透明边，不改视觉尺寸
-            final cocoLeft = isEntrance
-                ? constraints.maxWidth - cocoW + 36 * scale
-                : (constraints.maxWidth - cocoW) / 2;
+            // 底栏占位 + 安全区；矮屏（手机浏览器）据此压缩可可，避免挡住爪子
+            final bottomUi =
+                ParentHomeChatControls.heightFor(inSession: inSession) +
+                ParentHomeChatControls.gapAboveToolbar +
+                ParentHomeToolBar.barHeight +
+                CocoSpace.s2 +
+                CocoSafeInsets.paddingOf(context).bottom;
+            final coco = computeParentHomeCocoRect(
+              viewport: Size(constraints.maxWidth, constraints.maxHeight),
+              entrance: isEntrance,
+              bottomUi: bottomUi,
+            );
 
             return Stack(
               fit: StackFit.expand,
@@ -242,16 +256,16 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                 // 可可在遮罩之上、控件之下；视觉会话时让位给识图/投屏面板
                 if (!hideCompanion)
                   Positioned(
-                    left: cocoLeft,
-                    top: cocoTop,
-                    width: cocoW,
-                    height: cocoH,
+                    left: coco.left,
+                    top: coco.top,
+                    width: coco.width,
+                    height: coco.height,
                     child: _buildCompanion(
                       companionPose: companionPose,
                       callState: callState,
                       inSession: inSession,
                       showTranscript: showTranscript,
-                      size: cocoW,
+                      size: coco.width,
                     ),
                   ),
                 CocoSafeArea(
@@ -405,6 +419,25 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
 
   void _onPauseChat() {
     unawaited(ref.read(voiceCallControllerProvider.notifier).pause());
+  }
+
+  /// 消费语音下发的看眼前 / 看手机；与工具条点按走同一套流程。
+  void _consumeVoiceHomeAction() {
+    final action = ref.read(voicePendingHomeActionProvider);
+    if (action == null || action.isEmpty) return;
+    ref.read(voicePendingHomeActionProvider.notifier).state = null;
+    unawaited(_handleVoiceHomeAction(action));
+  }
+
+  Future<void> _handleVoiceHomeAction(String action) async {
+    switch (action) {
+      case 'open_look_front':
+        await _runLookAndHandoff(LookSource.camera);
+      case 'open_look_phone':
+        await _onPhonePressed();
+      default:
+        break;
+    }
   }
 
   void _onResumeChat() {
@@ -960,4 +993,51 @@ class _HomeVoiceError extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 设计稿按宽缩放；矮屏再压高度，避免爪子压住「开始聊天」。
+@visibleForTesting
+ParentHomeCocoRect computeParentHomeCocoRect({
+  required Size viewport,
+  required bool entrance,
+  required double bottomUi,
+  double designWidth = _kDesignWidth,
+}) {
+  final scale = viewport.width / designWidth;
+  var width = 380 * scale;
+  var height = 490 * scale;
+  var top = 190 * scale;
+  // gif 画布是正方形，Positioned 多出来的高度是透明
+  final visualH = width;
+  // 与「开始聊天」留 8pt，爪子不贴按钮
+  final maxBottom = viewport.height - bottomUi - 8;
+  if (top + visualH > maxBottom) {
+    if (maxBottom - top < 120) {
+      top = math.max(0, maxBottom - 160);
+    }
+    final available = math.max(80.0, maxBottom - top);
+    final fit = available / visualH;
+    width *= fit;
+    height *= fit;
+  }
+  // 出场仍右贴边并略溢出，只吃透明边
+  final left = entrance
+      ? viewport.width - width + 36 * scale
+      : (viewport.width - width) / 2;
+  return ParentHomeCocoRect(left: left, top: top, width: width, height: height);
+}
+
+@visibleForTesting
+class ParentHomeCocoRect {
+  const ParentHomeCocoRect({
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+  });
+
+  final double left;
+  final double top;
+  final double width;
+  final double height;
 }

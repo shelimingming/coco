@@ -262,3 +262,29 @@ async def test_open_screen_unknown() -> None:
     )
     payload = json.loads(result)
     assert payload["status"] == "error"
+
+
+def test_home_voice_actions_registered() -> None:
+    names = [item["function"]["name"] for item in VOICE_TOOL_DEFINITIONS]
+    assert "pause_call" in names
+    assert "end_call" in names
+    assert "open_look_front" in names
+    assert "open_look_phone" in names
+
+
+@pytest.mark.asyncio
+async def test_home_voice_actions_dispatch() -> None:
+    settings = Settings(_env_file=None, environment="test")
+    session = AsyncMock()
+    for name in ("pause_call", "end_call", "open_look_front", "open_look_phone"):
+        result = await dispatch_voice_tool(
+            session=session,
+            settings=settings,
+            user=_parent(),
+            name=name,
+            arguments={},
+        )
+        payload = json.loads(result)
+        assert payload["status"] == "ok"
+        assert payload["action"] == name
+    session.add.assert_not_called()

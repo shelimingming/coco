@@ -27,6 +27,19 @@ class ParentHomeChatControls extends StatelessWidget {
   /// 设计基准：开始钮与工具条间距 15pt
   static const double gapAboveToolbar = 15;
 
+  /// 「开始聊天」大钮高度
+  static const double startButtonHeight = 71;
+
+  /// 暂停 / 结束圆钮直径
+  static const double roundDiameter = 68;
+
+  /// 底栏占位：闲置大钮或会话中圆钮+文案
+  static double heightFor({required bool inSession}) {
+    if (!inSession) return startButtonHeight;
+    // 圆钮 + 间距 + 20px/1.2 文案
+    return roundDiameter + CocoSpace.s2 + 24;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!inSession) {
@@ -72,7 +85,7 @@ class _StartChatButton extends StatelessWidget {
       label: '开始聊天',
       child: SizedBox(
         width: double.infinity,
-        height: 71,
+        height: ParentHomeChatControls.startButtonHeight,
         child: Material(
           color: palette.chatOrange,
           borderRadius: BorderRadius.circular(26),
@@ -114,7 +127,7 @@ class _RoundChatAction extends StatelessWidget {
   final String semanticsLabel;
   final VoidCallback onPressed;
 
-  static const double _diameter = 68;
+  static const double _diameter = ParentHomeChatControls.roundDiameter;
 
   @override
   Widget build(BuildContext context) {
@@ -125,26 +138,33 @@ class _RoundChatAction extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Material(
-            color: filled ? palette.chatOrange : CocoColors.white,
-            shape: CircleBorder(
-              side: filled
-                  ? BorderSide.none
-                  : BorderSide(color: palette.iconOrange, width: 2),
-            ),
+            color: Colors.transparent,
             child: InkWell(
               customBorder: const CircleBorder(),
               onTap: onPressed,
-              child: SizedBox(
-                width: _diameter,
-                height: _diameter,
-                child: Center(
-                  child: Image.asset(
-                    iconAsset,
-                    width: 28,
-                    height: 28,
-                    // 暂停/继续为白形；结束叉已是橙，不再染色以免糊成实块
-                    color: filled ? CocoColors.white : null,
-                    excludeFromSemantics: true,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  // 结束钮铺工具条同色实底，避免场景米色透出
+                  color: filled
+                      ? palette.chatOrange
+                      : palette.toolbarFill.withValues(alpha: 1),
+                  shape: BoxShape.circle,
+                  border: filled
+                      ? null
+                      : Border.all(color: palette.iconOrange, width: 2),
+                ),
+                child: SizedBox(
+                  width: _diameter,
+                  height: _diameter,
+                  child: Center(
+                    child: Image.asset(
+                      iconAsset,
+                      width: 28,
+                      height: 28,
+                      // 暂停/继续为白形；结束叉已是橙，不再染色以免糊成实块
+                      color: filled ? CocoColors.white : null,
+                      excludeFromSemantics: true,
+                    ),
                   ),
                 ),
               ),

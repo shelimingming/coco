@@ -27,6 +27,9 @@ class ParentHomeToolBar extends StatelessWidget {
   /// 投屏会话进行中：看手机高亮。
   final bool phoneActive;
 
+  /// 工具条高度，供首页计算可可可摆放区域
+  static const double barHeight = 93;
+
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
@@ -42,7 +45,7 @@ class ParentHomeToolBar extends StatelessWidget {
         ],
       ),
       child: SizedBox(
-        height: 93,
+        height: barHeight,
         child: Row(
           children: [
             Expanded(
@@ -129,7 +132,7 @@ class _ToolItem extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             child: SizedBox(
               // 热区至少 56×56；整格可点更易点中
-              height: 93,
+              height: ParentHomeToolBar.barHeight,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

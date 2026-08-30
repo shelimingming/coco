@@ -57,7 +57,11 @@ from coco.modules.voice.prompts import (
 )
 from coco.modules.vision.image_cache import look_image_cache
 from coco.modules.vision.service import VisionService
-from coco.modules.voice.tools import VOICE_TOOL_DEFINITIONS, dispatch_voice_tool
+from coco.modules.voice.tools import (
+    HOME_VOICE_ACTIONS,
+    VOICE_TOOL_DEFINITIONS,
+    dispatch_voice_tool,
+)
 from coco.observability.llm_trace import (
     PURPOSE_VISION_INJECT,
     PURPOSE_VOICE_SESSION,
@@ -976,6 +980,10 @@ async def _handle_function_call(
     if name == "open_screen":
         await _push_navigate_open(websocket, output)
 
+    # 首页能力：暂停 / 挂断 / 看眼前 / 看手机
+    if name in HOME_VOICE_ACTIONS:
+        await _push_home_action(websocket, name=name, output=output)
+
     # 记忆检索：不进通话历史，父母只在「可可记得的我」里看
     if conversation_id is not None and name != "recall_memory":
         await append_tool_call(
@@ -1008,6 +1016,20 @@ async def _push_navigate_open(websocket: WebSocket, output: str) -> None:
             screen=result.get("screen"),
             label=result.get("label"),
         ),
+    )
+
+
+async def _push_home_action(websocket: WebSocket, *, name: str, output: str) -> None:
+    """首页语音能力成功时下行 home.action，供客户端暂停/挂断/打开看图。"""
+    try:
+        result = json.loads(output)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        return
+    await _send_json(
+        websocket,
+        _client_event("home.action", action=name),
     )
 
 

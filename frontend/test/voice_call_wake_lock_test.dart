@@ -73,6 +73,46 @@ void main() {
     expect(socket.connectCount, 1);
     expect(mic.startCount, greaterThanOrEqualTo(2));
   });
+
+  test('语音 home.action 可暂停通话', () async {
+    final lock = _RecordingWakeLock();
+    final socket = _FakeSocket(emitReady: true);
+    final mic = _FakeMic();
+    final container = _containerFor(
+      token: 'token',
+      lock: lock,
+      socket: socket,
+      mic: mic,
+    );
+    addTearDown(container.dispose);
+
+    final controller = container.read(voiceCallControllerProvider.notifier);
+    await controller.start();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(controller.state.phase, VoiceCallPhase.listening);
+
+    socket.emit('home.action', {'action': 'pause_call'});
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(controller.state.isPaused, isTrue);
+    expect(controller.state.isInSession, isTrue);
+    expect(socket.connectCount, 1);
+  });
+
+  test('语音 home.action 看眼前会通知首页', () async {
+    final lock = _RecordingWakeLock();
+    final socket = _FakeSocket(emitReady: true);
+    final container = _containerFor(token: 'token', lock: lock, socket: socket);
+    addTearDown(container.dispose);
+
+    final controller = container.read(voiceCallControllerProvider.notifier);
+    await controller.start();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    socket.emit('home.action', {'action': 'open_look_front'});
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(voicePendingHomeActionProvider), 'open_look_front');
+    expect(container.read(voicePendingNavigateProvider), '/parent');
+  });
 }
 
 ProviderContainer _containerFor({
@@ -181,6 +221,12 @@ class _FakeSocket extends RealtimeVoiceSocket {
 
   @override
   Stream<RealtimeSocketEvent> get events => _controller.stream;
+
+  void emit(String type, [Map<String, Object?> payload = const {}]) {
+    if (!_controller.isClosed) {
+      _controller.add(RealtimeSocketEvent(type, payload));
+    }
+  }
 
   @override
   Future<void> connect(Uri uri) async {

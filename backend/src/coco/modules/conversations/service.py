@@ -87,6 +87,18 @@ def tool_display_summary(tool_name: str, arguments: dict[str, Any], result: dict
             return "可可没能打开那个页面"
         return f"打开了「{label}」" if label else "打开了一个页面"
 
+    if tool_name == "pause_call":
+        return "暂停了聊天"
+
+    if tool_name == "end_call":
+        return "结束了这次聊天"
+
+    if tool_name == "open_look_front":
+        return "打开了看眼前"
+
+    if tool_name == "open_look_phone":
+        return "打开了看手机"
+
     if tool_name == "look_image":
         headline = str(result.get("headline") or "").strip()
         confidence = str(result.get("confidence") or "").strip().lower()

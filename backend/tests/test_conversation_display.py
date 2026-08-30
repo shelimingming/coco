@@ -37,6 +37,14 @@ def test_create_reminder_and_list() -> None:
         )
         == "打开了「提醒事项」"
     )
+    assert tool_display_summary("pause_call", {}, {"status": "ok"}) == "暂停了聊天"
+    assert tool_display_summary("end_call", {}, {"status": "ok"}) == "结束了这次聊天"
+    assert (
+        tool_display_summary("open_look_front", {}, {"status": "ok"}) == "打开了看眼前"
+    )
+    assert (
+        tool_display_summary("open_look_phone", {}, {"status": "ok"}) == "打开了看手机"
+    )
 
 
 def test_should_list_in_history_filters_greeting_only() -> None:

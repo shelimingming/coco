@@ -4,6 +4,8 @@
 用户主动要求记住时用 save_memory 写入显式表；通话中可用 recall_memory 检索。
 时效问答用 web_search（只读联网），不走确认大卡。
 open_screen 只返回路由；由桥接层推 navigate.open，客户端跳转，不结束通话。
+首页能力 pause_call / end_call / open_look_front / open_look_phone 只返回动作，
+由桥接层推 home.action，客户端执行暂停、挂断或打开看眼前/看手机。
 """
 
 from __future__ import annotations
@@ -40,6 +42,11 @@ OPEN_SCREEN_ROUTES: dict[str, tuple[str, str]] = {
     "functions": ("/parent/functions", "更多功能"),
     "home": ("/parent", "首页"),
 }
+
+# 首页能力：桥接层推 home.action，由客户端执行
+HOME_VOICE_ACTIONS = frozenset(
+    {"pause_call", "end_call", "open_look_front", "open_look_phone"}
+)
 
 # 百炼 session.update 所需的 tools 定义
 VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
@@ -259,6 +266,56 @@ VOICE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "pause_call",
+            "description": (
+                "暂停当前语音陪伴：停收音，保留会话，不挂断。"
+                "用户说暂停一下、先停停、等一会儿、我去忙、先不说了（但没说再见/挂了）时调用。"
+                "不要用于结束聊天；不要在闲聊中途擅自暂停。"
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "end_call",
+            "description": (
+                "结束并挂断当前语音陪伴。"
+                "仅当用户明确说不聊了、挂了、再见、结束聊天、关掉电话时调用。"
+                "先调用本工具，再用一两句告别；客户端会在你说完后挂断。不要连环挽留。"
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_look_front",
+            "description": (
+                "打开「看眼前」：拉起相机拍眼前实物（药盒、报纸、手里的东西）。"
+                "用户说看看这个、打开摄像头、拍一下、看眼前、帮我看看手里/桌上是什么时调用。"
+                "看手机屏幕、短信、微信页面不要用本工具，改用 open_look_phone。"
+                "已经在看照片时用户只是追问，不要再打开相机。"
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_look_phone",
+            "description": (
+                "打开「看手机」投屏：让可可看短信、微信或其它 App 画面。"
+                "用户说看屏幕、看手机、看看这条短信、这个页面怎么点时调用。"
+                "不要与 open_screen 混淆：open_screen 是打开可可 App 里的列表页。"
+                "已经在看手机时不要再调用；用户说关掉才用 stop_screen_share。"
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "open_screen",
             "description": (
                 "打开 App 内某个页面，方便老人用眼睛看列表或设置。"
@@ -436,6 +493,54 @@ async def dispatch_voice_tool(
                 source=CareSource.VOICE.value,
             )
             return _serialize(result)
+
+        if name == "pause_call":
+            return _serialize(
+                {
+                    "status": "ok",
+                    "action": "pause_call",
+                    "message": (
+                        "已请客户端暂停收音、保留通话。"
+                        "请只说一句：好，先暂停，想聊了再点继续聊天。不要挂断。"
+                    ),
+                }
+            )
+
+        if name == "end_call":
+            return _serialize(
+                {
+                    "status": "ok",
+                    "action": "end_call",
+                    "message": (
+                        "已请客户端在你说完后挂断。"
+                        "请只用一两句告别，不要挽留，不要再问还聊不聊。"
+                    ),
+                }
+            )
+
+        if name == "open_look_front":
+            return _serialize(
+                {
+                    "status": "ok",
+                    "action": "open_look_front",
+                    "message": (
+                        "已请客户端打开相机看眼前。"
+                        "请只说一句：好，请把要看的东西对着相机。不要挂断。"
+                    ),
+                }
+            )
+
+        if name == "open_look_phone":
+            return _serialize(
+                {
+                    "status": "ok",
+                    "action": "open_look_phone",
+                    "message": (
+                        "已请客户端打开看手机投屏。"
+                        "请只说一句：好，按提示打开看手机，然后去打开要看的页面。不要挂断。"
+                    ),
+                }
+            )
 
         if name == "open_screen":
             # A0：只解析路由；客户端跳转由桥接层推 navigate.open
