@@ -12,7 +12,8 @@ import httpx
 from pydantic import SecretStr
 
 from coco.observability.llm_trace import (
-    PURPOSE_TEXT_DAILY_NOTE,
+    PURPOSE_TEXT_DAILY_NOTE_EXTRACT,
+    PURPOSE_TEXT_DAILY_NOTE_WRITE,
     PURPOSE_TEXT_TITLE,
     PURPOSE_TEXT_TRANSLATE,
     PURPOSE_TEXT_WEB_SEARCH,
@@ -53,19 +54,63 @@ _WEB_SEARCH_SYSTEM = """
 5. 只输出可直接口述的正文，不要解释「我搜索了」或加标题。
 """.strip()
 
-_DAILY_NOTE_SYSTEM = """
-你是可可，根据老人当天与你的真实交流，整理「每日小记」条目。
+_DAILY_NOTE_EXTRACT_SYSTEM = """
+你是对话整理助手。下面是一位老人与AI助手「可可」今天全天的对话记录，请提取真实信息，输出JSON。
 规则：
-1. 只输出 JSON 对象：{"items":["……","……"]}，不要其它文字。
-2. items 选 1～3 条有意义的日常生活事实（吃饭、出门、和邻居聊天、心情等）。
-3. 每条一句短中文，陈述事实，不要推断、诊断、敏感隐私、第三方隐私。
-4. 不要写入需要子女紧急关注的身体异常（那些走「需要关注」通道）。
-5. 交流里没有可分享日常时，返回 {"items":[]}。
+1. 只提取对话中明确出现的内容，禁止推测、禁止编造。
+2. 老人没有明确表达的情绪不要猜；拿不准的信息标记 "uncertain": true。
+3. 原话摘录：保留1-3句最有生活气息的原话（口头禅、方言、具体细节）。
+4. 健康与情绪信号只做客观记录，不下任何结论；没有则为空数组。
+5. image_concepts：仅根据对话里明确提到的真实活动/地点写 0～3 个画面（各一句话）；
+   对话没出现的场景一律不要写；没有可画场景则 []。
+6. weather_mentioned：对话里若明确提到天气/晴雨冷暖则填写短词，否则空字符串。
+输出格式（只输出 JSON，不要其它文字）：
+{
+  "topics": [],
+  "events": [],
+  "people": [],
+  "mood": {"emotion": "", "evidence": "", "uncertain": false},
+  "quotes": [],
+  "health_signals": [],
+  "image_concepts": [],
+  "weather_mentioned": ""
+}
+""".strip()
+
+_DAILY_NOTE_WRITE_SYSTEM = """
+你是「可可」，一只金毛小狗，也是老人身边暖暖的陪伴。
+每晚你根据白天聊天，用自己的视角写一篇短日记，留给老人和家人看。
+写作规则：
+1. 视角：以可可「我」来写——陪在人身边听、看、记；
+   称呼对方用「您」或已知称呼，不要写成老人本人的日记。
+2. 严禁捏造：事、人、地点、活动必须来自「已知信息」；
+   对话没说的（如买菜、广场舞、喝豆浆、街边摊等）一律不许写进正文。
+3. 可润色：可改语气、加陪伴感与轻感悟，可化用 quotes；但不能用润色当借口补情节。
+4. 不要流水账：禁止「然后…最后…」式罗列；用 2～4 段把已知小事写得连贯、有温度。
+5. 感悟：一两句轻柔心里话即可，不煽情、不说教。
+6. 语气：口语、短句、温暖；不要连用感叹号。
+7. 篇幅：120-250字；素材少就写短，不硬凑。
+8. 标题：5-10字，概括已知事实里最暖的一点；禁止「你好呀」「今天」「日记」。
+9. 开头避免天天用「今天」；收尾一句轻轻收束，不要连环提问。
+10. 禁止：医学判断、家庭矛盾细节、health_signals、说教、「虽然您年纪大了」。
+11. 最近几天的日记仅供避免重复：换句式，不要照抄，更不要借机编新事。
+12. illustrations：与正文段落一一对应（条数=正文段数，最多3条）；
+    每条一句话描述该段配图，必须只画该段已写到的内容，禁止加段外情节。
+输出格式（只输出 JSON，不要其它文字）：
+{
+  "title": "小标题，5-10字",
+  "body": "正文（用\\n分段）",
+  "closing": "一句话收尾",
+  "illustrations": ["与第1段对应的画面", "与第2段对应的画面"]
+}
 """.strip()
 
 _TITLE_MAX_LEN = 16
 _FALLBACK_TITLE_MAX = 24
 _WEB_SEARCH_UNAVAILABLE = "暂时查不了网上的消息，您可以过会儿再问。"
+_DAILY_NOTE_EMPTY_GUIDANCE = "今天聊得还不多，再和可可说说今天发生了什么，我再帮您写日记。"
+_WEEKDAY_CN = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+
 
 # 模型偶发冒充子女：句首喊爸妈，或用「我…」开场
 _PARENT_ADDRESS_RE = re.compile(r"^(妈|爸|妈妈|爸爸|爹|娘|母亲|父亲)[，,！!、]")
@@ -237,15 +282,40 @@ class QwenTextClient:
         )
         return WebSearchResult(status="ok", query=cleaned, answer=content)
 
-    async def extract_daily_note_items(self, transcript: str) -> list[str]:
-        """从当日转写提炼 0～3 条日常事实。"""
+    async def extract_daily_note(self, transcript: str) -> dict:
+        """从当日转写提取结构化事实（防编造）。"""
         content = await self._chat(
-            system=_DAILY_NOTE_SYSTEM,
-            user=f"当天交流记录：\n{transcript.strip()}",
+            system=_DAILY_NOTE_EXTRACT_SYSTEM,
+            user=f"对话记录：\n{transcript.strip()}",
             temperature=0.2,
-            purpose=PURPOSE_TEXT_DAILY_NOTE,
+            purpose=PURPOSE_TEXT_DAILY_NOTE_EXTRACT,
         )
-        return parse_daily_note_items_json(content)
+        return parse_daily_note_extraction_json(content)
+
+    async def write_daily_note_diary(
+        self,
+        *,
+        extraction: dict,
+        recent_diaries: list[str],
+        display_name: str,
+    ) -> dict:
+        """根据提取结果以可可视角撰写日记。"""
+        name = (display_name or "").strip() or "老人"
+        recent_block = "\n---\n".join(recent_diaries) if recent_diaries else "（暂无）"
+        import json
+
+        user = (
+            f"对方称呼：{name}\n"
+            f"已知信息：\n{json.dumps(extraction, ensure_ascii=False)}\n\n"
+            f"最近几天的日记（仅供避免重复，不要照抄）：\n{recent_block}"
+        )
+        content = await self._chat(
+            system=_DAILY_NOTE_WRITE_SYSTEM,
+            user=user,
+            temperature=0.45,
+            purpose=PURPOSE_TEXT_DAILY_NOTE_WRITE,
+        )
+        return parse_daily_note_diary_json(content)
 
 
 def looks_like_child_first_person(text: str) -> bool:
@@ -296,14 +366,10 @@ def fallback_conversation_title(preview: str) -> str:
 
 
 def parse_daily_note_items_json(raw: str) -> list[str]:
-    """解析模型返回的 items JSON；失败返回空列表。"""
+    """兼容旧解析：从 {"items":[...]} 取短句；失败返回空列表。"""
     import json
 
-    text = raw.strip()
-    # 去掉偶发 markdown 围栏
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
+    text = _strip_json_fence(raw)
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
@@ -322,18 +388,293 @@ def parse_daily_note_items_json(raw: str) -> list[str]:
     return cleaned
 
 
-def fallback_daily_note_items(transcript: str) -> list[str]:
-    """无 Key 时从用户话里抽短句，最多 3 条。"""
-    lines: list[str] = []
+def _strip_json_fence(raw: str) -> str:
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    return text.strip()
+
+
+def _str_list(value: object, *, limit: int = 8, max_len: int = 120) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            out.append(item.strip()[:max_len])
+        if len(out) >= limit:
+            break
+    return out
+
+
+def empty_daily_note_extraction() -> dict:
+    return {
+        "topics": [],
+        "events": [],
+        "people": [],
+        "mood": {"emotion": "", "evidence": "", "uncertain": True},
+        "quotes": [],
+        "health_signals": [],
+        "image_concepts": [],
+        "weather_mentioned": "",
+    }
+
+
+def parse_daily_note_extraction_json(raw: str) -> dict:
+    """解析提取 JSON；失败返回空结构。"""
+    import json
+
+    text = _strip_json_fence(raw)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return empty_daily_note_extraction()
+    if not isinstance(data, dict):
+        return empty_daily_note_extraction()
+    mood_raw = data.get("mood") if isinstance(data.get("mood"), dict) else {}
+    weather = data.get("weather_mentioned")
+    return {
+        "topics": _str_list(data.get("topics"), limit=6),
+        "events": _str_list(data.get("events"), limit=6),
+        "people": _str_list(data.get("people"), limit=6),
+        "mood": {
+            "emotion": str(mood_raw.get("emotion") or "").strip()[:40],
+            "evidence": str(mood_raw.get("evidence") or "").strip()[:120],
+            "uncertain": bool(mood_raw.get("uncertain", False)),
+        },
+        "quotes": _str_list(data.get("quotes"), limit=3, max_len=80),
+        "health_signals": _str_list(data.get("health_signals"), limit=4),
+        "image_concepts": _str_list(data.get("image_concepts"), limit=4, max_len=100),
+        "weather_mentioned": str(weather or "").strip()[:20] if isinstance(weather, str) else "",
+    }
+
+
+def parse_daily_note_diary_json(raw: str) -> dict:
+    """解析撰写 JSON → title/body/closing/illustrations；失败返回空。"""
+    import json
+
+    text = _strip_json_fence(raw)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return {"title": "", "body": "", "closing": "", "illustrations": []}
+    if not isinstance(data, dict):
+        return {"title": "", "body": "", "closing": "", "illustrations": []}
+    title = str(data.get("title") or "").strip()[:24]
+    body = str(data.get("body") or "").strip()[:800]
+    closing = str(data.get("closing") or "").strip()[:120]
+    illustrations = _str_list(data.get("illustrations"), limit=3, max_len=100)
+    return {
+        "title": title,
+        "body": body,
+        "closing": closing,
+        "illustrations": illustrations,
+    }
+
+
+def fallback_daily_note_extraction(transcript: str) -> dict:
+    """无 Key 时从用户话抽事实，填入提取结构。"""
+    base = empty_daily_note_extraction()
+    quotes: list[str] = []
     for raw in transcript.splitlines():
         line = raw.strip()
         if line.startswith("用户：") or line.startswith("老人："):
             body = line.split("：", 1)[-1].strip()
             if len(body) >= 4:
-                lines.append(body[:80])
-        if len(lines) >= 3:
+                quotes.append(body[:80])
+        if len(quotes) >= 3:
             break
-    return lines
+    base["quotes"] = quotes
+    base["events"] = list(quotes)
+    base["topics"] = [q[:20] for q in quotes[:3]]
+    base["image_concepts"] = [f"与「{q[:24]}」相关的日常画面" for q in quotes[:3]]
+    return base
+
+
+def fallback_daily_note_items(transcript: str) -> list[str]:
+    """兼容旧接口：无 Key 时从用户话里抽短句。"""
+    return fallback_daily_note_extraction(transcript)["quotes"]
+
+
+def extraction_has_diary_material(extraction: dict) -> bool:
+    """是否有足够素材写日记（事件/原话/话题任一实质非空）。"""
+    for key in ("events", "quotes", "topics"):
+        values = extraction.get(key)
+        if isinstance(values, list) and any(isinstance(x, str) and x.strip() for x in values):
+            return True
+    return False
+
+
+def build_daily_note_header_line(
+    note_date,
+    *,
+    weather_mentioned: str = "",
+) -> str:
+    """首行：月日 + 星期 + 可选天气（仅对话提到时）。"""
+    from datetime import date as date_cls
+
+    if not isinstance(note_date, date_cls):
+        return ""
+    weekday = _WEEKDAY_CN[note_date.weekday()]
+    header = f"{note_date.month}月{note_date.day}日 {weekday}"
+    weather = (weather_mentioned or "").strip()
+    if weather:
+        header = f"{header} {weather}"
+    return header
+
+
+def diary_paragraphs(body: str) -> list[str]:
+    """正文按空行/换行拆段，过滤空段。"""
+    if not body.strip():
+        return []
+    parts = re.split(r"\n+", body.strip())
+    return [p.strip() for p in parts if p.strip()][:6]
+
+
+def fallback_diary_from_extraction(extraction: dict) -> dict:
+    """模型撰写失败时：可可视角短文，只串联已知事实，不编造。"""
+    quotes = _str_list(extraction.get("quotes"), limit=3)
+    events = _str_list(extraction.get("events"), limit=3)
+    people = _str_list(extraction.get("people"), limit=2)
+    bits = events or quotes
+    if not bits:
+        return {"title": "", "body": "", "closing": "", "illustrations": []}
+    who = people[0] if people else "您"
+    seed = bits[0].rstrip("。！？，,")
+    title = (seed[:10] if len(seed) >= 4 else "今天这点事").rstrip("。！？")
+    mid = "，还".join(bits[:2]) if len(bits) > 1 else bits[0]
+    if not mid.endswith(("。", "！", "？")):
+        mid = f"{mid}。"
+    para1 = f"今天听{who}说起这些，我都记在心里了。"
+    para2 = mid
+    para3 = "能陪在旁边听听这些小事，我就觉得挺踏实。"
+    body = f"{para1}\n{para2}\n{para3}"
+    # 配图只跟已写段落走，画面描述不另造情节
+    illustrations = [
+        f"可可趴在一旁听{who}说话",
+        f"与「{seed[:24]}」相关的温馨陪伴画面",
+    ][: min(2, len(bits) + 1)]
+    return {
+        "title": title[:24] or "今天这点事",
+        "body": body[:800],
+        "closing": "我在这儿陪着，明天再聊。",
+        "illustrations": illustrations,
+    }
+
+
+def verify_diary_against_sources(
+    *,
+    diary: dict,
+    extraction: dict,
+    transcript: str,
+) -> bool:
+    """轻校验：允许润色；只拦「完全对不上已知事实」的空编。"""
+    body = f"{diary.get('title', '')}\n{diary.get('body', '')}\n{diary.get('closing', '')}"
+    if len(body.strip()) < 20:
+        return False
+    # 收集事实锚点：事件/原话/话题里截短词
+    anchors: list[str] = []
+    for key in ("events", "quotes", "topics", "people"):
+        for item in extraction.get(key) or []:
+            if not isinstance(item, str):
+                continue
+            cleaned = re.sub(r"[\s，,。！？、]+", "", item.strip())
+            if len(cleaned) >= 2:
+                anchors.append(cleaned[:4])
+            if len(cleaned) >= 6:
+                anchors.append(cleaned[2:6])
+    if not anchors:
+        # 无锚点时只要求有正文（素材门禁应已挡住空素材）
+        return True
+    # 润色后不必逐字复现；命中任一锚点即可
+    return any(a and a in body for a in anchors)
+
+
+def daily_note_empty_guidance() -> str:
+    return _DAILY_NOTE_EMPTY_GUIDANCE
+
+
+async def extract_daily_note_or_fallback(
+    *,
+    api_key: SecretStr | None,
+    model: str,
+    transcript: str,
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    timeout_seconds: float = 30.0,
+) -> dict:
+    cleaned = transcript.strip()
+    if not cleaned:
+        return empty_daily_note_extraction()
+    if api_key is None or not api_key.get_secret_value().strip():
+        await record_llm_trace(
+            purpose=PURPOSE_TEXT_DAILY_NOTE_EXTRACT,
+            modality="text",
+            model=model,
+            status="skipped",
+            request_json={"transcript": cleaned[:2000]},
+            error_message="未配置 API Key，使用转写兜底提取",
+        )
+        return fallback_daily_note_extraction(cleaned)
+    try:
+        client = QwenTextClient(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+        )
+        return await client.extract_daily_note(cleaned)
+    except Exception:
+        logger.warning("daily_note_extract_failed", exc_info=True)
+        return fallback_daily_note_extraction(cleaned)
+
+
+async def write_daily_note_or_fallback(
+    *,
+    api_key: SecretStr | None,
+    model: str,
+    extraction: dict,
+    recent_diaries: list[str],
+    display_name: str,
+    transcript: str,
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    timeout_seconds: float = 45.0,
+) -> dict:
+    """撰写日记；失败或校验不过则用提取结果拼短文。"""
+    fallback = fallback_diary_from_extraction(extraction)
+    if api_key is None or not api_key.get_secret_value().strip():
+        await record_llm_trace(
+            purpose=PURPOSE_TEXT_DAILY_NOTE_WRITE,
+            modality="text",
+            model=model,
+            status="skipped",
+            request_json={"extraction": extraction},
+            error_message="未配置 API Key，使用提取拼短文",
+        )
+        return fallback
+    try:
+        client = QwenTextClient(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+        )
+        diary = await client.write_daily_note_diary(
+            extraction=extraction,
+            recent_diaries=recent_diaries,
+            display_name=display_name,
+        )
+        if not (diary.get("body") or "").strip():
+            return fallback
+        if not verify_diary_against_sources(
+            diary=diary, extraction=extraction, transcript=transcript
+        ):
+            logger.info("daily_note_verify_failed_using_fallback")
+            return fallback
+        return diary
+    except Exception:
+        logger.warning("daily_note_write_failed", exc_info=True)
+        return fallback
 
 
 async def daily_note_items_or_fallback(
@@ -344,30 +685,20 @@ async def daily_note_items_or_fallback(
     base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
     timeout_seconds: float = 30.0,
 ) -> list[str]:
-    cleaned = transcript.strip()
-    if not cleaned:
-        return []
-    if api_key is None or not api_key.get_secret_value().strip():
-        await record_llm_trace(
-            purpose=PURPOSE_TEXT_DAILY_NOTE,
-            modality="text",
-            model=model,
-            status="skipped",
-            request_json={"transcript": cleaned[:2000]},
-            error_message="未配置 API Key，使用转写兜底",
-        )
-        return fallback_daily_note_items(cleaned)
-    try:
-        client = QwenTextClient(
-            api_key=api_key,
-            model=model,
-            base_url=base_url,
-            timeout_seconds=timeout_seconds,
-        )
-        return await client.extract_daily_note_items(cleaned)
-    except Exception:
-        logger.warning("daily_note_extract_failed", exc_info=True)
-        return fallback_daily_note_items(cleaned)
+    """兼容旧调用：返回 quotes/events 短句列表。"""
+    extraction = await extract_daily_note_or_fallback(
+        api_key=api_key,
+        model=model,
+        transcript=transcript,
+        base_url=base_url,
+        timeout_seconds=timeout_seconds,
+    )
+    quotes = extraction.get("quotes") or []
+    events = extraction.get("events") or []
+    items = [x for x in quotes if isinstance(x, str) and x.strip()]
+    if not items:
+        items = [x for x in events if isinstance(x, str) and x.strip()]
+    return items[:3]
 
 
 async def translate_or_passthrough(

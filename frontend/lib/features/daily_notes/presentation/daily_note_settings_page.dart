@@ -39,9 +39,7 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              error is ApiException
-                  ? error.message
-                  : '设置加载失败。您可以再试一次，数据没有丢失。',
+              error is ApiException ? error.message : '设置加载失败。您可以再试一次，数据没有丢失。',
               style: theme.textTheme.bodyLarge,
             ),
             const Spacer(),
@@ -84,14 +82,13 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
             Text('我的参考照（可选）', style: theme.textTheme.titleMedium),
             const SizedBox(height: CocoSpace.s2),
             Text(
-              '上传后，配图会按您的样子来画。不上传也可以，可可仍会用固定形象。',
+              '有照片时，配图会严格按照片上的样子来画；没有照片时，默认画女性长辈形象。',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: CocoColors.neutral700,
               ),
             ),
             const SizedBox(height: CocoSpace.s3),
-            if (settings.hasParentPhoto &&
-                settings.parentPhotoUrl != null) ...[
+            if (settings.hasParentPhoto && settings.parentPhotoUrl != null) ...[
               Align(
                 alignment: Alignment.centerLeft,
                 child: ClipRRect(
@@ -99,9 +96,7 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
                   child: SizedBox(
                     width: 96,
                     height: 96,
-                    child: DailyNoteImage(
-                      url: settings.parentPhotoUrl!,
-                    ),
+                    child: DailyNoteImage(url: settings.parentPhotoUrl!),
                   ),
                 ),
               ),
@@ -131,16 +126,18 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
     bool? shareToChildEnabled,
   }) async {
     try {
-      await ref.read(dailyNotesApiProvider).updateSettings(
+      await ref
+          .read(dailyNotesApiProvider)
+          .updateSettings(
             generateEnabled: generateEnabled,
             shareToChildEnabled: shareToChildEnabled,
           );
       ref.invalidate(dailyNoteSettingsProvider);
     } on ApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     }
   }
 
@@ -166,7 +163,9 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
         subtype = 'webp';
         filename = 'parent.webp';
       }
-      await ref.read(dailyNotesApiProvider).uploadParentPhoto(
+      await ref
+          .read(dailyNotesApiProvider)
+          .uploadParentPhoto(
             bytes: bytes,
             filename: filename,
             mimeSubtype: subtype,
@@ -174,9 +173,9 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
       ref.invalidate(dailyNoteSettingsProvider);
     } on ApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -189,9 +188,9 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
       ref.invalidate(dailyNoteSettingsProvider);
     } on ApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
       if (mounted) setState(() => _uploading = false);
     }

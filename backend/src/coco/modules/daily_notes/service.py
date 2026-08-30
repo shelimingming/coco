@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from coco.config import Settings
+from coco.database import get_session_factory
 from coco.errors import AppError
 from coco.models.conversation import Conversation, ConversationItem, ConversationItemKind
 from coco.models.daily_note import (
@@ -38,7 +40,14 @@ from coco.observability.llm_trace import (
     reset_llm_trace,
 )
 from coco.providers.bos_storage import BosStorage, get_bos_storage
-from coco.providers.qwen_text import daily_note_items_or_fallback
+from coco.providers.qwen_text import (
+    build_daily_note_header_line,
+    daily_note_empty_guidance,
+    diary_paragraphs,
+    extract_daily_note_or_fallback,
+    extraction_has_diary_material,
+    write_daily_note_or_fallback,
+)
 from coco.providers.wan_image import WanImageClient
 
 logger = logging.getLogger(__name__)
@@ -46,14 +55,20 @@ logger = logging.getLogger(__name__)
 _PROMPT_MAX = 500
 _IMAGE_MAX_BYTES = 4 * 1024 * 1024
 _PARENT_PHOTO_MAX_BYTES = 3 * 1024 * 1024
+_IMAGE_STYLE_PREFIX = "温馨手绘水彩插画，柔和暖色调，画面明亮干净，留白多，治愈系，光线温暖"
+_IMAGE_NEGATIVE = "文字,水印,标题,字幕,照片写实,阴郁,恐怖,血腥,畸形手指"
+# 无参考照时固定女性人物卡（配图外观不跟性别开关）
+_DEFAULT_ELDER_LOOK = "一位慈祥的中国老年女性，花白短发，温和微笑，日常家居服装"
+_TRANSCRIPT_MIN_CHARS = 8
+# 进程内去重：同一父母同一天避免叠多个后台任务
+_generate_inflight: set[tuple[UUID, date]] = set()
 
 
-def _elder_look(gender: str) -> str:
-    if gender == UserGender.MALE.value:
-        return "一位慈祥的中国老年男性，短发，温和微笑，日常家居服装"
-    if gender == UserGender.FEMALE.value:
-        return "一位慈祥的中国老年女性，花白短发，温和微笑，日常家居服装"
-    return "一位慈祥的中国长辈，温和微笑，日常家居服装"
+def _elder_look_for_image(*, has_parent_photo: bool) -> str:
+    """有参考照时不写外貌文案；无照默认女性。"""
+    if has_parent_photo:
+        return ""
+    return _DEFAULT_ELDER_LOOK
 
 
 def _to_data_uri(data: bytes, mime: str) -> str:
@@ -224,7 +239,13 @@ class DailyNoteService:
             select(DailyNote)
             .where(
                 DailyNote.parent_id == user.id,
-                DailyNote.status.in_([DailyNoteStatus.READY.value, DailyNoteStatus.EMPTY.value]),
+                DailyNote.status.in_(
+                    [
+                        DailyNoteStatus.READY.value,
+                        DailyNoteStatus.EMPTY.value,
+                        DailyNoteStatus.PENDING.value,
+                    ]
+                ),
             )
             .order_by(DailyNote.note_date.desc())
             .limit(limit)
@@ -268,6 +289,85 @@ class DailyNoteService:
             return None
         return await self._response_with_images(session, note)
 
+    async def enqueue_generate_for_parent(
+        self,
+        session: AsyncSession,
+        *,
+        user: User,
+        source: str = DailyNoteSource.MANUAL.value,
+        note_date: date | None = None,
+        respect_generate_enabled: bool = True,
+    ) -> DailyNoteResponse:
+        """立刻落 pending 并后台跑完整管线，HTTP 不等 LLM/生图。"""
+        if user.role != UserRole.PARENT.value:
+            raise AppError(403, "daily_note.parent_required", "只有老人模式可以生成每日小记。")
+        settings = await self.get_or_create_settings(session, user=user)
+        if respect_generate_enabled and not settings.generate_enabled:
+            raise AppError(
+                400,
+                "daily_note.generate_disabled",
+                "每日小记生成已关闭。您可以在设置里重新打开。",
+            )
+
+        target_date = note_date or _local_today(self._settings)
+        note = await self._upsert_pending(
+            session, parent_id=user.id, note_date=target_date, source=source
+        )
+        # pending 态无配图，避免误触 BOS
+        note.title = ""
+        note.header_line = build_daily_note_header_line(target_date)
+        note.items_json = []
+        note.body_text = ""
+        note.closing = ""
+        await session.commit()
+        await session.refresh(note)
+        response = await self._response_with_images(session, note)
+
+        job_key = (user.id, target_date)
+        if job_key in _generate_inflight:
+            return response
+
+        _generate_inflight.add(job_key)
+        user_id = user.id
+        settings_snapshot = self._settings
+
+        async def _background() -> None:
+            try:
+                factory = get_session_factory()
+                async with factory() as bg_session:
+                    parent = await bg_session.get(User, user_id)
+                    if parent is None or parent.role != UserRole.PARENT.value:
+                        return
+                    await DailyNoteService(settings_snapshot).generate_for_parent(
+                        bg_session,
+                        user=parent,
+                        source=source,
+                        note_date=target_date,
+                        respect_generate_enabled=respect_generate_enabled,
+                    )
+            except Exception:
+                logger.exception(
+                    "daily_note_background_failed parent_id=%s date=%s",
+                    user_id,
+                    target_date,
+                )
+            finally:
+                _generate_inflight.discard(job_key)
+
+        task = asyncio.create_task(
+            _background(),
+            name=f"daily-note-generate-{user_id}-{target_date.isoformat()}",
+        )
+        # 测试环境：等后台跑完再返回终态，避免残留 task 干扰下一条用例
+        if settings_snapshot.environment == "test":
+            await task
+            factory = get_session_factory()
+            async with factory() as settled_session:
+                settled = await settled_session.get(DailyNote, note.id)
+                if settled is not None:
+                    return await self._response_with_images(settled_session, settled)
+        return response
+
     async def generate_for_parent(
         self,
         session: AsyncSession,
@@ -294,35 +394,80 @@ class DailyNoteService:
 
         try:
             transcript = await self._day_transcript(session, user_id=user.id, note_date=target_date)
-            items = await daily_note_items_or_fallback(
+            extraction = await extract_daily_note_or_fallback(
                 api_key=self._settings.aliyun_api_key,
                 model=self._settings.text_model,
                 transcript=transcript,
                 base_url=self._settings.aliyun_compatible_base_url,
             )
-            if not items:
+            material_ok = len(
+                transcript.strip()
+            ) >= _TRANSCRIPT_MIN_CHARS and extraction_has_diary_material(extraction)
+            if not material_ok:
+                # 素材不足：引导再聊，不硬写假日记、不配图、不分享
                 note.status = DailyNoteStatus.EMPTY.value
+                note.title = ""
+                note.header_line = build_daily_note_header_line(target_date)
                 note.items_json = []
-                note.body_text = ""
+                note.body_text = daily_note_empty_guidance()
+                note.closing = ""
+                note.extraction_json = extraction
                 note.shared_at = None
+                note.share_error = None
                 await self._delete_note_images(session, note=note)
                 await session.commit()
                 await session.refresh(note)
                 return await self._response_with_images(session, note)
 
-            note.items_json = items
-            note.body_text = "\n".join(items)
+            recent = await self._recent_diary_snippets(
+                session, parent_id=user.id, before_date=target_date, limit=5
+            )
+            diary = await write_daily_note_or_fallback(
+                api_key=self._settings.aliyun_api_key,
+                model=self._settings.text_model,
+                extraction=extraction,
+                recent_diaries=recent,
+                display_name=user.display_name or "",
+                transcript=transcript,
+                base_url=self._settings.aliyun_compatible_base_url,
+            )
+            paragraphs = diary_paragraphs(str(diary.get("body") or ""))
+            if not paragraphs:
+                note.status = DailyNoteStatus.EMPTY.value
+                note.title = ""
+                note.header_line = build_daily_note_header_line(target_date)
+                note.items_json = []
+                note.body_text = daily_note_empty_guidance()
+                note.closing = ""
+                note.extraction_json = extraction
+                note.shared_at = None
+                note.share_error = None
+                await self._delete_note_images(session, note=note)
+                await session.commit()
+                await session.refresh(note)
+                return await self._response_with_images(session, note)
+
+            weather = ""
+            if isinstance(extraction.get("weather_mentioned"), str):
+                weather = extraction["weather_mentioned"]
+            note.title = str(diary.get("title") or "").strip()[:64]
+            note.header_line = build_daily_note_header_line(target_date, weather_mentioned=weather)
+            note.items_json = paragraphs
+            note.body_text = "\n".join(paragraphs)
+            note.closing = str(diary.get("closing") or "").strip()[:200]
+            note.extraction_json = extraction
             note.status = DailyNoteStatus.READY.value
             await self._delete_note_images(session, note=note)
             await session.commit()
 
-            # 生图前再读设置，确保参考照字段最新
+            # 生图前再读设置；画面严格跟日记段落/illustrations 对齐，不另造情节
             settings = await self.get_or_create_settings(session, user=user)
+            illustrations = diary.get("illustrations") if isinstance(diary, dict) else None
+            scenes = _aligned_scenes(illustrations, paragraphs)
             await self._generate_and_store_images(
                 session,
                 note=note,
-                items=items,
-                gender=user.gender,
+                scenes=scenes,
                 settings=settings,
             )
 
@@ -463,8 +608,11 @@ class DailyNoteService:
         return DailyNoteResponse(
             id=note.id,
             note_date=note.note_date,
+            title=note.title or "",
+            header_line=note.header_line or "",
             items=str_items,
             body_text=note.body_text or "\n".join(str_items),
+            closing=note.closing or "",
             status=note.status,
             source=note.source,
             shared_at=note.shared_at,
@@ -517,8 +665,12 @@ class DailyNoteService:
                 id=uuid4(),
                 parent_id=parent_id,
                 note_date=note_date,
+                title="",
+                header_line="",
                 items_json=[],
                 body_text="",
+                closing="",
+                extraction_json={},
                 status=DailyNoteStatus.PENDING.value,
                 source=source,
             )
@@ -530,6 +682,41 @@ class DailyNoteService:
         await session.commit()
         await session.refresh(note)
         return note
+
+    async def _recent_diary_snippets(
+        self,
+        session: AsyncSession,
+        *,
+        parent_id: UUID,
+        before_date: date,
+        limit: int = 5,
+    ) -> list[str]:
+        """近几篇 ready 日记正文，供撰写防重复。"""
+        rows = (
+            (
+                await session.execute(
+                    select(DailyNote)
+                    .where(
+                        DailyNote.parent_id == parent_id,
+                        DailyNote.note_date < before_date,
+                        DailyNote.status == DailyNoteStatus.READY.value,
+                    )
+                    .order_by(DailyNote.note_date.desc())
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        snippets: list[str] = []
+        for row in rows:
+            title = (row.title or "").strip()
+            body = (row.body_text or "").strip()
+            if not body:
+                continue
+            head = f"「{title}」\n{body}" if title else body
+            snippets.append(head[:400])
+        return snippets
 
     async def _day_transcript(
         self, session: AsyncSession, *, user_id: UUID, note_date: date
@@ -588,11 +775,13 @@ class DailyNoteService:
         session: AsyncSession,
         *,
         note: DailyNote,
-        items: list[str],
-        gender: str,
+        scenes: list[str],
         settings: DailyNoteSettings,
     ) -> None:
         key = self._settings.aliyun_api_key
+        if self._settings.environment == "test":
+            # 集成测试只验文本管线，跳过外网生图
+            return
         if key is None or not key.get_secret_value().strip():
             await record_llm_trace(
                 purpose=PURPOSE_IMAGE_GENERATE,
@@ -602,6 +791,8 @@ class DailyNoteService:
                 user_id=note.parent_id,
                 error_message="未配置 API Key，每日小记跳过配图",
             )
+            return
+        if not scenes:
             return
 
         from coco.assets import load_coco_reference_png
@@ -629,8 +820,7 @@ class DailyNoteService:
                 )
                 has_parent_photo = False
 
-        scenes = items[:2]
-        elder = _elder_look(gender)
+        elder = _elder_look_for_image(has_parent_photo=has_parent_photo)
         tokens = bind_llm_trace(user_id=note.parent_id)
         try:
             client = WanImageClient(
@@ -639,19 +829,22 @@ class DailyNoteService:
                 base_url=self._settings.aliyun_http_base_url,
             )
             bos = self._require_bos()
-            for seq, scene in enumerate(scenes):
+            # 每天最多 3 张；seq 与正文段落下标对齐，便于前端图文对应
+            for seq, scene in enumerate(scenes[:3]):
                 if has_parent_photo:
                     prompt = (
-                        f"图1是金毛小狗可可的形象参考，图2是老人的照片参考。"
-                        f"请画温馨插画：保持可可与老人外观一致，"
-                        f"他们一起在「{scene}」的日常场景里，柔和暖色，无文字无水印。"
+                        f"{_IMAGE_STYLE_PREFIX}。"
+                        f"图1是金毛小狗可可的形象参考，图2是老人的照片参考，"
+                        f"人物外观必须严格与图2照片一致，不要改年龄发型衣着。"
+                        f"请只画下列场景，禁止添加场景里没有的情节或地点："
+                        f"「{scene}」。无文字无水印。"
                     )
                 else:
-                    # 未上传老人照：只用可可参考图，长辈用文字描述
                     prompt = (
+                        f"{_IMAGE_STYLE_PREFIX}。"
                         f"图1是金毛小狗可可的形象参考，请保持其外观一致。"
-                        f"请画温馨插画：可可与{elder}一起在「{scene}」，"
-                        f"中国家庭日常氛围，柔和暖色，无文字无水印。"
+                        f"请画可可与{elder}，只表现下列场景，禁止添加场景里没有的情节或地点："
+                        f"「{scene}」。无文字无水印。"
                     )
                 prompt = prompt[:_PROMPT_MAX]
                 try:
@@ -661,6 +854,7 @@ class DailyNoteService:
                         watermark=False,
                         size="1K",
                         reference_images=refs,
+                        negative_prompt=_IMAGE_NEGATIVE,
                     )
                     if not result.images:
                         continue
@@ -746,6 +940,25 @@ class DailyNoteService:
                     note.shared_at = None
                     note.share_error = "发送失败"
                     await session.commit()
+
+
+def _aligned_scenes(illustrations: object, paragraphs: list[str]) -> list[str]:
+    """配图与正文段一一对应：优先 illustrations[i]，否则用该段原文；最多 3 张。"""
+    illust: list[str] = []
+    if isinstance(illustrations, list):
+        for item in illustrations:
+            if isinstance(item, str) and item.strip():
+                illust.append(item.strip()[:100])
+    scenes: list[str] = []
+    for i, para in enumerate(paragraphs[:3]):
+        if i < len(illust):
+            scenes.append(illust[i])
+        elif para.strip():
+            # 用段落本身作画面说明，保证图文同源
+            scenes.append(para.strip()[:100])
+    if not scenes and illust:
+        scenes = illust[:3]
+    return scenes[:3]
 
 
 async def _download_image(url: str) -> tuple[bytes, str]:

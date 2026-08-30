@@ -137,20 +137,17 @@ class _DailyNoteBlock extends ConsumerWidget {
           return const SizedBox.shrink();
         }
         final parentName = _relationLabel(ref);
-        final preview = note.items.isNotEmpty
-            ? note.items.first
-            : (note.bodyText.isNotEmpty ? note.bodyText : '今天有新的小记');
+        final preview = note.previewText == '（无正文）'
+            ? '今天有新的小记'
+            : note.previewText;
         final moreHint = note.items.length > 1
-            ? '共 ${note.items.length} 件小事，点开查看'
+            ? '共 ${note.items.length} 段，点开查看'
             : '点开查看完整小记';
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '$parentName的今日小记',
-              style: theme.textTheme.titleMedium,
-            ),
+            Text('$parentName的今日小记', style: theme.textTheme.titleMedium),
             const SizedBox(height: CocoSpace.s3),
             Material(
               color: CocoColors.childSurface,
@@ -207,8 +204,7 @@ class _DailyNoteBlock extends ConsumerWidget {
   }
 
   String _relationLabel(WidgetRef ref) {
-    return ref.watch(familyInfoProvider).valueOrNull?.parentDisplayName ??
-        '家人';
+    return ref.watch(familyInfoProvider).valueOrNull?.parentDisplayName ?? '家人';
   }
 }
 
@@ -249,10 +245,7 @@ class _ChildNoteThumb extends StatelessWidget {
 }
 
 class _StatusHeader extends StatelessWidget {
-  const _StatusHeader({
-    required this.parentName,
-    required this.hasReminders,
-  });
+  const _StatusHeader({required this.parentName, required this.hasReminders});
 
   final String parentName;
   // 与「今日信息同步」是否有待关注提醒对齐

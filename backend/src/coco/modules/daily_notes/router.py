@@ -53,9 +53,7 @@ async def upload_parent_photo(
 ) -> DailyNoteSettingsResponse:
     data = await image.read()
     mime = image.content_type or "image/jpeg"
-    return await service.upload_parent_photo(
-        session, user=user, data=data, mime_type=mime
-    )
+    return await service.upload_parent_photo(session, user=user, data=data, mime_type=mime)
 
 
 @router.delete("/daily-notes/settings/parent-photo", response_model=DailyNoteSettingsResponse)
@@ -84,8 +82,8 @@ async def generate_daily_note(
     body: DailyNoteGenerateRequest = Body(default_factory=DailyNoteGenerateRequest),
     service: DailyNoteService = Depends(get_daily_note_service),
 ) -> DailyNoteResponse:
-    # 手动生成不受「自动生成」开关限制，方便随时补记
-    return await service.generate_for_parent(
+    # 手动生成：立刻返回 pending，后台跑提取/撰写/配图；不受自动生成开关限制
+    return await service.enqueue_generate_for_parent(
         session,
         user=user,
         source=DailyNoteSource.MANUAL.value,

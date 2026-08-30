@@ -38,7 +38,10 @@ class _DailyNotesPageState extends ConsumerState<DailyNotesPage> {
           onPressed: () => context.push('/parent/daily-notes/settings'),
           style: TextButton.styleFrom(
             foregroundColor: CocoColors.parentPrimary,
-            textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            textStyle: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
             minimumSize: const Size(48, 48),
           ),
           child: const Text('设置'),
@@ -78,8 +81,10 @@ class _DailyNotesPageState extends ConsumerState<DailyNotesPage> {
                 style: theme.textTheme.bodyLarge,
               ),
               data: (items) {
-                final ready = items.where((e) => e.isReady).toList();
-                if (ready.isEmpty) {
+                final visible = items
+                    .where((e) => e.isReady || e.isEmpty || e.isPending)
+                    .toList();
+                if (visible.isEmpty) {
                   return Text(
                     '还没有生成过小记。晚上 20:00 会自动整理，也可以点下方「立即生成」。',
                     style: theme.textTheme.bodyLarge?.copyWith(
@@ -89,7 +94,7 @@ class _DailyNotesPageState extends ConsumerState<DailyNotesPage> {
                 }
                 return Column(
                   children: [
-                    for (final note in ready) ...[
+                    for (final note in visible) ...[
                       _NoteListTile(
                         note: note,
                         onTap: () =>
@@ -111,21 +116,20 @@ class _DailyNotesPageState extends ConsumerState<DailyNotesPage> {
     if (_generating) return;
     setState(() => _generating = true);
     try {
-      final note = await ref.read(dailyNotesApiProvider).generate();
+      await ref.read(dailyNotesApiProvider).generate();
       ref.invalidate(dailyNotesListProvider);
       if (!mounted) return;
-      if (note.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('今天聊到的日常还不够，暂时没有生成小记。')),
-        );
-      } else if (note.isReady) {
-        context.push('/parent/daily-notes/${note.id}');
-      }
+      // 后台异步生成：只提示稍后再看，不进详情轮询
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('可可正在后台努力生成中，请稍后再来查看～'),
+        ),
+      );
     } on ApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
       if (mounted) setState(() => _generating = false);
     }
@@ -143,9 +147,7 @@ class _NoteListTile extends StatelessWidget {
     final theme = Theme.of(context);
     final dateLabel =
         '${note.noteDate.year}-${note.noteDate.month.toString().padLeft(2, '0')}-${note.noteDate.day.toString().padLeft(2, '0')}';
-    final preview = note.items.isNotEmpty
-        ? note.items.first
-        : (note.bodyText.isNotEmpty ? note.bodyText : '（无正文）');
+    final preview = note.isEmpty ? '再和可可说说今天发生了什么' : note.previewText;
 
     return Material(
       color: CocoColors.white,

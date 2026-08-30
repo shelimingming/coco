@@ -9,8 +9,9 @@ from datetime import UTC, datetime
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from coco.config import get_settings
+from coco.database import get_session_factory
 from coco.models.conversation import (
     Conversation,
     ConversationChannel,
@@ -21,7 +22,6 @@ from coco.models.conversation import (
 from coco.models.daily_note import DailyNote, DailyNoteSource, DailyNoteStatus
 from coco.models.user import User
 from coco.modules.daily_notes.service import DailyNoteService
-from coco.config import get_settings
 
 pytestmark = pytest.mark.integration
 
@@ -76,16 +76,17 @@ async def test_daily_note_generate_empty_without_transcript(
         json={},
     )
     assert resp.status_code == 200, resp.text
+    # test 环境会等后台完成再返回终态
     data = resp.json()
     assert data["status"] == "empty"
     assert data["items"] == []
+    assert "再说说今天" in data["body_text"] or "发生了什么" in data["body_text"]
+    assert data["images"] == []
+    assert data.get("shared_at") is None
 
 
 @pytest.mark.asyncio
-async def test_daily_note_generate_share_and_child_read(
-    client: AsyncClient,
-    session_factory: async_sessionmaker[AsyncSession],
-) -> None:
+async def test_daily_note_generate_share_and_child_read(client: AsyncClient) -> None:
     parent_phone = _unique_phone()
     child_phone = _unique_phone()
     parent_token = await _login(client, parent_phone, "parent", "张阿姨")
@@ -103,13 +104,13 @@ async def test_daily_note_generate_share_and_child_read(
     )
     assert join.status_code == 200, join.text
 
-    # 写入当日对话，供无 Key 时兜底抽取
-    async with session_factory() as session:
-        me = await client.get(
-            "/v1/me",
-            headers={"Authorization": f"Bearer {parent_token}"},
-        )
-        parent_id = uuid.UUID(me.json()["id"])
+    # 写入当日对话，供无 Key 时兜底抽取（复用 app 会话工厂，避开 db_engine 迁移套娃）
+    me = await client.get(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {parent_token}"},
+    )
+    parent_id = uuid.UUID(me.json()["id"])
+    async with get_session_factory()() as session:
         conv = Conversation(
             id=uuid.uuid4(),
             user_id=parent_id,
@@ -156,7 +157,8 @@ async def test_daily_note_generate_share_and_child_read(
     assert gen.status_code == 200, gen.text
     note = gen.json()
     assert note["status"] == "ready"
-    assert len(note["items"]) >= 1
+    assert len(note["items"]) >= 1 or (note.get("body_text") or "").strip()
+    assert note.get("title") is not None
     assert note["shared_at"] is not None
 
     child_today = await client.get(
@@ -184,10 +186,7 @@ async def test_daily_note_generate_share_and_child_read(
 
 
 @pytest.mark.asyncio
-async def test_auto_generate_skips_when_ready_exists(
-    client: AsyncClient,
-    session_factory: async_sessionmaker[AsyncSession],
-) -> None:
+async def test_auto_generate_skips_when_ready_exists(client: AsyncClient) -> None:
     token = await _login(client, _unique_phone(), "parent", "调度爸")
     me = await client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
     parent_id = uuid.UUID(me.json()["id"])
@@ -200,7 +199,7 @@ async def test_auto_generate_skips_when_ready_exists(
 
     settings = get_settings()
     service = DailyNoteService(settings)
-    async with session_factory() as session:
+    async with get_session_factory()() as session:
         user = await session.get(User, parent_id)
         assert user is not None
         # 先手动生成 empty，占住今日
@@ -211,9 +210,7 @@ async def test_auto_generate_skips_when_ready_exists(
             respect_generate_enabled=False,
         )
         # 改成 ready 模拟已有成功小记
-        note = await session.scalar(
-            select(DailyNote).where(DailyNote.parent_id == parent_id)
-        )
+        note = await session.scalar(select(DailyNote).where(DailyNote.parent_id == parent_id))
         assert note is not None
         note.status = DailyNoteStatus.READY.value
         note.items_json = ["已有内容"]

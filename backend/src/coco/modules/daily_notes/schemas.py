@@ -40,8 +40,12 @@ class DailyNoteImageMeta(FrozenModel):
 class DailyNoteResponse(FrozenModel):
     id: uuid.UUID
     note_date: date
+    title: str = ""
+    header_line: str = ""
+    # 正文段落（第一人称）；旧数据可能是短句条目
     items: list[str]
     body_text: str
+    closing: str = ""
     status: str
     source: str
     shared_at: datetime | None

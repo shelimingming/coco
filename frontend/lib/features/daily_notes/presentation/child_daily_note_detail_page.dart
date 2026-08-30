@@ -35,9 +35,7 @@ class ChildDailyNoteDetailPage extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              error is ApiException
-                  ? error.message
-                  : '小记加载失败。您可以再试一次，数据没有丢失。',
+              error is ApiException ? error.message : '小记加载失败。您可以再试一次，数据没有丢失。',
               style: theme.textTheme.bodyLarge,
             ),
             const Spacer(),
@@ -53,10 +51,7 @@ class ChildDailyNoteDetailPage extends ConsumerWidget {
           return CocoScaffold(
             title: '今日小记',
             leading: BackButton(onPressed: () => context.pop()),
-            body: Text(
-              '今天还没有可看的小记。',
-              style: theme.textTheme.bodyLarge,
-            ),
+            body: Text('今天还没有可看的小记。', style: theme.textTheme.bodyLarge),
           );
         }
         return CocoScaffold(
@@ -68,7 +63,7 @@ class ChildDailyNoteDetailPage extends ConsumerWidget {
               DailyNoteDiaryBody(
                 note: note,
                 tone: DailyNoteDiaryTone.child,
-                diaryTitle: '$parentName的今日小记',
+                fallbackTitle: '$parentName的今日小记',
               ),
             ],
           ),

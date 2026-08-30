@@ -31,6 +31,8 @@ PURPOSE_TEXT_TITLE = "text_title"
 PURPOSE_TEXT_TRANSLATE = "text_translate"
 PURPOSE_TEXT_WEB_SEARCH = "text_web_search"
 PURPOSE_TEXT_DAILY_NOTE = "text_daily_note"
+PURPOSE_TEXT_DAILY_NOTE_EXTRACT = "text_daily_note_extract"
+PURPOSE_TEXT_DAILY_NOTE_WRITE = "text_daily_note_write"
 PURPOSE_MEM0_EXTRACT = "mem0_extract"
 PURPOSE_MEM0_SEARCH = "mem0_search"
 

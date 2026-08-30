@@ -46,9 +46,7 @@ class DailyNoteSettings(TimestampMixin, Base):
         primary_key=True,
     )
     generate_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    share_to_child_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    share_to_child_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # 预留；MVP 固定按 20 点调度
     generate_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     # 可选：老人自传参考照存 BOS；未上传则生图只用可可参考图
@@ -73,9 +71,17 @@ class DailyNote(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     note_date: Mapped[date] = mapped_column(Date, nullable=False)
-    # 1–3 条短句
+    # 日记短标题（如「饺子和孙女的电话」）
+    title: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    # 首行：日期+星期（可选天气）
+    header_line: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    # 正文段落数组（第一人称日记）；历史数据可能是旧版短句条目
     items_json: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     body_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 收束一句
+    closing: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 提取阶段原始 JSON（审计；health_signals 不进正文）
+    extraction_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
@@ -86,9 +92,7 @@ class DailyNote(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=DailyNoteSource.MANUAL.value,
     )
-    shared_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    shared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     share_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

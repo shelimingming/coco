@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/tokens.dart';
+import '../../../core/widgets/coco_button.dart';
 import '../domain/models.dart';
 import 'daily_note_image.dart';
 
-/// 日记式排版：交付稿撕边贴图纸（纸张 / 枝叶 / 爱心素材）。
+/// 日记式排版：交付稿撕边贴图纸手账。
 enum DailyNoteDiaryTone { parent, child }
 
 /// 小记手账字体（龙藏体，见 assets/fonts）。
@@ -25,16 +26,24 @@ class DailyNoteDiaryBody extends StatelessWidget {
     super.key,
     required this.note,
     required this.tone,
-    this.diaryTitle,
+    this.fallbackTitle,
+    this.onTalkToCoco,
     @Deprecated('手账抬头自带日期') this.showDateHeader = false,
     @Deprecated('手账抬头自带日期') this.showCardDate = true,
+    @Deprecated('改用 fallbackTitle / note.title') this.diaryTitle,
   });
 
   final DailyNote note;
   final DailyNoteDiaryTone tone;
-  final String? diaryTitle;
+
+  /// 无 note.title 时的兜底标题（如子女端「××的今日小记」）。
+  final String? fallbackTitle;
+
+  /// 父母端 empty：去和可可聊聊。
+  final VoidCallback? onTalkToCoco;
   final bool showDateHeader;
   final bool showCardDate;
+  final String? diaryTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +59,23 @@ class DailyNoteDiaryBody extends StatelessWidget {
             CocoColors.neutral500.withValues(alpha: 0.18),
             CocoColors.childBackground,
           );
-    final lines = note.items.isNotEmpty
+    final bodySize = isParent ? 22.0 : 19.0;
+
+    // 素材不足：引导再聊，不冒充日记正文
+    if (note.isEmpty) {
+      return _EmptyDiaryGuide(
+        matte: matte,
+        ink: ink,
+        inkStrong: inkStrong,
+        bodySize: bodySize,
+        message: note.bodyText.trim().isNotEmpty
+            ? note.bodyText.trim()
+            : '今天聊得还不多，再和可可说说今天发生了什么，我再帮您写日记。',
+        onTalkToCoco: isParent ? onTalkToCoco : null,
+      );
+    }
+
+    final paragraphs = note.items.isNotEmpty
         ? note.items
         : (note.bodyText.trim().isEmpty
               ? const <String>[]
@@ -58,17 +83,23 @@ class DailyNoteDiaryBody extends StatelessWidget {
                     .split('\n')
                     .where((e) => e.trim().isNotEmpty)
                     .toList());
+    final title = note.title.trim().isNotEmpty
+        ? note.title.trim()
+        : (diaryTitle?.trim().isNotEmpty == true
+              ? diaryTitle!.trim()
+              : (fallbackTitle?.trim().isNotEmpty == true
+                    ? fallbackTitle!.trim()
+                    : '今日小记'));
+    final header = note.headerLine.trim().isNotEmpty
+        ? note.headerLine.trim()
+        : _localHeader(note.noteDate);
+    final closing = note.closing.trim();
+    // seq 与段落下标对齐，便于段落后插图
     final bySeq = {for (final img in note.images) img.seq: img};
     final pairedSeq = <int>{
-      for (var i = 0; i < lines.length; i++)
+      for (var i = 0; i < paragraphs.length; i++)
         if (bySeq.containsKey(i)) i,
     };
-    final title = (diaryTitle?.trim().isNotEmpty == true)
-        ? diaryTitle!.trim()
-        : '今日小记';
-    final date = note.noteDate;
-    final weekday = _weekdayLabel(date.weekday);
-    final bodySize = isParent ? 22.0 : 19.0;
 
     return ColoredBox(
       color: matte,
@@ -82,7 +113,6 @@ class DailyNoteDiaryBody extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // 撕边纸底：九宫格拉伸，边缘不变形
             Positioned.fill(
               child: Image.asset(
                 _DiaryAssets.paper,
@@ -103,20 +133,24 @@ class DailyNoteDiaryBody extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 给左上枝叶留空
+                    // 给左上枝叶留空，避免挡住日期首字
                     const SizedBox(height: 28),
-                    _DateRow(
-                      month: date.month,
-                      day: date.day,
-                      year: date.year,
-                      weekday: weekday,
-                      ink: ink,
-                      inkStrong: inkStrong,
+                    Padding(
+                      padding: const EdgeInsets.only(left: 52),
+                      child: Text(
+                        header,
+                        style: TextStyle(
+                          fontFamily: DailyNoteHandwriting.family,
+                          fontSize: isParent ? 18 : 16,
+                          height: 1.3,
+                          color: ink,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: CocoSpace.s4),
                     _TitleRow(title: title, inkStrong: inkStrong),
                     const SizedBox(height: CocoSpace.s6),
-                    if (lines.isEmpty)
+                    if (paragraphs.isEmpty)
                       Text(
                         '（今天还没有写下内容）',
                         style: TextStyle(
@@ -126,27 +160,41 @@ class DailyNoteDiaryBody extends StatelessWidget {
                         ),
                       )
                     else
-                      for (var i = 0; i < lines.length; i++) ...[
+                      for (var i = 0; i < paragraphs.length; i++) ...[
                         if (i > 0) const SizedBox(height: CocoSpace.s5),
-                        _ScrapbookEntry(
-                          index: i + 1,
-                          text: lines[i],
-                          fontSize: bodySize,
-                          ink: inkStrong,
-                          badgeColor: i.isEven
-                              ? Color.alphaBlend(
-                                  CocoColors.warning.withValues(alpha: 0.22),
-                                  CocoColors.white,
-                                )
-                              : CocoColors.neutral300,
-                          image: bySeq[i],
+                        Text(
+                          paragraphs[i],
+                          style: TextStyle(
+                            fontFamily: DailyNoteHandwriting.family,
+                            fontSize: bodySize,
+                            height: 1.55,
+                            color: inkStrong,
+                          ),
                         ),
+                        // 图文一一对应：该段有配图则紧跟段落后
+                        if (bySeq[i] != null) ...[
+                          const SizedBox(height: CocoSpace.s3),
+                          _RoundedPhoto(url: bySeq[i]!.url),
+                        ],
                       ],
+                    // 未配对的多余图（异常兜底）放在正文后、收束前
                     for (final img in note.images)
                       if (!pairedSeq.contains(img.seq)) ...[
-                        const SizedBox(height: CocoSpace.s4),
+                        const SizedBox(height: CocoSpace.s3),
                         _RoundedPhoto(url: img.url),
                       ],
+                    if (closing.isNotEmpty) ...[
+                      const SizedBox(height: CocoSpace.s5),
+                      Text(
+                        closing,
+                        style: TextStyle(
+                          fontFamily: DailyNoteHandwriting.family,
+                          fontSize: bodySize,
+                          height: 1.5,
+                          color: inkStrong,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: CocoSpace.s6),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
@@ -168,85 +216,68 @@ class DailyNoteDiaryBody extends StatelessWidget {
                 ),
               ),
             ),
-            // 胶带枝叶压在纸角上
-            const Positioned(
-              left: 10,
-              top: 6,
-              child: _TapedLeaf(),
-            ),
+            const Positioned(left: 10, top: 6, child: _TapedLeaf()),
           ],
         ),
       ),
     );
   }
 
-  static String _weekdayLabel(int weekday) {
+  static String _localHeader(DateTime date) {
     const labels = ['一', '二', '三', '四', '五', '六', '日'];
-    return '星期${labels[(weekday - 1).clamp(0, 6)]}';
+    final weekday = '星期${labels[(date.weekday - 1).clamp(0, 6)]}';
+    return '${date.month}月${date.day}日 $weekday';
   }
 }
 
-class _DateRow extends StatelessWidget {
-  const _DateRow({
-    required this.month,
-    required this.day,
-    required this.year,
-    required this.weekday,
+/// 素材不足时的引导卡（不走假日记排版）。
+class _EmptyDiaryGuide extends StatelessWidget {
+  const _EmptyDiaryGuide({
+    required this.matte,
     required this.ink,
     required this.inkStrong,
+    required this.bodySize,
+    required this.message,
+    this.onTalkToCoco,
   });
 
-  final int month;
-  final int day;
-  final int year;
-  final String weekday;
+  final Color matte;
   final Color ink;
   final Color inkStrong;
+  final double bodySize;
+  final String message;
+  final VoidCallback? onTalkToCoco;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        // 左边给枝叶让位
-        const SizedBox(width: 52),
-        Text(
-          '$month / $day',
-          style: TextStyle(
-            fontFamily: DailyNoteHandwriting.family,
-            fontSize: 40,
-            height: 1,
-            color: inkStrong,
-          ),
-        ),
-        const SizedBox(width: CocoSpace.s3),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$year',
-                style: TextStyle(
-                  fontFamily: DailyNoteHandwriting.family,
-                  fontSize: 14,
-                  height: 1.15,
-                  color: ink,
-                ),
+    return ColoredBox(
+      color: matte,
+      child: Padding(
+        padding: const EdgeInsets.all(CocoSpace.s4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              message,
+              style: TextStyle(
+                fontFamily: DailyNoteHandwriting.family,
+                fontSize: bodySize,
+                height: 1.55,
+                color: inkStrong,
               ),
-              Text(
-                weekday,
-                style: TextStyle(
-                  fontFamily: DailyNoteHandwriting.family,
-                  fontSize: 14,
-                  height: 1.15,
-                  color: ink,
-                ),
-              ),
+            ),
+            const SizedBox(height: CocoSpace.s3),
+            Text(
+              '聊几件今天发生的小事，再点「立即生成」就好。',
+              style: TextStyle(fontSize: 16, height: 1.4, color: ink),
+            ),
+            if (onTalkToCoco != null) ...[
+              const SizedBox(height: CocoSpace.s5),
+              CocoPrimaryButton(label: '去和可可聊聊', onPressed: onTalkToCoco),
             ],
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -275,72 +306,6 @@ class _TitleRow extends StatelessWidget {
           ),
         ),
         _InkHeart(size: 22, color: inkStrong),
-      ],
-    );
-  }
-}
-
-class _ScrapbookEntry extends StatelessWidget {
-  const _ScrapbookEntry({
-    required this.index,
-    required this.text,
-    required this.fontSize,
-    required this.ink,
-    required this.badgeColor,
-    this.image,
-  });
-
-  final int index;
-  final String text;
-  final double fontSize;
-  final Color ink;
-  final Color badgeColor;
-  final DailyNoteImageMeta? image;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: badgeColor,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '$index',
-                style: TextStyle(
-                  fontFamily: DailyNoteHandwriting.family,
-                  fontSize: 16,
-                  height: 1,
-                  color: ink,
-                ),
-              ),
-            ),
-            const SizedBox(width: CocoSpace.s3),
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(
-                  fontFamily: DailyNoteHandwriting.family,
-                  fontSize: fontSize,
-                  height: 1.4,
-                  color: ink,
-                ),
-              ),
-            ),
-          ],
-        ),
-        if (image != null) ...[
-          const SizedBox(height: CocoSpace.s3),
-          _RoundedPhoto(url: image!.url),
-        ],
       ],
     );
   }

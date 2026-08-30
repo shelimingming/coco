@@ -46,7 +46,7 @@ async def db_engine(require_test_db: str):
     from alembic import command
 
     engine = create_async_engine(require_test_db, pool_pre_ping=True)
-    # 跑迁移到最新
+    # 跑迁移到最新（在线程外同步调用时需注意事件循环；优先用 client 自带库）
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", require_test_db)
     os.environ["COCO_DATABASE_URL"] = require_test_db
