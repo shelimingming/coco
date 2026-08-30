@@ -114,8 +114,9 @@ async def synthesize(
     user: CurrentUserDep,
     settings: SettingsDep,
 ) -> Response:
-    """父母端 TTS：返回 MP3，不缓存。"""
-    _require_parent(user)
+    """TTS：返回 WAV/MP3，不缓存。父母端开场与双端小记朗读共用。"""
+    if user.role not in {UserRole.PARENT.value, UserRole.CHILD.value}:
+        raise AppError(403, "auth.role_required", "当前角色不能使用语音播报。")
     _require_api_key(settings)
     assert settings.aliyun_api_key is not None
     try:

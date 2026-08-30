@@ -62,8 +62,8 @@ class Settings(BaseSettings):
     image_model: str = "wan2.7-image"
     # 识图追问外壳：独立 ASR / TTS（非 Realtime）
     asr_model: str = "qwen-audio-3.0-asr-flash"
-    tts_model: str = "qwen-audio-3.0-tts-flash"
-    tts_voice: str = "longanhuan"
+    tts_model: str = "qwen3-tts-flash"
+    tts_voice: str = "Cherry"
 
     # Mem0 长期记忆：自托管 OSS + pgvector；无 Key 或关闭时读写降级为空
     mem0_enabled: bool = True

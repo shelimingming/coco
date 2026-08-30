@@ -143,8 +143,8 @@ lines = [
     "COCO_TEXT_MODEL=qwen-plus",
     "COCO_VISION_MODEL=qwen3.7-plus",
     "COCO_ASR_MODEL=qwen-audio-3.0-asr-flash",
-    "COCO_TTS_MODEL=qwen-audio-3.0-tts-flash",
-    "COCO_TTS_VOICE=longanhuan",
+    "COCO_TTS_MODEL=qwen3-tts-flash",
+    "COCO_TTS_VOICE=Cherry",
 ]
 Path("${out}").write_text("\n".join(lines) + "\n")
 print("env_ready", "with_key" if key else "no_key", "cloud_db" if skip_db else "local_db")

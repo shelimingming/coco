@@ -4,6 +4,7 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/widgets/coco_button.dart';
 import '../domain/models.dart';
 import 'daily_note_image.dart';
+import 'daily_note_speak_button.dart';
 
 /// 日记式排版：交付稿撕边贴图纸手账。
 enum DailyNoteDiaryTone { parent, child }
@@ -133,19 +134,27 @@ class DailyNoteDiaryBody extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 给左上枝叶留空，避免挡住日期首字
+                    // 给左上枝叶留空；右上角放朗读
                     const SizedBox(height: 28),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 52),
-                      child: Text(
-                        header,
-                        style: TextStyle(
-                          fontFamily: DailyNoteHandwriting.family,
-                          fontSize: isParent ? 18 : 16,
-                          height: 1.3,
-                          color: ink,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 52),
+                            child: Text(
+                              header,
+                              style: TextStyle(
+                                fontFamily: DailyNoteHandwriting.family,
+                                fontSize: isParent ? 18 : 16,
+                                height: 1.3,
+                                color: ink,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        DailyNoteSpeakButton(note: note, tone: tone),
+                      ],
                     ),
                     const SizedBox(height: CocoSpace.s4),
                     _TitleRow(title: title, inkStrong: inkStrong),

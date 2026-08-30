@@ -5,7 +5,8 @@ import 'dart:typed_data';
 
 import 'package:just_audio/just_audio.dart';
 
-/// 用内存中的 MP3 字节作为 [just_audio] 音源（服务端 TTS 直出，不落盘）。
+/// 用内存中的音频字节作为 [just_audio] 音源（服务端 TTS 直出，不落盘）。
+/// 兼容 WAV（百炼 Qwen3-TTS）与 MP3。
 class Mp3BytesSource extends StreamAudioSource {
   Mp3BytesSource(this.bytes);
 
@@ -20,7 +21,18 @@ class Mp3BytesSource extends StreamAudioSource {
       contentLength: end - start,
       offset: start,
       stream: Stream.value(bytes.sublist(start, end)),
-      contentType: 'audio/mpeg',
+      contentType: _sniffContentType(bytes),
     );
   }
+}
+
+String _sniffContentType(Uint8List bytes) {
+  if (bytes.length >= 4 &&
+      bytes[0] == 0x52 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x46) {
+    return 'audio/wav';
+  }
+  return 'audio/mpeg';
 }

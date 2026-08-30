@@ -40,6 +40,7 @@ from coco.observability.llm_trace import (
     reset_llm_trace,
 )
 from coco.providers.bos_storage import BosStorage, get_bos_storage
+from coco.providers.image_compress import compress_for_daily_note
 from coco.providers.qwen_text import (
     build_daily_note_header_line,
     daily_note_empty_guidance,
@@ -858,7 +859,9 @@ class DailyNoteService:
                     )
                     if not result.images:
                         continue
-                    raw, mime = await _download_image(result.images[0].url)
+                    raw, _mime = await _download_image(result.images[0].url)
+                    # 万相默认 PNG 约 1.8～2.2MB；转 JPEG 后再上传 BOS
+                    raw, mime = compress_for_daily_note(raw)
                     if len(raw) > _IMAGE_MAX_BYTES:
                         logger.warning(
                             "daily_note_image_too_large note_id=%s size=%s",
