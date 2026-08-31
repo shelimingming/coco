@@ -341,9 +341,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       await _player.clear();
       _playbackPending = false;
       _dropCancelledAssistant = true;
-      // 用户主动打断：不再等尾音保护，立刻听
-      _cancelEchoGuard();
-      _mic.suppress = false;
+      // 硬停播后喇叭/室内仍有尾音，与自动播完一样短时关麦，避免误开下一轮
+      _armEchoGuard();
       // 已说出的半句仍记入本通记录，方便「字」面板回看
       final spoken = _assistantAccum.trim();
       if (spoken.isNotEmpty) {

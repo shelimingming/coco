@@ -100,6 +100,41 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(socket.sentAudioCount, greaterThan(sentAtDrain));
   });
+
+  test('点打断后尾音保护期内不把麦流送给服务端', () async {
+    final socket = _FakeSocket(emitReady: true);
+    final mic = _FakeMic();
+    final player = _FakePlayer();
+    final env = _envFor(socket: socket, mic: mic, player: player);
+    addTearDown(env.container.dispose);
+
+    await env.controller.start();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    socket.emit('assistant.audio', {
+      'audio': base64Encode(Uint8List(8)),
+      'sample_rate': 24000,
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(env.controller.state.phase, VoiceCallPhase.speaking);
+
+    await env.controller.interrupt();
+    expect(env.controller.state.phase, VoiceCallPhase.listening);
+    expect(socket.cancelCount, 1);
+    expect(player.clearCount, 1);
+
+    final sentAtInterrupt = socket.sentAudioCount;
+    // 硬停播同样有喇叭尾音，保护期内不得上行
+    mic.forceAdd(_pcm(samples: 1600, amplitude: 8000));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(socket.sentAudioCount, sentAtInterrupt);
+
+    await Future<void>.delayed(kPostPlaybackEchoGuard);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    mic.forceAdd(_pcm(samples: 1600, amplitude: 8000));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(socket.sentAudioCount, greaterThan(sentAtInterrupt));
+  });
 }
 
 ({ProviderContainer container, VoiceCallController controller}) _envFor({
