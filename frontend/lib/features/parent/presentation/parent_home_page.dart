@@ -212,15 +212,16 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
           builder: (context, constraints) {
             final isEntrance = companionPose == CocoCompanionPose.entrance;
             final safe = CocoSafeInsets.paddingOf(context);
-            // 底栏占位 + 安全区；矮屏据此压缩可可，爪底贴按钮上方
+            // 底栏再贴 Home Indicator：少留 12pt，仍避开横条
+            final bottomPad = math.max(CocoSpace.s1, safe.bottom - 12);
+            // 底栏占位；矮屏据此压缩可可，爪底留出状态字空隙
             final bottomUi =
                 (showingConfirmCard || callState.phase == VoiceCallPhase.error
                     ? 0
                     : ParentHomeChatControls.heightFor(inSession: inSession)) +
                 ParentHomeChatControls.gapAboveToolbar +
                 ParentHomeToolBar.barHeight +
-                CocoSpace.s2 +
-                safe.bottom;
+                bottomPad;
             // 顶栏约占：安全区 + 内边距 + 「更多」最小点击高
             final minTop = safe.top + CocoSpace.s2 + 56;
             final coco = computeParentHomeCocoRect(
@@ -295,9 +296,11 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                       ),
                     ),
                   ),
+                // bottom:false + 手动 bottomPad，两排按钮再往下贴一点
                 CocoSafeArea(
+                  bottom: false,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    padding: EdgeInsets.fromLTRB(24, 0, 24, bottomPad),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -350,7 +353,6 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                             unawaited(_runLookAndHandoff(LookSource.album));
                           },
                         ),
-                        const SizedBox(height: CocoSpace.s2),
                       ],
                     ),
                   ),
@@ -372,14 +374,21 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
       padding: const EdgeInsets.only(top: CocoSpace.s2),
       child: Row(
         children: [
+          // 问候尽量单行；名字偏长时略缩小，避免「张阿 / 姨」折行
           Expanded(
-            child: Text(
-              greeting,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                height: 1.2,
-                color: palette.text,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                greeting,
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                  color: palette.text,
+                ),
               ),
             ),
           ),
@@ -422,9 +431,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     required ParentHomePalette palette,
   }) {
     // 闲置不展示；通话中才显示阶段提示
-    if (!inSession ||
-        voicePending ||
-        callState.phase == VoiceCallPhase.error) {
+    if (!inSession || voicePending || callState.phase == VoiceCallPhase.error) {
       return const SizedBox.shrink();
     }
 
@@ -1050,6 +1057,10 @@ class _HomeVoiceError extends StatelessWidget {
   }
 }
 
+/// 爪底与底栏上沿间距：够放下通话状态单行，避免圆钮挡住字。
+@visibleForTesting
+const double kParentHomePawGap = 28;
+
 /// 设计稿按宽缩放；爪底对齐场景地板，矮屏贴按钮上方（不压按钮、不悬空）。
 ///
 /// gif 为正方形；[height] 恒等于 [width]。爪底设计值 625 对应原 490 高槽内
@@ -1066,7 +1077,8 @@ ParentHomeCocoRect computeParentHomeCocoRect({
   const designSize = 380.0;
   // 190 顶 + (490-380)/2 居中偏移 + 380 边长
   const designPawBottom = 625.0;
-  const pawGap = 8.0;
+  // 爪底与圆钮之间留给「正在准备对话…」等单行状态
+  const pawGap = kParentHomePawGap;
 
   var size = designSize * scale;
   final maxPawBottom = viewport.height - bottomUi - pawGap;

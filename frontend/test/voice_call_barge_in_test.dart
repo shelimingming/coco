@@ -64,6 +64,42 @@ void main() {
     expect(player.clearCount, 0);
     expect(socket.sentAudioCount, sentBefore);
   });
+
+  test('播完后尾音保护期内不把麦流送给服务端', () async {
+    final socket = _FakeSocket(emitReady: true);
+    final mic = _FakeMic();
+    final player = _FakePlayer();
+    final env = _envFor(socket: socket, mic: mic, player: player);
+    addTearDown(env.container.dispose);
+
+    await env.controller.start();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    socket.emit('assistant.audio', {
+      'audio': base64Encode(Uint8List(8)),
+      'sample_rate': 24000,
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(env.controller.state.phase, VoiceCallPhase.speaking);
+
+    // 模拟播放器缓冲排空
+    player.fireDrained();
+    await Future<void>.delayed(Duration.zero);
+    expect(env.controller.state.phase, VoiceCallPhase.listening);
+
+    final sentAtDrain = socket.sentAudioCount;
+    // 保护期内即使绕过 mic.suppress，controller 闸门仍应丢弃
+    mic.forceAdd(_pcm(samples: 1600, amplitude: 8000));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(socket.sentAudioCount, sentAtDrain);
+
+    // 保护期结束后才允许上行
+    await Future<void>.delayed(kPostPlaybackEchoGuard);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    mic.forceAdd(_pcm(samples: 1600, amplitude: 8000));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(socket.sentAudioCount, greaterThan(sentAtDrain));
+  });
 }
 
 ({ProviderContainer container, VoiceCallController controller}) _envFor({
@@ -147,9 +183,13 @@ class _FakeMic implements MicPcmStream {
 
 class _FakePlayer implements PcmStreamPlayer {
   int clearCount = 0;
+  void Function()? _onDrained;
 
   @override
-  set onDrained(void Function()? callback) {}
+  set onDrained(void Function()? callback) => _onDrained = callback;
+
+  /// 测试用：模拟缓冲排空。
+  void fireDrained() => _onDrained?.call();
 
   @override
   Future<void> prepare() async {}

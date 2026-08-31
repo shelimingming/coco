@@ -18,7 +18,7 @@ void main() {
     expect(rect.top + rect.width, closeTo(625 * scale, 0.5));
     expect(
       rect.top + rect.width,
-      lessThanOrEqualTo(viewport.height - bottomUi - 8),
+      lessThanOrEqualTo(viewport.height - bottomUi - kParentHomePawGap),
     );
   });
 
@@ -31,7 +31,10 @@ void main() {
       bottomUi: bottomUi,
     );
     expect(rect.height, rect.width);
-    expect(rect.top + rect.width, closeTo(viewport.height - bottomUi - 8, 0.5));
+    expect(
+      rect.top + rect.width,
+      closeTo(viewport.height - bottomUi - kParentHomePawGap, 0.5),
+    );
   });
 
   test('iPhone SE 矮屏不压爪子，尽量保持设计尺寸', () {
@@ -47,7 +50,7 @@ void main() {
     expect(rect.top, greaterThanOrEqualTo(64));
     expect(
       rect.top + rect.width,
-      closeTo(viewport.height - bottomUi - 8, 0.5),
+      closeTo(viewport.height - bottomUi - kParentHomePawGap, 0.5),
     );
     // 顶栏未卡住时不缩小，只下移贴地
     expect(rect.width, closeTo(380 * (375 / 410), 0.5));
@@ -66,7 +69,7 @@ void main() {
     expect(rect.top, greaterThanOrEqualTo(minTop));
     expect(
       rect.top + rect.width,
-      lessThanOrEqualTo(viewport.height - bottomUi - 8),
+      lessThanOrEqualTo(viewport.height - bottomUi - kParentHomePawGap),
     );
   });
 }

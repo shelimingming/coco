@@ -37,6 +37,10 @@ final voicePendingNavigateProvider = StateProvider<String?>((ref) => null);
 /// 语音要触发的首页动作：看眼前 / 看手机；由首页消费。
 final voicePendingHomeActionProvider = StateProvider<String?>((ref) => null);
 
+/// 播完后继续关麦的时长：硬件尾音 + 室内回声尚未消尽时立刻开麦，
+/// 会把狗狗最后一个字送进服务端 VAD，误开下一轮对话。
+const Duration kPostPlaybackEchoGuard = Duration(milliseconds: 550);
+
 /// 父母端实时通话状态机：连接 → 听 → 想 → 说；小狗姿态仅倾听 / 说话。
 ///
 /// 不支持开口插话：播报中关麦上行，避免喇叭回声误打断；仅点小狗 /「打断」可停播。
@@ -86,6 +90,10 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
 
   /// 用户暂停后仍有下行播报未播完；播完前恢复会话时暂不开麦。
   bool _playbackPending = false;
+
+  /// 播完后短暂关麦，挡住喇叭尾音回灌。
+  bool _echoGuarding = false;
+  Timer? _echoGuardTimer;
 
   /// 手动打断进行中，避免连点重复 cancel。
   bool _interrupting = false;
@@ -189,6 +197,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   /// 识图开始前：打断播报并抑制麦克风，避免抢话。
   Future<void> prepareForVisionLook() async {
     if (!_started) return;
+    _cancelEchoGuard();
     _mic.suppress = true;
     try {
       await _socket.cancelResponse();
@@ -223,6 +232,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     } catch (_) {}
     await _player.clear();
     _assistantAccum = '';
+    _cancelEchoGuard();
     // 注入后等模型开口；播报开始时会再关麦上行
     _mic.suppress = false;
     state = state.copyWith(
@@ -296,11 +306,17 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     try {
       await _mic.start();
       _attachMicListener();
-      // 可可还在说完刚才那句：保持播报并继续关麦，说完再听
-      if (_playbackPending) {
+      // 可可还在说 / 尾音保护中：保持关麦，说完再听
+      if (_playbackPending || _echoGuarding) {
         _mic.suppress = true;
-        state = state.copyWith(phase: VoiceCallPhase.speaking);
-        _syncPose(VoiceCallPhase.speaking);
+        state = state.copyWith(
+          phase: _playbackPending
+              ? VoiceCallPhase.speaking
+              : VoiceCallPhase.listening,
+        );
+        _syncPose(
+          _playbackPending ? VoiceCallPhase.speaking : VoiceCallPhase.listening,
+        );
       } else {
         _mic.suppress = false;
         state = state.copyWith(phase: VoiceCallPhase.listening);
@@ -325,6 +341,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       await _player.clear();
       _playbackPending = false;
       _dropCancelledAssistant = true;
+      // 用户主动打断：不再等尾音保护，立刻听
+      _cancelEchoGuard();
       _mic.suppress = false;
       // 已说出的半句仍记入本通记录，方便「字」面板回看
       final spoken = _assistantAccum.trim();
@@ -353,9 +371,9 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         unawaited(_voiceBackground.onEnteredBackground(screenSharing: sharing));
       }
     } else if (state == AppLifecycleState.resumed) {
-      // 用户主动暂停时不得误开麦；播报中继续关麦，避免回声上行
+      // 用户主动暂停时不得误开麦；播报/尾音保护中继续关麦，避免回声上行
       if (_started && this.state.isActive) {
-        _mic.suppress = _playbackPending || this.state.phase == VoiceCallPhase.speaking;
+        _mic.suppress = _shouldMuteMicUplink;
         unawaited(_setWakeLock(true));
         unawaited(_voiceBackground.onEnteredForeground());
       } else if (_started && this.state.isPaused) {
@@ -373,6 +391,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       await _socket.cancelResponse();
     } catch (_) {}
     await _player.clear();
+    _cancelEchoGuard();
     _mic.suppress = false;
     final spoken = _assistantAccum.trim();
     if (spoken.isNotEmpty) {
@@ -447,8 +466,10 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         );
         _syncPose(VoiceCallPhase.listening);
       case 'speech.started':
-        // 播报中忽略：已关麦上行，不应开口打断；避免残包/回声误停播
-        if (state.phase == VoiceCallPhase.speaking || _playbackPending) {
+        // 播报中 / 尾音保护中忽略：已关麦上行，不应开口打断；避免残包/回声误停播
+        if (state.phase == VoiceCallPhase.speaking ||
+            _playbackPending ||
+            _echoGuarding) {
           return;
         }
         state = state.copyWith(
@@ -459,6 +480,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         _assistantAccum = '';
         _syncPose(VoiceCallPhase.listening);
       case 'speech.stopped':
+        // 尾音保护期内的 speech.stopped 多半来自回声残包，勿切入思考态
+        if (_echoGuarding || _playbackPending) return;
         _dropCancelledAssistant = false;
         state = state.copyWith(phase: VoiceCallPhase.thinking);
         _syncPose(VoiceCallPhase.thinking);
@@ -504,7 +527,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
             );
             _syncPose(VoiceCallPhase.speaking);
           } else {
-            // 字幕先到也关麦，避免开口插话窗口
+            // 字幕先到也关麦，避免开口插话窗口；同时取消上一轮尾音保护
+            _cancelEchoGuard();
             _mic.suppress = true;
             state = state.copyWith(
               phase: VoiceCallPhase.speaking,
@@ -521,6 +545,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         }
         final b64 = event.audioBase64;
         if (b64 == null || b64.isEmpty) return;
+        // 新一轮播报到来：取消上一轮尾音保护
+        _cancelEchoGuard();
         _playbackPending = true;
         // 播报中关麦上行，杜绝喇叭回声触发服务端 VAD
         if (!state.isPaused) {
@@ -687,11 +713,43 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       _syncPose(VoiceCallPhase.paused);
       return;
     }
-    _mic.suppress = false;
     if (state.phase == VoiceCallPhase.speaking) {
       state = state.copyWith(phase: VoiceCallPhase.listening);
       _syncPose(VoiceCallPhase.listening);
     }
+    // 缓冲排空 ≠ 喇叭已静；再关一小段，挡住尾音回灌
+    _armEchoGuard();
+  }
+
+  /// 播报中 / 尾音保护中：不得上行麦流。
+  bool get _shouldMuteMicUplink =>
+      _playbackPending ||
+      _echoGuarding ||
+      state.phase == VoiceCallPhase.speaking;
+
+  void _armEchoGuard() {
+    _echoGuardTimer?.cancel();
+    _echoGuarding = true;
+    _mic.suppress = true;
+    _echoGuardTimer = Timer(kPostPlaybackEchoGuard, _onEchoGuardElapsed);
+  }
+
+  void _onEchoGuardElapsed() {
+    _echoGuardTimer = null;
+    _echoGuarding = false;
+    if (!_started || state.isPaused) return;
+    // 保护期内又开始说了：保持关麦
+    if (_playbackPending || state.phase == VoiceCallPhase.speaking) {
+      _mic.suppress = true;
+      return;
+    }
+    _mic.suppress = false;
+  }
+
+  void _cancelEchoGuard() {
+    _echoGuardTimer?.cancel();
+    _echoGuardTimer = null;
+    _echoGuarding = false;
   }
 
   Future<void> _fail({required String title, required String message}) async {
@@ -716,6 +774,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     _hangupSpeechStarted = false;
     _hangupFallback?.cancel();
     _hangupFallback = null;
+    _cancelEchoGuard();
     _mic.suppress = false;
     await _setWakeLock(false);
     unawaited(_voiceBackground.stopVoiceKeepAlive());
@@ -770,10 +829,10 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     _micSub = _mic.pcmStream.listen(_onMicChunk);
   }
 
-  /// 播报中不送麦流，避免回声进 Realtime；说完再上行。
+  /// 播报中 / 尾音保护中不送麦流，避免回声进 Realtime；保护结束后再上行。
   void _onMicChunk(Uint8List chunk) {
     if (state.isPaused) return;
-    if (_playbackPending || state.phase == VoiceCallPhase.speaking) {
+    if (_shouldMuteMicUplink) {
       return;
     }
     unawaited(_socket.sendAudioPcm(chunk));
