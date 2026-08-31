@@ -11,10 +11,10 @@ void main() {
     expect(state.statusLabel, '聊天已暂停');
   });
 
-  test('播报中提示正在说话，仍可手动打断', () {
+  test('播报中提示点小狗可打断', () {
     const state = VoiceCallState(phase: VoiceCallPhase.speaking);
     expect(state.canInterrupt, isTrue);
-    expect(state.statusLabel, '可可正在说话');
+    expect(state.statusLabel, '点我可以打断我～');
   });
 
   test('已落定的用户句不会因残留 caption 再插一条', () {

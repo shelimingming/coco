@@ -24,8 +24,8 @@ class ParentHomeChatControls extends StatelessWidget {
   final VoidCallback onResume;
   final VoidCallback onEnd;
 
-  /// 设计基准：开始钮与工具条间距 15pt
-  static const double gapAboveToolbar = 15;
+  /// 设计基准：圆钮文案与工具条留出空隙，避免圆角顶边挡住字
+  static const double gapAboveToolbar = 20;
 
   /// 「开始聊天」大钮高度
   static const double startButtonHeight = 71;

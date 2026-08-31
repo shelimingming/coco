@@ -27,8 +27,8 @@ class ParentHomeToolBar extends StatelessWidget {
   /// 投屏会话进行中：看手机高亮。
   final bool phoneActive;
 
-  /// 工具条高度，供首页计算可可可摆放区域
-  static const double barHeight = 93;
+  /// 工具条高度，供首页计算可可可摆放区域（收紧内边距，少挡上方文案）
+  static const double barHeight = 78;
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +94,7 @@ class _ToolbarDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(width: 1, height: 64, child: ColoredBox(color: color));
+    return SizedBox(width: 1, height: 48, child: ColoredBox(color: color));
   }
 }
 

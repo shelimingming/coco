@@ -214,7 +214,9 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
             final safe = CocoSafeInsets.paddingOf(context);
             // 底栏占位 + 安全区；矮屏据此压缩可可，爪底贴按钮上方
             final bottomUi =
-                ParentHomeChatControls.heightFor(inSession: inSession) +
+                (showingConfirmCard || callState.phase == VoiceCallPhase.error
+                    ? 0
+                    : ParentHomeChatControls.heightFor(inSession: inSession)) +
                 ParentHomeChatControls.gapAboveToolbar +
                 ParentHomeToolBar.barHeight +
                 CocoSpace.s2 +
@@ -227,6 +229,12 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
               bottomUi: bottomUi,
               minTop: minTop,
             );
+            // 状态字叠在爪底下方，不改 bottomUi / minTop，避免挤布局
+            final hideStatusCopy =
+                hideCompanion ||
+                showTranscript ||
+                visualSession ||
+                showingConfirmCard;
 
             return Stack(
               fit: StackFit.expand,
@@ -270,6 +278,21 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                       inSession: inSession,
                       showTranscript: showTranscript,
                       size: coco.width,
+                    ),
+                  ),
+                // 状态文案叠在爪底下方；IgnorePointer 避免挡到底部按钮
+                if (!hideStatusCopy)
+                  Positioned(
+                    left: 24,
+                    right: 24,
+                    top: coco.top + coco.height - 2,
+                    child: IgnorePointer(
+                      child: _buildCompanionStatusCopy(
+                        inSession: inSession,
+                        voicePending: voicePending,
+                        callState: callState,
+                        palette: palette,
+                      ),
                     ),
                   ),
                 CocoSafeArea(
@@ -387,6 +410,34 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
             child: const Text('更多'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 狗狗爪底下方单行状态：仅通话中跟 phase；闲置不显示。叠层不占布局。
+  Widget _buildCompanionStatusCopy({
+    required bool inSession,
+    required bool voicePending,
+    required VoiceCallState callState,
+    required ParentHomePalette palette,
+  }) {
+    // 闲置不展示；通话中才显示阶段提示
+    if (!inSession ||
+        voicePending ||
+        callState.phase == VoiceCallPhase.error) {
+      return const SizedBox.shrink();
+    }
+
+    return Text(
+      callState.statusLabel,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        height: 1.2,
+        color: palette.text,
       ),
     );
   }
