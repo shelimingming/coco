@@ -253,12 +253,11 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     await _socket.discardVisionSession();
   }
 
-  /// 投屏中用户开口：打断当前回答 → 抽帧识图 → 再注入让可可按新画面说。
+  /// 投屏中用户开口：打断当前回答 →（安卓前台仅引导）抽帧识图 → 注入。
   Future<void> _refreshScreenForUtterance(String userText) async {
     await prepareForVisionLook();
-    final result = await ref
-        .read(screenShareControllerProvider.notifier)
-        .captureAndAnalyze(question: userText);
+    final share = ref.read(screenShareControllerProvider.notifier);
+    final result = await share.analyzeForUtterance(question: userText);
     if (result == null) {
       setMicSuppressed(false);
       return;
@@ -271,6 +270,18 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       sceneDescription: result.sceneDescription,
       source: 'screen',
       lookConversationId: result.conversationId,
+    );
+  }
+
+  /// 仅口语引导（不识图），例如仍在可可前台开口。
+  Future<void> injectScreenCoaching(String speech) async {
+    if (!_started) {
+      final ok = await ensureStarted();
+      if (!ok) return;
+    }
+    await injectVisionContext(
+      sceneDescription: '（系统：请用口语简短告诉用户：${speech.trim()} 不要描述你自己的 App 界面。）',
+      source: 'screen',
     );
   }
 
@@ -364,12 +375,18 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // inactive：控制中心/短暂遮挡，不要停麦；paused：用户划走 App。
     // 产品允许显式会话在后台继续听/说（看手机场景必需）。
+    final share = ref.read(screenShareControllerProvider.notifier);
     if (state == AppLifecycleState.paused) {
+      share.onAppLifecycle(inForeground: false);
       if (_started && this.state.isActive) {
         final sharing = ref.read(screenShareControllerProvider).isSharing;
         unawaited(_voiceBackground.onEnteredBackground(screenSharing: sharing));
+      } else if (ref.read(screenShareControllerProvider).isSharing) {
+        // 投屏已开但语音尚未接通：仍要显示「在看屏」悬浮球
+        unawaited(_voiceBackground.onEnteredBackground(screenSharing: true));
       }
     } else if (state == AppLifecycleState.resumed) {
+      share.onAppLifecycle(inForeground: true);
       // 用户主动暂停时不得误开麦；播报/尾音保护中继续关麦，避免回声上行
       if (_started && this.state.isActive) {
         _mic.suppress = _shouldMuteMicUplink;
@@ -377,6 +394,9 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         unawaited(_voiceBackground.onEnteredForeground());
       } else if (_started && this.state.isPaused) {
         unawaited(_setWakeLock(true));
+        unawaited(_voiceBackground.onEnteredForeground());
+      } else {
+        unawaited(_voiceBackground.onEnteredForeground());
       }
     }
   }

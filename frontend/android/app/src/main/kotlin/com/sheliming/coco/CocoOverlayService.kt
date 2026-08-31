@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 class CocoOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var bubbleView: View? = null
+    private var labelView: TextView? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -34,15 +35,24 @@ class CocoOverlayService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_SHOW -> {
-                val screenSharing = intent.getBooleanExtra(EXTRA_SCREEN_SHARING, false)
-                showBubble(screenSharing)
+                val mode = intent.getStringExtra(EXTRA_MODE)
+                    ?: if (intent.getBooleanExtra(EXTRA_SCREEN_SHARING, false)) {
+                        MODE_WATCHING
+                    } else {
+                        MODE_LISTENING
+                    }
+                showBubble(mode)
+            }
+            ACTION_UPDATE -> {
+                val mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_WATCHING
+                updateLabel(mode)
             }
         }
         return START_STICKY
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    private fun showBubble(screenSharing: Boolean) {
+    private fun showBubble(mode: String) {
         if (!canDrawOverlays(this)) {
             stopSelf()
             return
@@ -69,12 +79,18 @@ class CocoOverlayService : Service() {
         }
         container.addView(image)
 
+        // 投屏态用更大字号与更高对比，老人划走后一眼能看懂「在看屏」
         val label = TextView(this).apply {
-            text = if (screenSharing) "在听·看屏" else "可可在听"
-            textSize = 11f
+            text = labelForMode(mode)
+            textSize = if (mode == MODE_LISTENING) 11f else 13f
             setTextColor(0xFFFFFFFF.toInt())
-            setBackgroundColor(0xE0C85F36.toInt())
-            setPadding((8 * density).toInt(), (2 * density).toInt(), (8 * density).toInt(), (2 * density).toInt())
+            setBackgroundColor(0xF0C85F36.toInt())
+            setPadding(
+                (10 * density).toInt(),
+                (3 * density).toInt(),
+                (10 * density).toInt(),
+                (3 * density).toInt(),
+            )
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -83,6 +99,7 @@ class CocoOverlayService : Service() {
             }
         }
         container.addView(label)
+        labelView = label
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -149,6 +166,21 @@ class CocoOverlayService : Service() {
         wm.addView(container, params)
         bubbleView = container
         isShowing = true
+        currentMode = mode
+    }
+
+    private fun updateLabel(mode: String) {
+        val label = labelView
+        if (label == null || bubbleView == null) {
+            // 尚未展示时按新模式拉起
+            if (canDrawOverlays(this)) {
+                showBubble(mode)
+            }
+            return
+        }
+        label.text = labelForMode(mode)
+        label.textSize = if (mode == MODE_LISTENING) 11f else 13f
+        currentMode = mode
     }
 
     private fun removeBubble() {
@@ -158,7 +190,9 @@ class CocoOverlayService : Service() {
         } catch (_: Exception) {
         }
         bubbleView = null
+        labelView = null
         isShowing = false
+        currentMode = MODE_LISTENING
     }
 
     override fun onDestroy() {
@@ -169,11 +203,27 @@ class CocoOverlayService : Service() {
     companion object {
         const val ACTION_SHOW = "com.sheliming.coco.OVERLAY_SHOW"
         const val ACTION_HIDE = "com.sheliming.coco.OVERLAY_HIDE"
+        const val ACTION_UPDATE = "com.sheliming.coco.OVERLAY_UPDATE"
         const val EXTRA_SCREEN_SHARING = "screenSharing"
+        const val EXTRA_MODE = "mode"
+
+        const val MODE_LISTENING = "listening"
+        const val MODE_WATCHING = "watching"
+        const val MODE_LOOKING = "looking"
 
         @Volatile
         var isShowing: Boolean = false
             private set
+
+        @Volatile
+        var currentMode: String = MODE_LISTENING
+            private set
+
+        fun labelForMode(mode: String): String = when (mode) {
+            MODE_LOOKING -> "正在看…"
+            MODE_WATCHING -> "可可在看屏"
+            else -> "可可在听"
+        }
 
         fun canDrawOverlays(context: Context): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -184,9 +234,29 @@ class CocoOverlayService : Service() {
         }
 
         fun show(context: Context, screenSharing: Boolean) {
+            showWithMode(
+                context,
+                if (screenSharing) MODE_WATCHING else MODE_LISTENING,
+            )
+        }
+
+        fun showWithMode(context: Context, mode: String) {
             val intent = Intent(context, CocoOverlayService::class.java).apply {
                 action = ACTION_SHOW
-                putExtra(EXTRA_SCREEN_SHARING, screenSharing)
+                putExtra(EXTRA_MODE, mode)
+                putExtra(EXTRA_SCREEN_SHARING, mode != MODE_LISTENING)
+            }
+            context.startService(intent)
+        }
+
+        fun updateMode(context: Context, mode: String) {
+            if (!isShowing) {
+                showWithMode(context, mode)
+                return
+            }
+            val intent = Intent(context, CocoOverlayService::class.java).apply {
+                action = ACTION_UPDATE
+                putExtra(EXTRA_MODE, mode)
             }
             context.startService(intent)
         }

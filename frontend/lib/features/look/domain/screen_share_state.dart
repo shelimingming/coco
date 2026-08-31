@@ -42,6 +42,8 @@ class ScreenShareState {
     this.errorTitle,
     this.errorMessage,
     this.showIosGuide = false,
+    this.appInForeground = true,
+    this.needsOverlayHint = false,
   });
 
   final ScreenSharePhase phase;
@@ -52,6 +54,12 @@ class ScreenShareState {
 
   /// iOS 系统广播三步引导叠层
   final bool showIosGuide;
+
+  /// App 是否在前台（安卓自动首看 / 前台开口拦截用）
+  final bool appInForeground;
+
+  /// 投屏成功但无悬浮窗权限时提示一次
+  final bool needsOverlayHint;
 
   bool get isActive =>
       phase != ScreenSharePhase.idle &&
@@ -102,6 +110,9 @@ class ScreenShareState {
   /// 投屏成功后可可开口话术
   static const coachingSpeech = '好，我开始看手机了。你去打开那条短信或卡住的页面，打开后跟我说一声，或直接问我。';
 
+  /// 仍在可可前台开口时的引导（不识图，避免描述自己界面）
+  static const stayOnCocoSpeech = '请先打开要看的页面，再说一遍或直接问我。我在可可里时先不看屏幕内容。';
+
   ScreenShareState copyWith({
     ScreenSharePhase? phase,
     Uint8List? latestFrame,
@@ -109,6 +120,8 @@ class ScreenShareState {
     String? errorTitle,
     String? errorMessage,
     bool? showIosGuide,
+    bool? appInForeground,
+    bool? needsOverlayHint,
     bool clearFrame = false,
     bool clearBlock = false,
     bool clearError = false,
@@ -120,6 +133,8 @@ class ScreenShareState {
       errorTitle: clearError ? null : (errorTitle ?? this.errorTitle),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       showIosGuide: showIosGuide ?? this.showIosGuide,
+      appInForeground: appInForeground ?? this.appInForeground,
+      needsOverlayHint: needsOverlayHint ?? this.needsOverlayHint,
     );
   }
 }

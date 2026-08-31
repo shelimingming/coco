@@ -13,6 +13,9 @@ class _WebScreenShare implements ScreenShareCapture {
   bool get isIos => false;
 
   @override
+  bool get isAndroid => false;
+
+  @override
   Future<bool> start() async => false;
 
   @override
@@ -22,5 +25,11 @@ class _WebScreenShare implements ScreenShareCapture {
   Future<Uint8List?> captureLatestFrame() async => null;
 
   @override
+  Future<ScreenShareFrame?> captureLatestFrameMeta() async => null;
+
+  @override
   Future<bool> isCapturing() async => false;
+
+  @override
+  Future<void> updateNotification(String text) async {}
 }

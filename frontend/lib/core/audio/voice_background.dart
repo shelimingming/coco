@@ -22,6 +22,9 @@ abstract class VoiceBackground {
 
   /// 打开系统「显示在其他应用上层」设置页（Android）。
   Future<void> requestOverlayPermission();
+
+  /// 更新悬浮球模式：listening / watching / looking（仅 Android）。
+  Future<void> updateBubbleMode(String mode);
 }
 
 VoiceBackground createVoiceBackground() => createPlatformVoiceBackground();

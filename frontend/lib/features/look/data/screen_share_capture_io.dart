@@ -17,6 +17,9 @@ class IoScreenShareCapture implements ScreenShareCapture {
   bool get isIos => Platform.isIOS;
 
   @override
+  bool get isAndroid => Platform.isAndroid;
+
+  @override
   Future<bool> start() async {
     try {
       final ok = await _channel.invokeMethod<bool>('start');
@@ -41,10 +44,40 @@ class IoScreenShareCapture implements ScreenShareCapture {
 
   @override
   Future<Uint8List?> captureLatestFrame() async {
+    final meta = await captureLatestFrameMeta();
+    return meta?.bytes;
+  }
+
+  @override
+  Future<ScreenShareFrame?> captureLatestFrameMeta() async {
     try {
-      final raw = await _channel.invokeMethod<dynamic>('captureLatestFrame');
-      if (raw is Uint8List) return raw;
-      if (raw is List<int>) return Uint8List.fromList(raw);
+      // 优先带时间戳的 meta；旧原生回退到裸 bytes
+      final raw = await _channel.invokeMethod<dynamic>(
+        'captureLatestFrameMeta',
+      );
+      if (raw is Map) {
+        final bytesRaw = raw['bytes'];
+        final at = raw['capturedAtMs'];
+        Uint8List? bytes;
+        if (bytesRaw is Uint8List) {
+          bytes = bytesRaw;
+        } else if (bytesRaw is List<int>) {
+          bytes = Uint8List.fromList(bytesRaw);
+        }
+        if (bytes == null || bytes.isEmpty) return null;
+        final ms = at is int ? at : (at is num ? at.toInt() : 0);
+        return ScreenShareFrame(bytes: bytes, capturedAtMs: ms);
+      }
+      final legacy = await _channel.invokeMethod<dynamic>('captureLatestFrame');
+      if (legacy is Uint8List && legacy.isNotEmpty) {
+        return ScreenShareFrame(bytes: legacy, capturedAtMs: 0);
+      }
+      if (legacy is List<int> && legacy.isNotEmpty) {
+        return ScreenShareFrame(
+          bytes: Uint8List.fromList(legacy),
+          capturedAtMs: 0,
+        );
+      }
       return null;
     } on PlatformException {
       return null;
@@ -62,6 +95,18 @@ class IoScreenShareCapture implements ScreenShareCapture {
       return false;
     } on MissingPluginException {
       return false;
+    }
+  }
+
+  @override
+  Future<void> updateNotification(String text) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod<void>('updateNotification', {'text': text});
+    } on PlatformException {
+      // 忽略
+    } on MissingPluginException {
+      // 忽略
     }
   }
 }

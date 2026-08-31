@@ -62,6 +62,7 @@ class IoVoiceBackground implements VoiceBackground {
     try {
       await _channel.invokeMethod<void>('showBubble', {
         'screenSharing': screenSharing,
+        if (screenSharing) 'mode': 'watching',
       });
     } on PlatformException {
       // 无悬浮窗权限时依赖通知
@@ -90,6 +91,18 @@ class IoVoiceBackground implements VoiceBackground {
       } catch (_) {
         // 通知权限未开时静默
       }
+    }
+  }
+
+  @override
+  Future<void> updateBubbleMode(String mode) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod<void>('updateBubble', {'mode': mode});
+    } on PlatformException {
+      // 忽略
+    } on MissingPluginException {
+      // 忽略
     }
   }
 

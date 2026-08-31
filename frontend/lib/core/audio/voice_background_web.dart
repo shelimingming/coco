@@ -21,4 +21,7 @@ class _WebVoiceBackground implements VoiceBackground {
 
   @override
   Future<void> requestOverlayPermission() async {}
+
+  @override
+  Future<void> updateBubbleMode(String mode) async {}
 }

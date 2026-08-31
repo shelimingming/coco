@@ -17,6 +17,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../look/application/look_controller.dart';
 import '../../look/application/screen_share_controller.dart';
 import '../../look/domain/look_state.dart';
+import '../../look/domain/models.dart';
 import '../../look/domain/screen_share_state.dart';
 import '../../notifications/application/notification_poller.dart';
 import '../../notifications/domain/models.dart';
@@ -68,6 +69,8 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     super.initState();
     // 刚进首页：仅出场动画；须用户点「开始聊天」后再连
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 安卓自动首看 / 前台 coaching 挂到语音注入
+      _bindScreenShareCallbacks();
       // 从其它页回来时消费语音「看眼前/看手机」指令
       _consumeVoiceHomeAction();
       // 通话中从「更多」返回会重新挂载首页；会话还在，不要重播出场
@@ -78,9 +81,48 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
     });
   }
 
+  /// 自动识图结果与前台引导语接到 Realtime。
+  void _bindScreenShareCallbacks() {
+    final share = ref.read(screenShareControllerProvider.notifier);
+    share.onAutoLookResult = (result, {required String kind}) {
+      unawaited(_injectScreenLookResult(result, kind: kind));
+    };
+    share.onCoachingOnly = (speech) {
+      unawaited(
+        ref
+            .read(voiceCallControllerProvider.notifier)
+            .injectScreenCoaching(speech),
+      );
+    };
+  }
+
+  Future<void> _injectScreenLookResult(
+    LookResult result, {
+    required String kind,
+  }) async {
+    final callController = ref.read(voiceCallControllerProvider.notifier);
+    await callController.prepareForVisionLook();
+    final ok = await callController.ensureStarted();
+    if (!mounted || !ok) return;
+    final preface = kind == 'autoFirst'
+        ? '（系统：用户已离开可可，打开了其它页面。请先用一两句口语说明你看到了什么，再自然等对方追问。不要描述可可自己的界面。）\n'
+        : kind == 'autoChange'
+        ? '（系统：用户换了一屏。请根据新画面用口语简短说明变化，一次只说一步或一个结论。）\n'
+        : '';
+    await callController.injectVisionContext(
+      sceneDescription: '$preface${result.sceneDescription}',
+      source: 'screen',
+      lookConversationId: result.conversationId,
+    );
+  }
+
   @override
   void dispose() {
     _entranceTimer?.cancel();
+    // 避免首页重建后旧回调打到已销毁 State
+    final share = ref.read(screenShareControllerProvider.notifier);
+    share.onAutoLookResult = null;
+    share.onCoachingOnly = null;
     super.dispose();
   }
 
@@ -548,15 +590,22 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
   /// 投屏刚成功：接通语音并说引导语（含「不再提醒」直连授权成功）。
   Future<void> _onScreenShareBecameActive() async {
     final callController = ref.read(voiceCallControllerProvider.notifier);
+    final share = ref.read(screenShareControllerProvider);
     final voiceOk = await callController.ensureStarted();
     if (!mounted || !voiceOk) return;
+    // 无悬浮窗时补一句，让老人知道划走后怎么确认「在看」
+    final overlayHint = share.needsOverlayHint
+        ? '如果你愿意，可以打开「显示在其他应用上层」，划走后也能看到「可可在看屏」。'
+        : '';
     await callController.injectVisionContext(
       sceneDescription:
           '（系统：用户刚打开「看手机」投屏。请用口语说：'
           '${ScreenShareState.coachingSpeech}'
+          '$overlayHint'
           '不要描述你自己的 App 界面。）',
       source: 'screen',
     );
+    ref.read(screenShareControllerProvider.notifier).clearOverlayHint();
   }
 
   Future<void> _onPhonePressed() async {

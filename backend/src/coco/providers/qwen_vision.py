@@ -54,7 +54,8 @@ _LOOK_SYSTEM_SCREEN = """
 3. 若像操作界面：标出关键按钮/文字位置，方便语音一次只指导下一步。
 4. 支付、转账、验证码输入、密码、银行卡、身份证件页：should_stop_screen=true，并在 safety_note 说明应停止看屏、建议找子女。
 5. 不做医疗诊断；不指导输入验证码或转账。
-6. 只输出一个 JSON 对象，字段同普通识图，并含 should_stop_screen。
+6. 若画面明显是「可可 / Coco」陪伴 App 自己的聊天或首页界面：在 scene_description 写明「用户还在可可里，请先打开要看的短信或其它 App」，不要把它当成短信/微信内容来指导操作。
+7. 只输出一个 JSON 对象，字段同普通识图，并含 should_stop_screen。
 """.strip()
 
 

@@ -31,7 +31,27 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "captureLatestFrame" -> result.success(ScreenCaptureService.latestJpeg)
+                    "captureLatestFrameMeta" -> {
+                        // 带采集时间戳，供 Flutter 判帧是否够新
+                        val bytes = ScreenCaptureService.latestJpeg
+                        val at = ScreenCaptureService.latestCapturedAt
+                        if (bytes == null || at <= 0L) {
+                            result.success(null)
+                        } else {
+                            result.success(
+                                mapOf(
+                                    "bytes" to bytes,
+                                    "capturedAtMs" to at,
+                                ),
+                            )
+                        }
+                    }
                     "isCapturing" -> result.success(ScreenCaptureService.isRunning)
+                    "updateNotification" -> {
+                        val text = call.argument<String>("text") ?: "打开要看的页面后跟我说"
+                        ScreenCaptureService.updateNotification(this, text)
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -50,8 +70,20 @@ class MainActivity : FlutterActivity() {
                     }
                     "showBubble" -> {
                         ensureOverlayPermissionThen {
-                            val sharing = call.argument<Boolean>("screenSharing") == true
-                            CocoOverlayService.show(this, sharing)
+                            val mode = call.argument<String>("mode")
+                            if (mode != null) {
+                                CocoOverlayService.showWithMode(this, mode)
+                            } else {
+                                val sharing = call.argument<Boolean>("screenSharing") == true
+                                CocoOverlayService.show(this, sharing)
+                            }
+                        }
+                        result.success(null)
+                    }
+                    "updateBubble" -> {
+                        val mode = call.argument<String>("mode") ?: CocoOverlayService.MODE_WATCHING
+                        if (CocoOverlayService.canDrawOverlays(this)) {
+                            CocoOverlayService.updateMode(this, mode)
                         }
                         result.success(null)
                     }
