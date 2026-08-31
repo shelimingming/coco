@@ -211,17 +211,21 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
         body: LayoutBuilder(
           builder: (context, constraints) {
             final isEntrance = companionPose == CocoCompanionPose.entrance;
-            // 底栏占位 + 安全区；矮屏（手机浏览器）据此压缩可可，避免挡住爪子
+            final safe = CocoSafeInsets.paddingOf(context);
+            // 底栏占位 + 安全区；矮屏据此压缩可可，爪底贴按钮上方
             final bottomUi =
                 ParentHomeChatControls.heightFor(inSession: inSession) +
                 ParentHomeChatControls.gapAboveToolbar +
                 ParentHomeToolBar.barHeight +
                 CocoSpace.s2 +
-                CocoSafeInsets.paddingOf(context).bottom;
+                safe.bottom;
+            // 顶栏约占：安全区 + 内边距 + 「更多」最小点击高
+            final minTop = safe.top + CocoSpace.s2 + 56;
             final coco = computeParentHomeCocoRect(
               viewport: Size(constraints.maxWidth, constraints.maxHeight),
               entrance: isEntrance,
               bottomUi: bottomUi,
+              minTop: minTop,
             );
 
             return Stack(
@@ -253,7 +257,7 @@ class _ParentHomePageState extends ConsumerState<ParentHomePage> {
                       ),
                     ),
                   ),
-                // 可可在遮罩之上、控件之下；视觉会话时让位给识图/投屏面板
+                // 正方形定位：与 gif 画布一致，避免竖框居中把爪子压进按钮
                 if (!hideCompanion)
                   Positioned(
                     left: coco.left,
@@ -995,36 +999,52 @@ class _HomeVoiceError extends StatelessWidget {
   }
 }
 
-/// 设计稿按宽缩放；矮屏再压高度，避免爪子压住「开始聊天」。
+/// 设计稿按宽缩放；爪底对齐场景地板，矮屏贴按钮上方（不压按钮、不悬空）。
+///
+/// gif 为正方形；[height] 恒等于 [width]。爪底设计值 625 对应原 490 高槽内
+/// 居中摆放的视觉位置，与白天背景地板齐平。
 @visibleForTesting
 ParentHomeCocoRect computeParentHomeCocoRect({
   required Size viewport,
   required bool entrance,
   required double bottomUi,
+  double minTop = 0,
   double designWidth = _kDesignWidth,
 }) {
   final scale = viewport.width / designWidth;
-  var width = 380 * scale;
-  var height = 490 * scale;
-  var top = 190 * scale;
-  // gif 画布是正方形，Positioned 多出来的高度是透明
-  final visualH = width;
-  // 与「开始聊天」留 8pt，爪子不贴按钮
-  final maxBottom = viewport.height - bottomUi - 8;
-  if (top + visualH > maxBottom) {
-    if (maxBottom - top < 120) {
-      top = math.max(0, maxBottom - 160);
+  const designSize = 380.0;
+  // 190 顶 + (490-380)/2 居中偏移 + 380 边长
+  const designPawBottom = 625.0;
+  const pawGap = 8.0;
+
+  var size = designSize * scale;
+  final maxPawBottom = viewport.height - bottomUi - pawGap;
+  final floorMinTop = math.max(0.0, minTop);
+
+  // 高屏：爪部落在设计地板线；矮屏：不超过底栏上沿
+  var pawBottom = math.min(designPawBottom * scale, maxPawBottom);
+  var top = pawBottom - size;
+
+  if (top < floorMinTop) {
+    // 顶栏挡住时才缩小，优先保爪底贴地、角色尽量大
+    top = floorMinTop;
+    size = math.max(80.0, pawBottom - top);
+    if (top + size > maxPawBottom) {
+      pawBottom = maxPawBottom;
+      size = math.max(80.0, pawBottom - top);
+      top = pawBottom - size;
+      if (top < floorMinTop) {
+        top = floorMinTop;
+        size = math.max(80.0, maxPawBottom - top);
+      }
     }
-    final available = math.max(80.0, maxBottom - top);
-    final fit = available / visualH;
-    width *= fit;
-    height *= fit;
   }
+
   // 出场仍右贴边并略溢出，只吃透明边
   final left = entrance
-      ? viewport.width - width + 36 * scale
-      : (viewport.width - width) / 2;
-  return ParentHomeCocoRect(left: left, top: top, width: width, height: height);
+      ? viewport.width - size + 36 * scale
+      : (viewport.width - size) / 2;
+  return ParentHomeCocoRect(left: left, top: top, width: size, height: size);
 }
 
 @visibleForTesting

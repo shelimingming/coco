@@ -14,21 +14,24 @@ class CocoCompanionView extends StatelessWidget {
     return Semantics(
       label: pose.semanticLabel,
       image: true,
-      child: Image.asset(
-        pose.assetPath,
+      // 固定正方形，避免父级竖向紧约束把 gif 居中后爪底下移
+      child: SizedBox(
         width: size,
         height: size,
-        // gif 为透明底全身角色，contain 保证不裁切耳朵/尾巴
-        fit: BoxFit.contain,
-        // 出场从右走进：贴右对齐，减少画布右侧透明空隙
-        alignment: pose == CocoCompanionPose.entrance
-            ? Alignment.centerRight
-            : Alignment.center,
-        excludeFromSemantics: true,
-        // 姿态切换时保留上一帧，避免闪一下空位
-        gaplessPlayback: true,
-        // 按姿态 key 强制重建，确保切换到新 gif 时从首帧重播
-        key: ValueKey(pose.assetPath),
+        child: Image.asset(
+          pose.assetPath,
+          // gif 为透明底全身角色，contain 保证不裁切耳朵/尾巴
+          fit: BoxFit.contain,
+          // 出场从右走进：贴右对齐，减少画布右侧透明空隙
+          alignment: pose == CocoCompanionPose.entrance
+              ? Alignment.centerRight
+              : Alignment.center,
+          excludeFromSemantics: true,
+          // 姿态切换时保留上一帧，避免闪一下空位
+          gaplessPlayback: true,
+          // 按姿态 key 强制重建，确保切换到新 gif 时从首帧重播
+          key: ValueKey(pose.assetPath),
+        ),
       ),
     );
   }
