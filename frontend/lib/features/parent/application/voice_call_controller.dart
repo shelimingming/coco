@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/audio/barge_in_detector.dart';
 import '../../../core/audio/mic_pcm_stream.dart';
 import '../../../core/audio/pcm_stream_player.dart';
 import '../../../core/audio/voice_background.dart';
@@ -39,6 +38,8 @@ final voicePendingNavigateProvider = StateProvider<String?>((ref) => null);
 final voicePendingHomeActionProvider = StateProvider<String?>((ref) => null);
 
 /// 父母端实时通话状态机：连接 → 听 → 想 → 说；小狗姿态仅倾听 / 说话。
+///
+/// 不支持开口插话：播报中关麦上行，避免喇叭回声误打断；仅点小狗 /「打断」可停播。
 class VoiceCallController extends StateNotifier<VoiceCallState>
     with WidgetsBindingObserver {
   VoiceCallController({
@@ -49,8 +50,6 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     PcmStreamPlayer? player,
     RealtimeVoiceSocket? socket,
     ScreenWakeLock? wakeLock,
-    BargeInDetector? bargeIn,
-    Duration bargeInGrace = const Duration(milliseconds: 200),
   }) : // 公开命名参数 readAccessToken / httpBaseUrl，内部存私有字段
        _readAccessToken = readAccessToken,
        _httpBaseUrl = httpBaseUrl,
@@ -58,8 +57,6 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
        _player = player ?? createPcmStreamPlayer(),
        _socket = socket ?? RealtimeVoiceSocket(),
        _wakeLock = wakeLock ?? createScreenWakeLock(),
-       _bargeIn = bargeIn ?? BargeInDetector(),
-       _bargeInGrace = bargeInGrace,
        super(const VoiceCallState()) {
     // 构造期注入播放结束回调，用于恢复麦克风上行。
     _player.onDrained = _onPlaybackDrained;
@@ -75,8 +72,6 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   final RealtimeVoiceSocket _socket;
   final ScreenWakeLock _wakeLock;
   final VoiceBackground _voiceBackground = createVoiceBackground();
-  final BargeInDetector _bargeIn;
-  final Duration _bargeInGrace;
 
   StreamSubscription<Uint8List>? _micSub;
   StreamSubscription<RealtimeSocketEvent>? _socketSub;
@@ -92,17 +87,11 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   /// 用户暂停后仍有下行播报未播完；播完前恢复会话时暂不开麦。
   bool _playbackPending = false;
 
-  /// 插话进行中：后续麦块直接上行，避免打断过程中再被闸门吞掉。
+  /// 手动打断进行中，避免连点重复 cancel。
   bool _interrupting = false;
 
-  /// 插话后丢掉已取消回答的尾包，但不挡住工具追问等新一轮播报。
+  /// 打断后丢掉已取消回答的尾包，但不挡住工具追问等新一轮播报。
   bool _dropCancelledAssistant = false;
-
-  /// 本轮首包音频时刻；短宽限内不插话，躲开开播瞬态回声。
-  DateTime? _playbackBeganAt;
-
-  /// 播报中暂存的上行块，插话时作为句首补发给模型。
-  final List<Uint8List> _gatedPrefix = [];
 
   /// 语音挂断：等告别播完再拆连接，避免一调工具就把话掐掉。
   bool _awaitingHangupSpeech = false;
@@ -234,7 +223,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     } catch (_) {}
     await _player.clear();
     _assistantAccum = '';
-    // 注入后等模型开口；播报中开口即可插话，不再关麦
+    // 注入后等模型开口；播报开始时会再关麦上行
     _mic.suppress = false;
     state = state.copyWith(
       phase: VoiceCallPhase.thinking,
@@ -307,9 +296,9 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     try {
       await _mic.start();
       _attachMicListener();
-      // 可可还在说完刚才那句：保持播报，开口即可插话
+      // 可可还在说完刚才那句：保持播报并继续关麦，说完再听
       if (_playbackPending) {
-        _mic.suppress = false;
+        _mic.suppress = true;
         state = state.copyWith(phase: VoiceCallPhase.speaking);
         _syncPose(VoiceCallPhase.speaking);
       } else {
@@ -324,7 +313,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     }
   }
 
-  /// 打断当前播报；开口插话与点小狗共用。
+  /// 打断当前播报；仅点小狗 /「打断」按钮调用（无开口插话）。
   Future<void> interrupt() async {
     if (_interrupting) return;
     if (!state.canInterrupt && !_playbackPending) return;
@@ -335,10 +324,7 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
       } catch (_) {}
       await _player.clear();
       _playbackPending = false;
-      _playbackBeganAt = null;
       _dropCancelledAssistant = true;
-      _bargeIn.reset();
-      _gatedPrefix.clear();
       _mic.suppress = false;
       // 已说出的半句仍记入本通记录，方便「字」面板回看
       final spoken = _assistantAccum.trim();
@@ -367,10 +353,9 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         unawaited(_voiceBackground.onEnteredBackground(screenSharing: sharing));
       }
     } else if (state == AppLifecycleState.resumed) {
-      // 用户主动暂停时不得误开麦
+      // 用户主动暂停时不得误开麦；播报中继续关麦，避免回声上行
       if (_started && this.state.isActive) {
-        // 确保上行未因旧逻辑卡住；播报中保持开麦以便插话
-        _mic.suppress = false;
+        _mic.suppress = _playbackPending || this.state.phase == VoiceCallPhase.speaking;
         unawaited(_setWakeLock(true));
         unawaited(_voiceBackground.onEnteredForeground());
       } else if (_started && this.state.isPaused) {
@@ -462,9 +447,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         );
         _syncPose(VoiceCallPhase.listening);
       case 'speech.started':
-        // 播报中开口：先停本地播放，再切倾听（点小狗打断同源）
+        // 播报中忽略：已关麦上行，不应开口打断；避免残包/回声误停播
         if (state.phase == VoiceCallPhase.speaking || _playbackPending) {
-          unawaited(interrupt());
           return;
         }
         state = state.copyWith(
@@ -520,6 +504,8 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
             );
             _syncPose(VoiceCallPhase.speaking);
           } else {
+            // 字幕先到也关麦，避免开口插话窗口
+            _mic.suppress = true;
             state = state.copyWith(
               phase: VoiceCallPhase.speaking,
               userCaption: '',
@@ -535,14 +521,10 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
         }
         final b64 = event.audioBase64;
         if (b64 == null || b64.isEmpty) return;
-        if (!_playbackPending) {
-          _bargeIn.reset();
-          _playbackBeganAt = DateTime.now();
-        }
         _playbackPending = true;
-        // 播报中保持开麦：本地能量闸门挡回声，人声即可插话
+        // 播报中关麦上行，杜绝喇叭回声触发服务端 VAD
         if (!state.isPaused) {
-          _mic.suppress = false;
+          _mic.suppress = true;
           state = state.copyWith(phase: VoiceCallPhase.speaking);
         }
         _syncPose(VoiceCallPhase.speaking);
@@ -695,8 +677,6 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
   void _onPlaybackDrained() {
     if (!_started) return;
     _playbackPending = false;
-    _playbackBeganAt = null;
-    _bargeIn.reset();
     // 告别已播完：拆掉通话
     if (_awaitingHangupSpeech && _hangupSpeechStarted) {
       unawaited(stop());
@@ -730,15 +710,12 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     _sessionReady = false;
     _assistantAccum = '';
     _playbackPending = false;
-    _playbackBeganAt = null;
     _interrupting = false;
     _dropCancelledAssistant = false;
     _awaitingHangupSpeech = false;
     _hangupSpeechStarted = false;
     _hangupFallback?.cancel();
     _hangupFallback = null;
-    _bargeIn.reset();
-    _gatedPrefix.clear();
     _mic.suppress = false;
     await _setWakeLock(false);
     unawaited(_voiceBackground.stopVoiceKeepAlive());
@@ -793,35 +770,12 @@ class VoiceCallController extends StateNotifier<VoiceCallState>
     _micSub = _mic.pcmStream.listen(_onMicChunk);
   }
 
-  bool get _inBargeInGrace {
-    final began = _playbackBeganAt;
-    if (began == null) return false;
-    return DateTime.now().difference(began) < _bargeInGrace;
-  }
-
-  /// 播报中只把足够响的人声送给模型；确认插话后立刻停播。
+  /// 播报中不送麦流，避免回声进 Realtime；说完再上行。
   void _onMicChunk(Uint8List chunk) {
     if (state.isPaused) return;
-    final gating =
-        !_interrupting &&
-        (_playbackPending || state.phase == VoiceCallPhase.speaking);
-    if (gating) {
-      if (_inBargeInGrace) return;
-      // 保留最近几块，插话时一并送出，避免 Server VAD 丢掉句首
-      _gatedPrefix.add(chunk);
-      if (_gatedPrefix.length > 6) {
-        _gatedPrefix.removeAt(0);
-      }
-      if (_bargeIn.feed(chunk)) {
-        unawaited(interrupt());
-        for (final prefix in _gatedPrefix) {
-          unawaited(_socket.sendAudioPcm(prefix));
-        }
-        _gatedPrefix.clear();
-      }
+    if (_playbackPending || state.phase == VoiceCallPhase.speaking) {
       return;
     }
-    _gatedPrefix.clear();
     unawaited(_socket.sendAudioPcm(chunk));
   }
 

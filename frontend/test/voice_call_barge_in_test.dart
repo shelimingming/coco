@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:coco/core/audio/barge_in_detector.dart';
 import 'package:coco/core/audio/mic_pcm_stream.dart';
 import 'package:coco/core/audio/pcm_stream_player.dart';
 import 'package:coco/core/screen/screen_wake_lock.dart';
@@ -15,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('播报中收到 speech.started 会停播并切回倾听', () async {
+  test('播报中收到 speech.started 不会停播', () async {
     final socket = _FakeSocket(emitReady: true);
     final player = _FakePlayer();
     final env = _envFor(socket: socket, player: player);
@@ -34,21 +33,16 @@ void main() {
 
     socket.emit('speech.started');
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(env.controller.state.phase, VoiceCallPhase.listening);
-    expect(socket.cancelCount, greaterThanOrEqualTo(1));
-    expect(player.clearCount, greaterThanOrEqualTo(1));
+    expect(env.controller.state.phase, VoiceCallPhase.speaking);
+    expect(socket.cancelCount, 0);
+    expect(player.clearCount, 0);
   });
 
-  test('播报中开口足够响会本地插话', () async {
+  test('播报中开口足够响也不会本地插话', () async {
     final socket = _FakeSocket(emitReady: true);
     final mic = _FakeMic();
     final player = _FakePlayer();
-    final env = _envFor(
-      socket: socket,
-      mic: mic,
-      player: player,
-      bargeInGrace: Duration.zero,
-    );
+    final env = _envFor(socket: socket, mic: mic, player: player);
     addTearDown(env.container.dispose);
 
     await env.controller.start();
@@ -62,18 +56,13 @@ void main() {
     expect(env.controller.state.phase, VoiceCallPhase.speaking);
     final sentBefore = socket.sentAudioCount;
 
-    mic.addPcm(_pcm(samples: 1600, amplitude: 80));
-    await Future<void>.delayed(Duration.zero);
+    // suppress 开着时麦流本不会到 controller；再喂一块也不得打断
+    mic.forceAdd(_pcm(samples: 1600, amplitude: 8000));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(env.controller.state.phase, VoiceCallPhase.speaking);
     expect(socket.cancelCount, 0);
+    expect(player.clearCount, 0);
     expect(socket.sentAudioCount, sentBefore);
-
-    mic.addPcm(_pcm(samples: 1600, amplitude: 8000));
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(env.controller.state.phase, VoiceCallPhase.listening);
-    expect(socket.cancelCount, greaterThanOrEqualTo(1));
-    expect(player.clearCount, greaterThanOrEqualTo(1));
-    expect(socket.sentAudioCount, greaterThan(sentBefore));
   });
 }
 
@@ -81,7 +70,6 @@ void main() {
   required _FakeSocket socket,
   _FakeMic? mic,
   _FakePlayer? player,
-  Duration bargeInGrace = const Duration(milliseconds: 200),
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -94,8 +82,6 @@ void main() {
           player: player ?? _FakePlayer(),
           socket: socket,
           wakeLock: _FakeWakeLock(),
-          bargeIn: BargeInDetector(rmsThreshold: 700, minSpeechMs: 100),
-          bargeInGrace: bargeInGrace,
         );
       }),
     ],
@@ -125,6 +111,7 @@ class _FakeWakeLock implements ScreenWakeLock {
 
 class _FakeMic implements MicPcmStream {
   final _controller = StreamController<Uint8List>.broadcast();
+  bool _suppress = false;
 
   @override
   Stream<Uint8List> get pcmStream => _controller.stream;
@@ -133,7 +120,7 @@ class _FakeMic implements MicPcmStream {
   bool get isRecording => true;
 
   @override
-  set suppress(bool value) {}
+  set suppress(bool value) => _suppress = value;
 
   @override
   Future<bool> hasPermission() async => true;
@@ -149,7 +136,13 @@ class _FakeMic implements MicPcmStream {
     await _controller.close();
   }
 
-  void addPcm(Uint8List chunk) => _controller.add(chunk);
+  void addPcm(Uint8List chunk) {
+    if (_suppress) return;
+    _controller.add(chunk);
+  }
+
+  /// 测试用：绕过 suppress，确认 controller 闸门仍丢弃播报中麦流。
+  void forceAdd(Uint8List chunk) => _controller.add(chunk);
 }
 
 class _FakePlayer implements PcmStreamPlayer {

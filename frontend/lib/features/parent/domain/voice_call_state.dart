@@ -68,8 +68,8 @@ class VoiceCallState {
     VoiceCallPhase.connecting => '正在准备对话…',
     VoiceCallPhase.listening => '正在听您说',
     VoiceCallPhase.thinking => '我想一想',
-    // 播报中开口即可插话；点小狗仍可打断
-    VoiceCallPhase.speaking => '您说话就能打断我',
+    // 播报中点小狗仍可手动打断（无开口插话）
+    VoiceCallPhase.speaking => '可可正在说话',
     VoiceCallPhase.paused => '聊天已暂停',
     VoiceCallPhase.error => errorTitle ?? '出了点问题',
   };
