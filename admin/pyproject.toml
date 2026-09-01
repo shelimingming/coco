@@ -32,6 +32,8 @@ packages = ["src/coco_admin"]
 [dependency-groups]
 dev = [
   "httpx>=0.28.1",
+  "pytest>=8,<9",
+  "pytest-asyncio>=0.25,<1",
   "ruff>=0.16.2",
 ]
 
@@ -41,6 +43,11 @@ package = true
 [tool.uv.sources]
 # 复用 backend 的 ORM / schema，不复制表定义
 coco-backend = { path = "../backend", editable = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

@@ -1,4 +1,4 @@
-"""Admin 用量聚合：北京时间日界与排名。"""
+"""用量聚合：北京时间日界与排名。"""
 
 from __future__ import annotations
 
@@ -6,11 +6,10 @@ from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
-from coco_admin.usage.service import _cst_date_bounds, collect_usage_stats
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from coco.models.llm_trace import LlmTrace, LlmTraceModality, LlmTraceStatus
 from coco.models.user import User
+from coco_admin.usage.service import _cst_date_bounds, collect_usage_stats
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 def test_cst_date_bounds() -> None:
