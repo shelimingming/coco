@@ -45,7 +45,8 @@ class DailyNoteSettings(TimestampMixin, Base):
         ForeignKey("coco.users.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    generate_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # MVP 默认关自动生成，由父母在设置页主动开启
+    generate_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     share_to_child_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # 预留；MVP 固定按 20 点调度
     generate_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=20)

@@ -59,7 +59,7 @@ async def test_daily_note_settings_defaults(client: AsyncClient) -> None:
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data["generate_enabled"] is True
+    assert data["generate_enabled"] is False
     assert data["share_to_child_enabled"] is False
     assert data["generate_hour"] == 20
     assert data["gender"] == "unknown"

@@ -1,0 +1,221 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">用量统计</h3>
+      <div class="card-actions">
+        <span class="text-secondary">生成于 {{ stats.generated_at }}（北京时间）</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <p class="text-secondary mb-3">
+        仅统计成功调用且含 token 用量的记录。文生图张数、Mem0、无 user_id 的调用不计入排名。
+        语音用量需部署含 Realtime token 采集的版本后才会完整。
+      </p>
+
+      <form method="get" action="/admin/usage" class="row g-2 mb-3 align-items-end">
+        <div class="col-md-2">
+          <label class="form-label">开始日期</label>
+          <input class="form-control" type="date" name="start_date" value="{{ start_date }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">结束日期</label>
+          <input class="form-control" type="date" name="end_date" value="{{ end_date }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">模型</label>
+          <select class="form-select" name="model">
+            <option value="">全部模型</option>
+            {% for m in models %}
+              <option value="{{ m }}" {% if model == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-primary" type="submit">查询</button>
+        </div>
+      </form>
+
+      <div class="mb-3">
+        <span class="text-secondary">快捷范围：</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary me-1" onclick="setQuickRange(0)">今日</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary me-1" onclick="setQuickRange(6)">近 7 日</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setQuickRange(29)">近 30 日</button>
+      </div>
+
+      <div class="row row-cards mb-3">
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">总 Token</div>
+              <div class="h1 mb-0">{{ stats.summary.total_tokens }}</div>
+              <div class="text-secondary mt-1">
+                输入 {{ stats.summary.total_input_tokens }} / 输出 {{ stats.summary.total_output_tokens }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">调用次数</div>
+              <div class="h1 mb-0">{{ stats.summary.call_count }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">活跃用户</div>
+              <div class="h1 mb-0">{{ stats.summary.active_users }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">用量最高模型</div>
+              <div class="h3 mb-0">{{ stats.summary.top_model or "—" }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-lg-7">
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">每日趋势</h3></div>
+            <div class="card-body">
+              <canvas id="dailyChart" height="100"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">模型分布</h3></div>
+            <div class="card-body">
+              <canvas id="modelChart" height="140"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">用户用量排名</h3></div>
+        <div class="card-body">
+          {% if stats.ranking %}
+          <div class="table-responsive">
+            <table class="table table-sm table-vcenter">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>用户</th>
+                  <th>角色</th>
+                  <th>手机</th>
+                  <th>输入</th>
+                  <th>输出</th>
+                  <th>合计</th>
+                  <th>调用次数</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for row in stats.ranking %}
+                <tr>
+                  <td>{{ row.rank }}</td>
+                  <td>{{ row.display_name }}</td>
+                  <td>{{ row.role }}</td>
+                  <td>{{ row.phone_masked }}</td>
+                  <td>{{ row.input_tokens }}</td>
+                  <td>{{ row.output_tokens }}</td>
+                  <td><strong>{{ row.total_tokens }}</strong></td>
+                  <td>{{ row.call_count }}</td>
+                  <td>
+                    <a href="/admin/llm-debug/user/{{ row.user_id }}?hours={{ debug_hours }}">模型调试</a>
+                    ·
+                    <a href="/admin/user/details/{{ row.user_id }}">用户详情</a>
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-secondary mb-0">所选条件下没有 token 用量记录。</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const daily = {{ stats.daily_totals | tojson }};
+  const byModel = {{ stats.by_model | tojson }};
+  const debugHours = {{ debug_hours }};
+
+  new Chart(document.getElementById("dailyChart"), {
+    type: "line",
+    data: {
+      labels: daily.map((d) => d.date),
+      datasets: [
+        {
+          label: "总 Token",
+          data: daily.map((d) => d.total_tokens),
+          tension: 0.25,
+          yAxisID: "y",
+        },
+        {
+          label: "活跃用户",
+          data: daily.map((d) => d.active_users),
+          tension: 0.25,
+          yAxisID: "y1",
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true, position: "left", ticks: { precision: 0 } },
+        y1: {
+          beginAtZero: true,
+          position: "right",
+          grid: { drawOnChartArea: false },
+          ticks: { precision: 0 },
+        },
+      },
+    },
+  });
+
+  new Chart(document.getElementById("modelChart"), {
+    type: "bar",
+    data: {
+      labels: byModel.map((d) => d.model),
+      datasets: [
+        {
+          label: "总 Token",
+          data: byModel.map((d) => d.total_tokens),
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      indexAxis: "y",
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+
+  function setQuickRange(daysBack) {
+    const endInput = document.querySelector('input[name="end_date"]');
+    const startInput = document.querySelector('input[name="start_date"]');
+    const today = new Date();
+    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const start = new Date(end);
+    start.setDate(start.getDate() - daysBack);
+    startInput.value = start.toISOString().slice(0, 10);
+    endInput.value = end.toISOString().slice(0, 10);
+    document.querySelector('form[action="/admin/usage"]').submit();
+  }
+</script>
+{% endblock %}

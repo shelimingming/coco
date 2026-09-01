@@ -24,8 +24,10 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 | --- | --- |
 | http://127.0.0.1:8001/admin | 后台入口（需登录） |
 | http://127.0.0.1:8001/admin/stats | 运营总览（侧栏「运营总览」） |
+| http://127.0.0.1:8001/admin/usage | 用量统计（用户 token 排名、按模型筛选） |
 | http://127.0.0.1:8001/admin/llm-debug | 模型调试（按用户搜索时间线） |
 | http://127.0.0.1:8001/admin/api/stats | 统计 JSON（需已登录 session） |
+| http://127.0.0.1:8001/admin/api/usage | 用量 JSON（需已登录 session） |
 | http://127.0.0.1:8001/health | 健康检查 |
 
 开发默认账号（见 `admin/.env.example`）：
@@ -40,6 +42,7 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 | 模块 | 能力 |
 | --- | --- |
 | 运营总览 | KPI（用户/家庭/提醒/关怀/消息/通知/语音会话）+ 近 7 日趋势图 |
+| 用量统计 | 用户 token 排名、按模型/日期筛选、每日趋势与模型分布图（北京时间日界） |
 | 用户 | 列表筛选；详情聚合（家庭、提醒、语音会话、关怀、消息、通知、登录会话）；禁用/启用 |
 | 家庭 / 邀请 | 家庭详情聚合成员、邀请码（脱敏前 3 位）、消息、关怀 |
 | 提醒 / 发生记录 | 只读浏览与状态筛选 |

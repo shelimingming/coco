@@ -24,5 +24,7 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 - ORM 复用 `backend` 的 `coco` 包，不复制表定义。
 - 业务数据默认只读；支持禁用/启用用户、吊销会话。
 - 语音会话与会话条目可只读查看（转写 + 工具调用；无原始音频）。
+- 运营总览 KPI + 近 7 日趋势：`/admin/stats`
+- 用量统计（用户 token 排名、按模型筛选）：`/admin/usage`
 - 模型调试页可按用户查看全部大模型调用时间线（需 backend 写入 `llm_traces`）。
 - 更完整说明见 [`doc/admin.md`](../doc/admin.md)。

@@ -92,6 +92,10 @@ def sanitize_payload(value: Any) -> Any:
         out: dict[str, Any] = {}
         for key, item in value.items():
             key_l = str(key).lower()
+            # 用量字段名含 token 但不是凭证，须保留数值
+            if key_l.endswith("tokens") or key_l.endswith("_token"):
+                out[str(key)] = sanitize_payload(item)
+                continue
             if any(token in key_l for token in ("api_key", "authorization", "secret", "token")):
                 out[str(key)] = "<redacted>"
                 continue
@@ -114,17 +118,91 @@ def sanitize_payload(value: Any) -> Any:
     return str(value)
 
 
+def _as_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_usage(raw: dict[str, Any] | None) -> dict[str, Any] | None:
+    """统一 OpenAI(prompt/completion) 与 Realtime(input/output) 用量结构。"""
+    if not isinstance(raw, dict):
+        return None
+
+    prompt = _as_int(raw.get("prompt_tokens"))
+    completion = _as_int(raw.get("completion_tokens"))
+    input_tokens = _as_int(raw.get("input_tokens"))
+    output_tokens = _as_int(raw.get("output_tokens"))
+    total_tokens = _as_int(raw.get("total_tokens"))
+
+    if input_tokens is None and prompt is not None:
+        input_tokens = prompt
+    if output_tokens is None and completion is not None:
+        output_tokens = completion
+
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+
+    if input_tokens is None and output_tokens is None and total_tokens is None:
+        return None
+
+    normalized: dict[str, Any] = {}
+    if input_tokens is not None:
+        normalized["input_tokens"] = input_tokens
+    if output_tokens is not None:
+        normalized["output_tokens"] = output_tokens
+    if total_tokens is not None:
+        normalized["total_tokens"] = total_tokens
+
+    input_details = raw.get("input_tokens_details")
+    output_details = raw.get("output_tokens_details")
+    if isinstance(input_details, dict):
+        normalized["input_tokens_details"] = input_details
+    if isinstance(output_details, dict):
+        normalized["output_tokens_details"] = output_details
+
+    plugins = raw.get("plugins")
+    if isinstance(plugins, dict):
+        normalized["plugins"] = plugins
+
+    return normalized
+
+
+def token_columns_from_usage(
+    usage: dict[str, Any] | None,
+) -> tuple[int | None, int | None, int | None]:
+    if not usage:
+        return None, None, None
+    return (
+        _as_int(usage.get("input_tokens")),
+        _as_int(usage.get("output_tokens")),
+        _as_int(usage.get("total_tokens")),
+    )
+
+
 def usage_from_openai(data: dict[str, Any] | None) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
     usage = data.get("usage")
     if not isinstance(usage, dict):
         return None
-    return {
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-    }
+    return normalize_usage(usage)
+
+
+def usage_from_realtime_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    """从百炼 Realtime 的 response.done 事件提取用量。"""
+    if event.get("type") != "response.done":
+        return None
+    response = event.get("response")
+    if not isinstance(response, dict):
+        return None
+    usage = response.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    return normalize_usage(usage)
 
 
 def _trace_enabled() -> bool:
@@ -169,6 +247,8 @@ async def record_llm_trace(
     resolved_conversation = (
         conversation_id if conversation_id is not None else _conversation_id.get()
     )
+    normalized_usage = normalize_usage(usage_json) if usage_json is not None else None
+    input_tokens, output_tokens, total_tokens = token_columns_from_usage(normalized_usage)
     try:
         async with factory() as session:
             session.add(
@@ -181,13 +261,18 @@ async def record_llm_trace(
                     model=model,
                     status=status,
                     latency_ms=latency_ms,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=total_tokens,
                     request_json=sanitize_payload(request_json)
                     if request_json is not None
                     else None,
                     response_json=sanitize_payload(response_json)
                     if response_json is not None
                     else None,
-                    usage_json=sanitize_payload(usage_json) if usage_json is not None else None,
+                    usage_json=sanitize_payload(normalized_usage)
+                    if normalized_usage is not None
+                    else None,
                     error_message=_truncate_str(error_message) if error_message else None,
                     started_at=started_at or datetime.now(UTC),
                 )

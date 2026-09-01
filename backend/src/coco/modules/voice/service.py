@@ -70,6 +70,7 @@ from coco.observability.llm_trace import (
     bind_llm_trace,
     record_llm_trace,
     reset_llm_trace,
+    usage_from_realtime_event,
 )
 from coco.providers.qwen_realtime import (
     QwenAudioRealtimeClient,
@@ -1194,8 +1195,33 @@ async def _forward_vendor_events(
     assistant_text = ""
     final_sent = False
     last_user_text = ""
+    # 语音一轮在 response.done 落库，以便带上 Realtime usage
+    pending_voice_turn: dict[str, str] | None = None
     # 工具已写回、等待本轮 response.done 后再 create 二轮（避免 in-progress 冲突）
     needs_tool_followup = False
+
+    async def _commit_voice_turn(
+        event: dict[str, Any] | None = None,
+        *,
+        usage_json: dict[str, Any] | None = None,
+    ) -> None:
+        nonlocal pending_voice_turn
+        if pending_voice_turn is None:
+            return
+        resolved_usage = usage_json
+        if resolved_usage is None and event is not None:
+            resolved_usage = usage_from_realtime_event(event)
+        await record_llm_trace(
+            purpose=PURPOSE_VOICE_TURN,
+            modality="realtime",
+            model=settings.realtime_model,
+            status="ok",
+            request_json={"user": pending_voice_turn["user"]},
+            response_json={"assistant": pending_voice_turn["assistant"]},
+            usage_json=resolved_usage,
+        )
+        pending_voice_turn = None
+
     try:
         async for event in vendor.events():
             logger.debug(
@@ -1255,20 +1281,21 @@ async def _forward_vendor_events(
                                 kind=ConversationItemKind.ASSISTANT.value,
                                 text=text,
                             )
-                        await record_llm_trace(
-                            purpose=PURPOSE_VOICE_TURN,
-                            modality="realtime",
-                            model=settings.realtime_model,
-                            status="ok",
-                            request_json={"user": last_user_text},
-                            response_json={"assistant": text},
-                        )
+                        pending_voice_turn = {
+                            "user": last_user_text,
+                            "assistant": text,
+                        }
                         last_user_text = ""
                         await _send_json(websocket, mapped_done)
                     assistant_text = ""
+                await _commit_voice_turn(event)
                 with contextlib.suppress(Exception):
                     await vendor.create_response()
                 continue
+
+            if event_type == "response.done":
+                # transcript.done 已记下 pending 时，在此补齐 token 用量
+                await _commit_voice_turn(event)
 
             if event_type == "error":
                 code, err_type, vendor_msg = _vendor_error_fields(event)
@@ -1301,16 +1328,14 @@ async def _forward_vendor_events(
                         kind=ConversationItemKind.ASSISTANT.value,
                         text=text,
                     )
-                await record_llm_trace(
-                    purpose=PURPOSE_VOICE_TURN,
-                    modality="realtime",
-                    model=settings.realtime_model,
-                    status="ok",
-                    request_json={"user": last_user_text},
-                    response_json={"assistant": text},
-                )
+                pending_voice_turn = {
+                    "user": last_user_text,
+                    "assistant": text,
+                }
                 last_user_text = ""
                 assistant_text = ""
+                if event_type == "response.done":
+                    await _commit_voice_turn(event)
             elif mapped.get("type") == "user.final":
                 text = str(mapped.get("text") or "").strip()
                 last_user_text = text

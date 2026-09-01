@@ -12,6 +12,7 @@ from coco_admin.config import AdminSettings
 from coco_admin.views.llm_debug import LlmDebugView
 from coco_admin.views.models import ALL_MODEL_VIEWS
 from coco_admin.views.stats_view import StatsAdminView
+from coco_admin.views.usage_view import UsageAdminView
 
 TEMPLATES_DIR = str(Path(__file__).resolve().parent.parent / "templates")
 
@@ -28,6 +29,7 @@ def mount_admin(app, engine: AsyncEngine, settings: AdminSettings) -> Admin:
         authentication_backend=authentication_backend,
     )
     admin.add_view(StatsAdminView)
+    admin.add_view(UsageAdminView)
     admin.add_view(LlmDebugView)
     for view in ALL_MODEL_VIEWS:
         admin.add_view(view)

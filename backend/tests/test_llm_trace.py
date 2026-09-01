@@ -9,9 +9,69 @@ import pytest
 
 from coco.observability.llm_trace import (
     PURPOSE_TEXT_TITLE,
+    normalize_usage,
     record_llm_trace,
     sanitize_payload,
+    token_columns_from_usage,
+    usage_from_openai,
+    usage_from_realtime_event,
 )
+
+
+def test_normalize_usage_openai_shape() -> None:
+    normalized = normalize_usage(
+        {"prompt_tokens": 100, "completion_tokens": 40, "total_tokens": 140}
+    )
+    assert normalized == {
+        "input_tokens": 100,
+        "output_tokens": 40,
+        "total_tokens": 140,
+    }
+    assert token_columns_from_usage(normalized) == (100, 40, 140)
+
+
+def test_normalize_usage_realtime_shape() -> None:
+    normalized = normalize_usage(
+        {
+            "input_tokens": 50,
+            "output_tokens": 20,
+            "total_tokens": 70,
+            "input_tokens_details": {"text_tokens": 40, "audio_tokens": 10},
+            "output_tokens_details": {"text_tokens": 5, "audio_tokens": 15},
+        }
+    )
+    assert normalized is not None
+    assert normalized["input_tokens"] == 50
+    assert normalized["output_tokens"] == 20
+    assert normalized["input_tokens_details"]["audio_tokens"] == 10
+
+
+def test_usage_from_openai_normalizes() -> None:
+    usage = usage_from_openai(
+        {"usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}}
+    )
+    assert usage == {"input_tokens": 12, "output_tokens": 3, "total_tokens": 15}
+
+
+def test_usage_from_realtime_event() -> None:
+    usage = usage_from_realtime_event(
+        {
+            "type": "response.done",
+            "response": {"usage": {"input_tokens": 8, "output_tokens": 2, "total_tokens": 10}},
+        }
+    )
+    assert usage == {"input_tokens": 8, "output_tokens": 2, "total_tokens": 10}
+
+
+def test_sanitize_payload_preserves_usage_token_fields() -> None:
+    payload = {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15,
+        "input_tokens": 10,
+    }
+    cleaned = sanitize_payload(payload)
+    assert cleaned == payload
 
 
 def test_sanitize_payload_redacts_images_and_audio() -> None:

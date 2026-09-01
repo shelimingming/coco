@@ -55,6 +55,10 @@ class LlmTrace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 归一化 token，便于 Admin 用量聚合；与 usage_json 同步写入
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     request_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     response_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

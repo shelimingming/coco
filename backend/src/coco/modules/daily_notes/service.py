@@ -54,6 +54,8 @@ from coco.providers.wan_image import WanImageClient
 logger = logging.getLogger(__name__)
 
 _PROMPT_MAX = 500
+# 每日小记配图上限（与撰写 prompt、前端图文对应一致）
+_DAILY_NOTE_MAX_IMAGES = 2
 _IMAGE_MAX_BYTES = 4 * 1024 * 1024
 _PARENT_PHOTO_MAX_BYTES = 3 * 1024 * 1024
 _IMAGE_STYLE_PREFIX = "温馨手绘水彩插画，柔和暖色调，画面明亮干净，留白多，治愈系，光线温暖"
@@ -125,7 +127,7 @@ class DailyNoteService:
         if row is None:
             row = DailyNoteSettings(
                 user_id=user.id,
-                generate_enabled=True,
+                generate_enabled=False,
                 share_to_child_enabled=False,
                 generate_hour=20,
             )
@@ -830,8 +832,8 @@ class DailyNoteService:
                 base_url=self._settings.aliyun_http_base_url,
             )
             bos = self._require_bos()
-            # 每天最多 3 张；seq 与正文段落下标对齐，便于前端图文对应
-            for seq, scene in enumerate(scenes[:3]):
+            # 每天最多 _DAILY_NOTE_MAX_IMAGES 张；seq 与正文段落下标对齐，便于前端图文对应
+            for seq, scene in enumerate(scenes[:_DAILY_NOTE_MAX_IMAGES]):
                 if has_parent_photo:
                     prompt = (
                         f"{_IMAGE_STYLE_PREFIX}。"
@@ -946,22 +948,22 @@ class DailyNoteService:
 
 
 def _aligned_scenes(illustrations: object, paragraphs: list[str]) -> list[str]:
-    """配图与正文段一一对应：优先 illustrations[i]，否则用该段原文；最多 3 张。"""
+    """配图与正文段一一对应：优先 illustrations[i]，否则用该段原文。"""
     illust: list[str] = []
     if isinstance(illustrations, list):
         for item in illustrations:
             if isinstance(item, str) and item.strip():
                 illust.append(item.strip()[:100])
     scenes: list[str] = []
-    for i, para in enumerate(paragraphs[:3]):
+    for i, para in enumerate(paragraphs[:_DAILY_NOTE_MAX_IMAGES]):
         if i < len(illust):
             scenes.append(illust[i])
         elif para.strip():
             # 用段落本身作画面说明，保证图文同源
             scenes.append(para.strip()[:100])
     if not scenes and illust:
-        scenes = illust[:3]
-    return scenes[:3]
+        scenes = illust[:_DAILY_NOTE_MAX_IMAGES]
+    return scenes[:_DAILY_NOTE_MAX_IMAGES]
 
 
 async def _download_image(url: str) -> tuple[bytes, str]:

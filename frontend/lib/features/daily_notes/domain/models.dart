@@ -20,7 +20,7 @@ class DailyNoteSettings {
 
   factory DailyNoteSettings.fromJson(Map<String, dynamic> json) {
     return DailyNoteSettings(
-      generateEnabled: json['generate_enabled'] as bool? ?? true,
+      generateEnabled: json['generate_enabled'] as bool? ?? false,
       shareToChildEnabled: json['share_to_child_enabled'] as bool? ?? false,
       generateHour: json['generate_hour'] as int? ?? 20,
       gender: json['gender'] as String? ?? 'unknown',

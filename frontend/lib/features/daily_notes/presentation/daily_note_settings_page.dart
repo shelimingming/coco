@@ -55,7 +55,7 @@ class _DailyNoteSettingsPageState extends ConsumerState<DailyNoteSettingsPage> {
               contentPadding: EdgeInsets.zero,
               title: Text('每天自动生成', style: theme.textTheme.bodyLarge),
               subtitle: Text(
-                '默认晚上 ${settings.generateHour}:00 整理当天聊天',
+                '默认关闭；开启后每晚 ${settings.generateHour}:00 整理当天聊天',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: CocoColors.neutral700,
                 ),
