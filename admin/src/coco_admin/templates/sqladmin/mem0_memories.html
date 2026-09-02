@@ -1,0 +1,148 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Mem0 记忆</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-secondary">
+        通话结束后自动抽取的隐式记忆（pgvector collection
+        {% if schema %}<code>{{ schema }}.{{ collection }}</code>{% else %}<code>{{ collection }}</code>{% endif %}）。
+        不含用户主动「帮我记住」的显式记忆。只读浏览，不提供删除。
+      </p>
+
+      <form method="get" action="{% if user %}/admin/mem0/user/{{ user.id }}{% else %}/admin/mem0{% endif %}" class="row g-2 mb-4">
+        <div class="col-md-6">
+          <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="{% if user %}筛选这条用户的记忆正文{% else %}显示名、脱敏手机号或记忆正文{% endif %}">
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-primary" type="submit">搜索</button>
+        </div>
+        {% if user or q %}
+        <div class="col-md-2">
+          <a class="btn btn-outline-secondary" href="/admin/mem0">全部用户</a>
+        </div>
+        {% endif %}
+      </form>
+
+      {% if not available %}
+      <div class="alert alert-warning">
+        尚未创建 Mem0 collection，通常表示还没有成功抽取过记忆。
+      </div>
+      {% else %}
+
+      <div class="row row-cards mb-3">
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">有记忆的用户</div>
+              <div class="h1 mb-0">{{ user_count }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
+              <div class="text-secondary">记忆条数</div>
+              <div class="h1 mb-0">{{ total_memories }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if truncated %}
+      <p class="text-warning">记忆过多，本页只展示最近 {{ total_memories }} 条（上限 5000）。</p>
+      {% endif %}
+
+      {% if users %}
+      <h4>用户</h4>
+      <div class="table-responsive mb-4">
+        <table class="table table-sm table-vcenter">
+          <thead><tr><th>显示名</th><th>角色</th><th>手机</th><th></th></tr></thead>
+          <tbody>
+          {% for u in users %}
+            <tr>
+              <td>{{ u.display_name }}</td>
+              <td>{{ u.role }}</td>
+              <td>{{ u.phone_masked }}</td>
+              <td>
+                <a href="/admin/mem0/user/{{ u.id }}">查看记忆</a>
+                ·
+                <a href="/admin/user/details/{{ u.id }}">用户详情</a>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {% if user %}
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">{{ user.display_name }} · {{ user.phone_masked }}</h4>
+        <div>
+          <a href="/admin/user/details/{{ user.id }}">用户详情</a>
+          ·
+          <a href="/admin/llm-debug/user/{{ user.id }}">模型调试</a>
+        </div>
+      </div>
+      {% endif %}
+
+      {% for group in groups %}
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div>
+            {% if not user and group.user_id %}
+              <a href="/admin/mem0/user/{{ group.user_id }}">{{ group.display_name }}</a>
+            {% else %}
+              {{ group.display_name }}
+            {% endif %}
+            <span class="text-secondary">{{ group.role_label }} · {{ group.phone_masked }} · {{ group.count }} 条</span>
+          </div>
+          {% if group.user_id %}
+          <div>
+            <a href="/admin/user/details/{{ group.user_id }}">用户详情</a>
+            ·
+            <a href="/admin/llm-debug/user/{{ group.user_id }}">模型调试</a>
+          </div>
+          {% endif %}
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-vcenter mb-0">
+              <thead>
+                <tr>
+                  <th>记忆</th>
+                  <th style="width: 10rem">更新时间</th>
+                  <th style="width: 10rem">创建时间</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for item in group.memories %}
+                <tr>
+                  <td>{{ item.content }}</td>
+                  <td class="text-secondary">{{ item.updated_at_label or "—" }}</td>
+                  <td class="text-secondary">{{ item.created_at_label or "—" }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% else %}
+        {% if q %}
+        <p class="text-secondary">没有匹配的 Mem0 记忆。</p>
+        {% elif user %}
+        <p class="text-secondary">这个用户还没有 Mem0 记忆。</p>
+        {% else %}
+        <p class="text-secondary">还没有任何人的 Mem0 记忆。</p>
+        {% endif %}
+      {% endfor %}
+
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

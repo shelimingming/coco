@@ -12,6 +12,9 @@
       <p class="text-secondary mb-3">
         仅统计成功调用且含 token 用量的记录。文生图张数、Mem0、无 user_id 的调用不计入排名。
         语音用量需部署含 Realtime token 采集的版本后才会完整。
+        费用按
+        <a href="{{ stats.cost_meta.pricing_doc_url }}" target="_blank" rel="noopener">百炼官网单价（{{ stats.cost_meta.pricing_region }}）</a>
+        实时估算，{{ stats.cost_meta.disclaimer }}
       </p>
 
       <form method="get" action="/admin/usage" class="row g-2 mb-3 align-items-end">
@@ -59,6 +62,19 @@
         <div class="col-sm-6 col-lg-3">
           <div class="card card-sm">
             <div class="card-body">
+              <div class="text-secondary">估算费用</div>
+              <div class="h1 mb-0">{{ stats.summary.estimated_cost_label }}</div>
+              {% if stats.summary.unknown_pricing_models %}
+              <div class="text-secondary mt-1">
+                未配置单价：{{ stats.summary.unknown_pricing_models | join("、") }}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="card card-sm">
+            <div class="card-body">
               <div class="text-secondary">调用次数</div>
               <div class="h1 mb-0">{{ stats.summary.call_count }}</div>
             </div>
@@ -69,14 +85,9 @@
             <div class="card-body">
               <div class="text-secondary">活跃用户</div>
               <div class="h1 mb-0">{{ stats.summary.active_users }}</div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="text-secondary">用量最高模型</div>
-              <div class="h3 mb-0">{{ stats.summary.top_model or "—" }}</div>
+              <div class="text-secondary mt-1">
+                用量最高：{{ stats.summary.top_model or "—" }}
+              </div>
             </div>
           </div>
         </div>
@@ -96,6 +107,39 @@
             <div class="card-header"><h3 class="card-title">模型分布</h3></div>
             <div class="card-body">
               <canvas id="modelChart" height="140"></canvas>
+              {% if stats.by_model %}
+              <div class="table-responsive mt-3">
+                <table class="table table-sm mb-0">
+                  <thead>
+                    <tr>
+                      <th>模型</th>
+                      <th>输入</th>
+                      <th>输出</th>
+                      <th>合计</th>
+                      <th>估算费用</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {% for row in stats.by_model %}
+                    <tr>
+                      <td>{{ row.model }}</td>
+                      <td>{{ row.input_tokens }}</td>
+                      <td>{{ row.output_tokens }}</td>
+                      <td>{{ row.total_tokens }}</td>
+                      <td>
+                        {{ row.estimated_cost_label }}
+                        {% if row.pricing_note %}
+                        <span class="text-secondary" title="{{ row.pricing_note }}">*</span>
+                        {% elif not row.pricing_known %}
+                        <span class="text-secondary">（未配置单价）</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -116,6 +160,7 @@
                   <th>输入</th>
                   <th>输出</th>
                   <th>合计</th>
+                  <th>估算费用</th>
                   <th>调用次数</th>
                   <th></th>
                 </tr>
@@ -130,6 +175,7 @@
                   <td>{{ row.input_tokens }}</td>
                   <td>{{ row.output_tokens }}</td>
                   <td><strong>{{ row.total_tokens }}</strong></td>
+                  <td>{{ row.estimated_cost_label }}</td>
                   <td>{{ row.call_count }}</td>
                   <td>
                     <a href="/admin/llm-debug/user/{{ row.user_id }}?hours={{ debug_hours }}">模型调试</a>

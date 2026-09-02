@@ -26,6 +26,7 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 | http://127.0.0.1:8001/admin/stats | 运营总览（侧栏「运营总览」） |
 | http://127.0.0.1:8001/admin/usage | 用量统计（用户 token 排名、按模型筛选） |
 | http://127.0.0.1:8001/admin/llm-debug | 模型调试（按用户搜索时间线） |
+| http://127.0.0.1:8001/admin/mem0 | Mem0 记忆（按用户分组浏览隐式记忆） |
 | http://127.0.0.1:8001/admin/api/stats | 统计 JSON（需已登录 session） |
 | http://127.0.0.1:8001/admin/api/usage | 用量 JSON（需已登录 session） |
 | http://127.0.0.1:8001/health | 健康检查 |
@@ -48,6 +49,7 @@ uv run uvicorn coco_admin.main:app --reload --host 127.0.0.1 --port 8001
 | 提醒 / 发生记录 | 只读浏览与状态筛选 |
 | 语音会话 / 会话条目 | 只读浏览转写与工具调用；会话详情含时间线回放（含工具 JSON，无音频） |
 | 模型调试 / 模型调用 | 按用户查看全部大模型调用时间线（语音 / 识图 / 文生图 / 标题 / 转译 / Mem0）；列表可按用途与状态筛选 |
+| Mem0 记忆 | 按用户浏览 pgvector 中的隐式记忆（通话结束后自动抽取）；不含显式记忆表；只读 |
 | 关怀 / 消息 / 通知 | 只读浏览业务明文内容 |
 | 登录会话 | 查看设备与吊销状态；批量吊销 |
 | 验证码记录 | 仅 attempts/过期等元数据（hash 不展示，无法还原明文） |

@@ -89,12 +89,27 @@ async def collect_usage_stats(
         await session.execute(
             select(
                 LlmTrace.model,
+                func.coalesce(func.sum(LlmTrace.input_tokens), 0),
+                func.coalesce(func.sum(LlmTrace.output_tokens), 0),
                 func.coalesce(func.sum(LlmTrace.total_tokens), 0),
                 func.count(),
             )
             .where(*filters)
             .group_by(LlmTrace.model)
             .order_by(func.sum(LlmTrace.total_tokens).desc())
+        )
+    ).all()
+
+    user_model_rows = (
+        await session.execute(
+            select(
+                LlmTrace.user_id,
+                LlmTrace.model,
+                func.coalesce(func.sum(LlmTrace.input_tokens), 0),
+                func.coalesce(func.sum(LlmTrace.output_tokens), 0),
+            )
+            .where(*filters)
+            .group_by(LlmTrace.user_id, LlmTrace.model)
         )
     ).all()
 
@@ -191,10 +206,21 @@ async def collect_usage_stats(
         "by_model": [
             {
                 "model": str(row[0]),
-                "total_tokens": int(row[1]),
-                "call_count": int(row[2]),
+                "input_tokens": int(row[1]),
+                "output_tokens": int(row[2]),
+                "total_tokens": int(row[3]),
+                "call_count": int(row[4]),
             }
             for row in by_model_rows
+        ],
+        "user_model_usage": [
+            {
+                "user_id": str(row[0]),
+                "model": str(row[1]),
+                "input_tokens": int(row[2]),
+                "output_tokens": int(row[3]),
+            }
+            for row in user_model_rows
         ],
         "daily_totals": daily_totals,
     }

@@ -123,3 +123,5 @@ async def test_collect_usage_stats_ranking(
     assert filtered["summary"]["total_tokens"] == 132
     assert len(filtered["by_model"]) == 1
     assert filtered["by_model"][0]["model"] == "qwen-plus"
+    assert filtered["by_model"][0]["input_tokens"] == 110
+    assert filtered["by_model"][0]["output_tokens"] == 22

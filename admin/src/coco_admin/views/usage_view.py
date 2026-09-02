@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from coco_admin.database import get_session_factory
+from coco_admin.usage.pricing import attach_cost_estimates
 from coco_admin.usage.service import CST, collect_usage_stats, list_usage_models
 
 
@@ -47,6 +48,11 @@ class UsageAdminView(BaseView):
             )
             models = await list_usage_models(session)
 
+        stats = attach_cost_estimates(
+            stats,
+            user_model_usage=stats.pop("user_model_usage", None),
+        )
+
         debug_hours = UsageAdminView.debug_hours_for_range(start_date, end_date)
 
         return await self.templates.TemplateResponse(
@@ -77,6 +83,10 @@ class UsageAdminView(BaseView):
                 end_date=end_date,
                 model=model,
             )
+        stats = attach_cost_estimates(
+            stats,
+            user_model_usage=stats.pop("user_model_usage", None),
+        )
         return JSONResponse(stats)
 
     @staticmethod
