@@ -126,6 +126,11 @@
       padding-top: 6px;
     }
 
+    .note .wechat-tip {
+      display: block;
+      margin-top: 4px;
+    }
+
     .stage {
       flex: 1;
       display: grid;
@@ -163,6 +168,7 @@
 
     /* iframe 只做屏幕槽；iPhone 外框由 Flutter 在 presentation_slot 下强制绘制 */
     .device {
+      position: relative;
       flex: 1;
       min-height: 520px;
       min-width: 0;
@@ -172,11 +178,77 @@
     }
 
     .frame {
+      position: relative;
+      z-index: 1;
       flex: 1;
       min-height: 0;
       width: 100%;
       border: 0;
       background: transparent;
+      /* 未就绪前隐藏，避免 iframe 默认白底闪一下 */
+      opacity: 0;
+      transition: opacity 0.35s ease;
+    }
+
+    .frame.is-ready {
+      opacity: 1;
+    }
+
+    /* iframe 就绪前占位：轻柔呼吸圆 + 文案，对齐 DESIGN 暖色气质 */
+    .device-loading {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-4);
+      border-radius: 28px;
+      background: rgba(255, 248, 237, 0.55);
+      pointer-events: none;
+      transition: opacity 0.35s ease, visibility 0.35s ease;
+    }
+
+    .device-loading.is-done {
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .device-loading[data-role="child"] {
+      background: rgba(246, 248, 247, 0.65);
+    }
+
+    .device-loading .breath {
+      width: 56px;
+      height: 56px;
+      border-radius: 999px;
+      background: var(--parent);
+      opacity: 0.85;
+      animation: coco-breath 1.6s ease-in-out infinite;
+    }
+
+    .device-loading[data-role="child"] .breath {
+      background: var(--child);
+    }
+
+    .device-loading .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.875rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+
+    @keyframes coco-breath {
+      0%, 100% { transform: scale(0.88); opacity: 0.45; }
+      50% { transform: scale(1); opacity: 0.95; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .device-loading .breath { animation: none; opacity: 0.75; }
+      .frame { transition: none; }
+      .device-loading { transition: none; }
     }
 
     @media (max-width: 800px) {
@@ -285,15 +357,23 @@
           <li>连接远方家人</li>
         </ul>
       </div>
-      <p class="note">网页仅供演示 · 完整功能请用 APP</p>
+      <p class="note">
+        网页仅供演示 · 完整功能请用 APP
+        <span class="wechat-tip">微信浏览器打开如果白屏，请使用默认浏览器打开</span>
+      </p>
     </header>
     <div class="stage">
       <section class="panel" aria-label="长辈端">
         <div class="label"><span class="dot parent" aria-hidden="true"></span>长辈端</div>
         <div class="device">
+          <div class="device-loading" data-role="parent" role="status" aria-live="polite">
+            <span class="breath" aria-hidden="true"></span>
+            <p class="hint">正在加载长辈端…</p>
+          </div>
           <iframe
             class="frame"
             title="长辈端"
+            data-slot="parent"
             src="./index.html?presentation_slot=parent"
             allow="microphone; autoplay; clipboard-write"
           ></iframe>
@@ -302,9 +382,14 @@
       <section class="panel" aria-label="子女端">
         <div class="label"><span class="dot child" aria-hidden="true"></span>子女端</div>
         <div class="device">
+          <div class="device-loading" data-role="child" role="status" aria-live="polite">
+            <span class="breath" aria-hidden="true"></span>
+            <p class="hint">正在加载子女端…</p>
+          </div>
           <iframe
             class="frame"
             title="子女端"
+            data-slot="child"
             src="./index.html?presentation_slot=child"
             allow="microphone; autoplay; clipboard-write"
           ></iframe>
@@ -312,5 +397,15 @@
       </section>
     </div>
   </div>
+  <script>
+    // iframe HTML 到齐后淡入；引擎首帧由 index.html 内加载层承接
+    document.querySelectorAll('.frame').forEach(function (frame) {
+      frame.addEventListener('load', function () {
+        frame.classList.add('is-ready');
+        var loading = frame.parentElement && frame.parentElement.querySelector('.device-loading');
+        if (loading) loading.classList.add('is-done');
+      });
+    });
+  </script>
 </body>
 </html>

@@ -33,13 +33,103 @@
 
   <title>可可</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* Flutter 首帧前占位，避免白屏；色值对齐 DESIGN token */
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #fff8ed;
+    }
+
+    body.slot-child {
+      background: #f6f8f7;
+    }
+
+    #coco-boot {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: inherit;
+      color: #5d574f;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
+        "Microsoft YaHei", sans-serif;
+      transition: opacity 0.28s ease, visibility 0.28s ease;
+    }
+
+    #coco-boot.is-done {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    #coco-boot .breath {
+      width: 52px;
+      height: 52px;
+      border-radius: 999px;
+      background: #c85f36;
+      animation: coco-boot-breath 1.6s ease-in-out infinite;
+    }
+
+    body.slot-child #coco-boot .breath {
+      background: #28786b;
+    }
+
+    #coco-boot .hint {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+
+    @keyframes coco-boot-breath {
+      0%, 100% { transform: scale(0.88); opacity: 0.45; }
+      50% { transform: scale(1); opacity: 0.95; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #coco-boot .breath { animation: none; opacity: 0.75; }
+      #coco-boot { transition: none; }
+    }
+  </style>
 </head>
 <body>
+  <!-- Flutter 引擎就绪前的品牌加载态；首帧后移除 -->
+  <div id="coco-boot" role="status" aria-live="polite">
+    <span class="breath" aria-hidden="true"></span>
+    <p class="hint">正在准备…</p>
+  </div>
   <!--
     麦克风需安全上下文（localhost 或 HTTPS）。
     See: https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script>
+    (function () {
+      // 演示双槽按角色换背景/主色，单独打开仍用父母端暖色
+      var params = new URLSearchParams(window.location.search);
+      var slot = (params.get('presentation_slot') || '').toLowerCase();
+      if (slot === 'child') {
+        document.body.classList.add('slot-child');
+      }
+
+      function dismissBoot() {
+        var boot = document.getElementById('coco-boot');
+        if (!boot || boot.classList.contains('is-done')) return;
+        boot.classList.add('is-done');
+        window.setTimeout(function () {
+          if (boot.parentNode) boot.parentNode.removeChild(boot);
+        }, 320);
+      }
+
+      window.addEventListener('flutter-first-frame', dismissBoot);
+      // 兜底：极端情况下首帧事件未触发也不永久遮挡
+      window.setTimeout(dismissBoot, 20000);
+    })();
+
     // 演示站频繁发版：卸掉旧 PWA Worker 并清 Cache Storage，避免刷新仍吃到旧包。
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function (regs) {
